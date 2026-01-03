@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { OnnxSimplifier } from './simplifier';
 
 
 function getNonce() {
@@ -70,6 +71,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const iconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'icon.png'));
 			const faviconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'favicon.ico'));
 			const grapherSheetUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'grapher.css'));
+			const spatialUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'spatial.js'));
 			const viewUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'view.js'));
 			const browserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'browser.js'));
 
@@ -78,6 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
 			html = html.replace(new RegExp("%iconPath%", 'g'), iconUri.toString());
 			html = html.replace(new RegExp("%faviconPath%", 'g'), faviconUri.toString());
 			html = html.replace(new RegExp("%grapherSheetPath%", 'g'), grapherSheetUri.toString());
+			html = html.replace(new RegExp("%spatialPath%", 'g'), spatialUri.toString());
 			html = html.replace(new RegExp("%viewPath%", 'g'), viewUri.toString());
 			html = html.replace(new RegExp("%browserPath%", 'g'), browserUri.toString());
 
@@ -92,15 +95,67 @@ export function activate(context: vscode.ExtensionContext) {
 			panel.webview.html = html;
 
 			panel.webview.onDidReceiveMessage(
-				message => {
+				async message => {
 				  switch (message.command) {
 					case 'alert':
 						vscode.window.showErrorMessage(message.text);
 						return;
 					case 'request_model':
+						// Check if this is an ONNX file and simplification is enabled
+						let fileToLoad = modelFile!;
+						const ext = path.extname(modelFile!).toLowerCase();
+						
+						if (ext === '.onnx') {
+							const config = vscode.workspace.getConfiguration('vscode-netron');
+							const simplificationEnabled = config.get('onnxSimplification.enabled', true);
+							
+							if (simplificationEnabled) {
+								try {
+									const result = await vscode.window.withProgress({
+										location: vscode.ProgressLocation.Notification,
+										title: "Optimizing ONNX model for viewing",
+										cancellable: false
+									}, async (progress) => {
+										const simplifier = new OnnxSimplifier(context.extensionPath);
+										return await simplifier.simplify(modelFile!, progress);
+									});
+
+									if (result.success && result.simplifiedPath) {
+										fileToLoad = result.simplifiedPath;
+										const reductionMsg = result.sizeReduction 
+											? ` (${result.sizeReduction.toFixed(1)}% reduction)` 
+											: '';
+										vscode.window.showInformationMessage(
+											`Model simplified in ${(result.timeTaken! / 1000).toFixed(1)}s${reductionMsg}`
+										);
+									} else if (result.error && !result.error.includes('below threshold')) {
+										// Only show error if it's not about threshold
+										console.warn('Simplification failed, using original model:', result.error);
+									}
+								} catch (error: any) {
+									console.error('Simplification error:', error);
+									// Fall back to original model
+								}
+							}
+						}
+
 						panel.webview.postMessage({
 							command: "transmit_model", 
-							value: Uint8Array.from(fs.readFileSync(modelFile!)).subarray()});
+							value: Uint8Array.from(fs.readFileSync(fileToLoad)).subarray()});
+						
+						// Cleanup temp files after transmission
+						if (fileToLoad !== modelFile) {
+							setTimeout(() => {
+								try {
+									const tempDir = path.dirname(fileToLoad);
+									if (tempDir.includes('vscode-netron-simplify')) {
+										fs.rmSync(tempDir, { recursive: true, force: true });
+									}
+								} catch (e) {
+									console.error('Failed to cleanup temp files:', e);
+								}
+							}, 1000);
+						}
 						return;
 				  }
 				},

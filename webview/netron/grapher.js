@@ -12,6 +12,11 @@ grapher.Graph = class {
         this._children = new Map();
         this._children.set('\x00', new Map());
         this._parent = new Map();
+        this._quadTree = null;
+        this._viewportCullingEnabled = true;
+        this._viewportMargin = 200; // Extra margin around viewport
+        this._visibleNodes = new Set();
+        this._visibleEdges = new Set();
     }
 
     setNode(node) {
@@ -296,10 +301,27 @@ grapher.Graph = class {
                 node.layout();
             }
         }
+        
+        // Build QuadTree for spatial indexing after layout
+        if (this._viewportCullingEnabled && this.nodes.size > 100) {
+            if (typeof spatial !== 'undefined') {
+                this._quadTree = spatial.buildQuadTree(this.nodes, this._viewportMargin);
+            }
+        }
+        
         return '';
     }
 
-    update() {
+    update(viewport) {
+        // Use viewport culling for large graphs
+        if (this._viewportCullingEnabled && this._quadTree && viewport) {
+            this._updateWithViewport(viewport);
+        } else {
+            this._updateAll();
+        }
+    }
+
+    _updateAll() {
         for (const nodeId of this.nodes.keys()) {
             if (this.children(nodeId).length === 0) {
                 // node
@@ -320,6 +342,114 @@ grapher.Graph = class {
         for (const edge of this.edges.values()) {
             edge.label.update();
         }
+    }
+
+    _updateWithViewport(viewport) {
+        // Query visible nodes from QuadTree
+        const viewportBounds = {
+            x: viewport.x - this._viewportMargin,
+            y: viewport.y - this._viewportMargin,
+            width: viewport.width + 2 * this._viewportMargin,
+            height: viewport.height + 2 * this._viewportMargin
+        };
+
+        const visibleNodeData = this._quadTree.query(viewportBounds);
+        const newVisibleNodes = new Set(visibleNodeData.map(d => d.id));
+
+        // Update nodes that are now visible
+        for (const nodeData of visibleNodeData) {
+            const nodeId = nodeData.id;
+            if (this.children(nodeId).length === 0) {
+                const entry = this.node(nodeId);
+                const node = entry.label;
+                
+                // Attach to DOM if not already attached
+                if (!this._visibleNodes.has(nodeId) && node.element) {
+                    const nodeGroup = node.element.ownerSVGElement.getElementById('nodes');
+                    if (nodeGroup && !node.element.parentNode) {
+                        nodeGroup.appendChild(node.element);
+                    }
+                }
+                
+                node.update();
+            } else {
+                // cluster
+                const entry = this.node(nodeId);
+                const node = entry.label;
+                node.element.setAttribute('transform', `translate(${node.x},${node.y})`);
+                node.rectangle.setAttribute('x', - node.width / 2);
+                node.rectangle.setAttribute('y', - node.height / 2);
+                node.rectangle.setAttribute('width', node.width);
+                node.rectangle.setAttribute('height', node.height);
+            }
+        }
+
+        // Detach nodes that are no longer visible
+        for (const nodeId of this._visibleNodes) {
+            if (!newVisibleNodes.has(nodeId) && this.children(nodeId).length === 0) {
+                const entry = this.node(nodeId);
+                const node = entry.label;
+                if (node.element && node.element.parentNode) {
+                    node.element.remove();
+                }
+            }
+        }
+
+        this._visibleNodes = newVisibleNodes;
+
+        // Update edges (only those with at least one visible endpoint)
+        const newVisibleEdges = new Set();
+        for (const edge of this.edges.values()) {
+            const vVisible = newVisibleNodes.has(edge.v);
+            const wVisible = newVisibleNodes.has(edge.w);
+            
+            if (vVisible || wVisible) {
+                newVisibleEdges.add(edge);
+                
+                // Attach edge elements if not already attached
+                if (!this._visibleEdges.has(edge)) {
+                    const label = edge.label;
+                    if (label.element && !label.element.parentNode) {
+                        const edgePathGroup = label.element.ownerSVGElement.getElementById('edge-paths');
+                        if (edgePathGroup) {
+                            edgePathGroup.appendChild(label.element);
+                        }
+                    }
+                    if (label.hitTest && !label.hitTest.parentNode) {
+                        const hitTestGroup = label.hitTest.ownerSVGElement.getElementById('edge-paths-hit-test');
+                        if (hitTestGroup) {
+                            hitTestGroup.appendChild(label.hitTest);
+                        }
+                    }
+                    if (label.labelElement && !label.labelElement.parentNode) {
+                        const labelGroup = label.labelElement.ownerSVGElement.getElementById('edge-labels');
+                        if (labelGroup) {
+                            labelGroup.appendChild(label.labelElement);
+                        }
+                    }
+                }
+                
+                edge.label.update();
+            }
+        }
+
+        // Detach edges that are no longer visible
+        for (const edge of this._visibleEdges) {
+            if (!newVisibleEdges.has(edge)) {
+                const label = edge.label;
+                if (label.element && label.element.parentNode) {
+                    label.element.remove();
+                }
+                if (label.hitTest && label.hitTest.parentNode) {
+                    label.hitTest.remove();
+                }
+                if (label.labelElement && label.labelElement.parentNode) {
+                    label.labelElement.remove();
+                }
+            }
+        }
+
+        this._visibleEdges = newVisibleEdges;
     }
 };
 

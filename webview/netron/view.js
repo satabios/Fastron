@@ -1798,6 +1798,77 @@ view.Graph = class extends grapher.Graph {
         }
         const size = canvas.getBBox();
         const margin = 100;
+        
+        // Setup viewport culling event listeners
+        this._setupViewportTracking();
+    }
+
+    _setupViewportTracking() {
+        const document = this.host.document;
+        const container = document.getElementById('target');
+        
+        if (!container || !this._viewportCullingEnabled) {
+            return;
+        }
+        
+        // Throttle viewport updates for performance
+        let updateTimeout = null;
+        const scheduleViewportUpdate = () => {
+            if (updateTimeout) {
+                clearTimeout(updateTimeout);
+            }
+            updateTimeout = setTimeout(() => {
+                this._updateViewport();
+                updateTimeout = null;
+            }, 16); // ~60fps
+        };
+        
+        // Add scroll listener
+        container.addEventListener('scroll', scheduleViewportUpdate);
+        
+        // Initial viewport update
+        this._updateViewport();
+    }
+
+    _updateViewport() {
+        const document = this.host.document;
+        const container = document.getElementById('target');
+        const origin = document.getElementById('origin');
+        
+        if (!container || !origin) {
+            return;
+        }
+        
+        // Get transform from origin element
+        const transform = origin.getAttribute('transform');
+        let translateX = 0;
+        let translateY = 0;
+        let scale = 1;
+        
+        if (transform) {
+            const translateMatch = transform.match(/translate\(([-\d.]+),\s*([-\d.]+)\)/);
+            if (translateMatch) {
+                translateX = parseFloat(translateMatch[1]);
+                translateY = parseFloat(translateMatch[2]);
+            }
+            const scaleMatch = transform.match(/scale\(([-\d.]+)\)/);
+            if (scaleMatch) {
+                scale = parseFloat(scaleMatch[1]);
+            }
+        }
+        
+        // Calculate viewport in graph coordinates
+        const zoom = this._zoom || 1;
+        const viewport = {
+            x: (container.scrollLeft / zoom - translateX) / scale,
+            y: (container.scrollTop / zoom - translateY) / scale,
+            width: (container.clientWidth / zoom) / scale,
+            height: (container.clientHeight / zoom) / scale
+        };
+        
+        // Update graph with viewport info
+        super.update(viewport);
+    }
         const width = Math.ceil(margin + size.width + margin);
         const height = Math.ceil(margin + size.height + margin);
         origin.setAttribute('transform', `translate(${margin - size.x}, ${margin - size.y}) scale(1)`);

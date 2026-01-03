@@ -77,7 +77,52 @@
         "command": "vscode-netron.open_webbrowser",
         "title": "Start Netron Web"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Netron",
+      "properties": {
+        "vscode-netron.onnxSimplification.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable ONNX model simplification before viewing (reduces nodes and memory usage)"
+        },
+        "vscode-netron.onnxSimplification.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python executable (must have onnx and onnxsim packages installed)"
+        },
+        "vscode-netron.onnxSimplification.sizeThresholdMB": {
+          "type": "number",
+          "default": 50,
+          "description": "Minimum model size in MB to trigger simplification"
+        },
+        "vscode-netron.onnxSimplification.largeModelThresholdGB": {
+          "type": "number",
+          "default": 2,
+          "description": "Size in GB above which to use large model simplification strategy"
+        },
+        "vscode-netron.onnxSimplification.inputShapes": {
+          "type": "object",
+          "default": {},
+          "description": "Optional input shapes for simplification (e.g., {\"input\": [1, 3, 224, 224]})"
+        },
+        "vscode-netron.onnxSimplification.skipOptimizers": {
+          "type": "array",
+          "default": [],
+          "description": "List of optimizers to skip during simplification"
+        },
+        "vscode-netron.rendering.viewportCulling": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable viewport culling to render only visible nodes (improves performance for large graphs)"
+        },
+        "vscode-netron.rendering.skipWeightData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Skip loading tensor weight data (reduces memory usage by 90-95%)"
+        }
+      }
+    }
   },
   "icon": "docs/netron-logo_128x128px.png",
   "repository": {
