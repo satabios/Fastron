@@ -98076,6 +98076,21 @@
     "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
   },
   {
+    "name": "tosa.dim",
+    "summary": "Extract size of dimension from input tensor.",
+    "description": "Returns a length 1 shape_t of the size of the input tensor for the given axis.",
+    "operands": [
+      { "name": "input1", "type": "Tosa_TensorAtLeast1D" }
+    ],
+    "results": [
+      { "name": "output", "type": "Tosa_Shape" }
+    ],
+    "attributes": [
+      { "name": "axis", "type": "I32Attr" }
+    ],
+    "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
+  },
+  {
     "name": "tosa.div_ceil_shape",
     "summary": "Elementwise ceiling divide of shapes.",
     "description": "Elementwise divide of input1 by input2. The result of the divide is rounded up.",
