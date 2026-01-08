@@ -152,9 +152,9 @@
   "icon": "docs/netron-logo_128x128px.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vtemplier/vscode-netron"
+    "url": "https://gitlab.qualcomm.com/sathyapr/vscode-netron"
   },
-  "publisher": "vincent-templier",
+  "publisher": "satabios",
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
