@@ -5,16 +5,17 @@
     <script>
         // Configure optimizations for VSCode webview
         window.NETRON_CONFIG = {
-            skipTensorWeights: true,        // Skip loading weights (saves 90% memory)
+            skipTensorWeights: %SKIP_WEIGHTS%,        // Skip loading weights (saves 90% memory) - Dynamic config
             maxTensorDisplaySize: 1000,     // Max elements to display
-            showTensorMetadata: true,       // Show metadata instead of data
+            showTensorMetadata: %SKIP_WEIGHTS%,       // Show metadata instead of data - Dynamic config
             logMemorySavings: true,         // Log memory savings
             enableOptimizations: true,      // Enable all optimizations
             memoryLimit: 1500,               // Memory limit in MB
             tileSize: 1000                  // Spatial index tile size
         };
         console.log('[Netron] Optimizations enabled for VSCode');
-        console.log('[Netron] Tensor weight loading: DISABLED (saves 90% memory)');
+        console.log('[Netron] Initial skipTensorWeights:', window.NETRON_CONFIG.skipTensorWeights, 'type:', typeof window.NETRON_CONFIG.skipTensorWeights);
+        console.log('[Netron] Tensor weight loading:', window.NETRON_CONFIG.skipTensorWeights ? 'DISABLED (saves 90% memory)' : 'ENABLED (full data)');
     </script>
 <meta charset="utf-8">
 <meta name="description" content="Visualizer for neural network, deep learning and machine learning models." />
@@ -65,6 +66,12 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .toolbar-icon .fill { fill: #808080; }
 .toolbar-icon:hover .stroke { stroke: #000000; }
 .toolbar-icon:hover .fill { fill: #000000; }
+.toolbar-button-weights.weights-disabled .stroke { stroke: #808080; }
+.toolbar-button-weights.weights-disabled .fill { fill: #808080; }
+.toolbar-button-weights.weights-enabled .stroke { stroke: #16825d; }
+.toolbar-button-weights.weights-enabled .fill { fill: #16825d; }
+.toolbar-button-weights:hover .stroke { stroke: #000000; }
+.toolbar-button-weights:hover .fill { fill: #000000; }
 .message { display: none; opacity: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; flex-direction: column; justify-content: flex-start; }
 .message-text { display: inline; text-align: center; width: 562px; font-size: 13px; line-height: 20px; margin-top: 50vh; padding-top: 56px; padding-bottom: 20px; margin-left: auto; margin-right: auto; user-select: text; -webkit-user-select: text; -moz-user-select: text; }
 .message-button { display: inline; text-align: center; width: 125px; margin-left: auto; margin-right: auto; }
@@ -176,6 +183,13 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .toolbar-icon .fill { fill: #aaaaaa; }
 .toolbar-icon:hover .stroke { stroke: #dfdfdf; }
 .toolbar-icon:hover .fill { fill: #dfdfdf; }
+.toolbar-button-weights { position: relative; }
+.toolbar-button-weights.weights-disabled .stroke { stroke: #aaaaaa; }
+.toolbar-button-weights.weights-disabled .fill { fill: #aaaaaa; }
+.toolbar-button-weights.weights-enabled .stroke { stroke: #4ec9b0; }
+.toolbar-button-weights.weights-enabled .fill { fill: #4ec9b0; }
+.toolbar-button-weights:hover .stroke { stroke: #dfdfdf; }
+.toolbar-button-weights:hover .fill { fill: #dfdfdf; }
 .toolbar-path-back-button { background: #aaaaaa; border-color: #aaaaaa; color: #333333; }
 .toolbar-path-back-button:hover { background: #dfdfdf; border-color: #dfdfdf; }
 .toolbar-path-name-button { background: #aaaaaa ; border-color: #aaaaaa; color: #404040; }
@@ -369,6 +383,28 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
             <circle class="stroke" cx="50" cy="50" r="35" stroke-width="4"></circle>
             <line class="stroke" x1="38" y1="50" x2="62" y2="50" stroke-width="4" stroke-linecap="round"></line>
             <line class="stroke" x1="78" y1="78" x2="82" y2="82" stroke-width="8" stroke-linecap="square"></line>
+        </svg>
+    </button>
+    <button id="weights-toggle-button" class="toolbar-button toolbar-button-weights %WEIGHTS_BUTTON_CLASS%" title="%WEIGHTS_BUTTON_TITLE%">
+        <svg class="toolbar-icon" viewbox="0 0 100 100">
+            <rect class="border" x="12" y="12" width="76" height="76" rx="16" ry="16" stroke-width="8"></rect>
+            <circle class="border" cx="35" cy="35" r="8" stroke-width="8"></circle>
+            <circle class="border" cx="65" cy="35" r="8" stroke-width="8"></circle>
+            <circle class="border" cx="35" cy="65" r="8" stroke-width="8"></circle>
+            <circle class="border" cx="65" cy="65" r="8" stroke-width="8"></circle>
+            <line class="border" x1="35" y1="35" x2="65" y2="35" stroke-width="8" stroke-linecap="round"></line>
+            <line class="border" x1="35" y1="65" x2="65" y2="65" stroke-width="8" stroke-linecap="round"></line>
+            <line class="border" x1="35" y1="35" x2="35" y2="65" stroke-width="8" stroke-linecap="round"></line>
+            <line class="border" x1="65" y1="35" x2="65" y2="65" stroke-width="8" stroke-linecap="round"></line>
+            <rect class="stroke" x="12" y="12" width="76" height="76" rx="16" ry="16" stroke-width="4"></rect>
+            <circle class="fill" cx="35" cy="35" r="6"></circle>
+            <circle class="fill" cx="65" cy="35" r="6"></circle>
+            <circle class="fill" cx="35" cy="65" r="6"></circle>
+            <circle class="fill" cx="65" cy="65" r="6"></circle>
+            <line class="stroke" x1="35" y1="35" x2="65" y2="35" stroke-width="3" stroke-linecap="round"></line>
+            <line class="stroke" x1="35" y1="65" x2="65" y2="65" stroke-width="3" stroke-linecap="round"></line>
+            <line class="stroke" x1="35" y1="35" x2="35" y2="65" stroke-width="3" stroke-linecap="round"></line>
+            <line class="stroke" x1="65" y1="35" x2="65" y2="65" stroke-width="3" stroke-linecap="round"></line>
         </svg>
     </button>
     <button id="sidebar-document-button" class="toolbar-button" title="Model Properties">
@@ -618,6 +654,10 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 
 	const vscode = acquireVsCodeApi();
 	
+	// State management for weights toggle
+	let isLoadingModel = false;
+	let currentModelFile = '%GRAPHNAME%';
+	
 	var host = new Host();
 	window.__view__ = new View(host);
 	window.__view__._worker = null;
@@ -650,7 +690,23 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 								text: message + "\n" + detail})
 		};
 
+		// Setup weights toggle button
+		const weightsToggleButton = document.getElementById('weights-toggle-button');
+		if (weightsToggleButton) {
+			weightsToggleButton.addEventListener('click', () => {
+				if (isLoadingModel) {
+					console.log('[Netron] Cannot toggle weights during active load');
+					return;
+				}
+				// Send toggle request to extension
+				vscode.postMessage({command: 'toggle_weights'});
+				// Disable button during toggle
+				weightsToggleButton.disabled = true;
+			});
+		}
+
 		// Ask to host to send model
+		isLoadingModel = true;
 		vscode.postMessage({command: 'request_model'});
 
 		window.addEventListener('message', event => {
@@ -658,8 +714,44 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 	
 			switch (message.command) {
 				case 'transmit_model':
-					const file1 = new File([Uint8Array.from(message.value)], "%GRAPHNAME%", {type: ''});
+					isLoadingModel = false;
+					console.log('[Netron] Loading model with config.skipTensorWeights:', window.NETRON_CONFIG.skipTensorWeights);
+					const file1 = new File([Uint8Array.from(message.value)], currentModelFile, {type: ''});
 					window.__view__._host._open(file1, [file1]);
+					// Re-enable toggle button
+					const toggleBtn = document.getElementById('weights-toggle-button');
+					if (toggleBtn) toggleBtn.disabled = false;
+					break;
+				case 'update_config':
+					// Update configuration and reload model
+					const newSkipWeights = message.skipTensorWeights;
+					console.log('[Netron] Received skipTensorWeights:', newSkipWeights, 'type:', typeof newSkipWeights);
+					console.log('[Netron] Current config before update:', window.NETRON_CONFIG.skipTensorWeights);
+				// Update BOTH properties - critical for tensor data loading
+				window.NETRON_CONFIG.skipTensorWeights = newSkipWeights;
+				window.NETRON_CONFIG.showTensorMetadata = newSkipWeights;
+				console.log('[Netron] Config after update - skipTensorWeights:', window.NETRON_CONFIG.skipTensorWeights, 'showTensorMetadata:', window.NETRON_CONFIG.showTensorMetadata);
+					
+					// Update button visual state
+					const weightsBtn = document.getElementById('weights-toggle-button');
+					if (weightsBtn) {
+						weightsBtn.classList.remove('weights-enabled', 'weights-disabled');
+						weightsBtn.classList.add(newSkipWeights ? 'weights-disabled' : 'weights-enabled');
+						weightsBtn.title = newSkipWeights 
+							? 'Weights: Disabled (Fast) - Click to enable full weight loading'
+							: 'Weights: Enabled (Full) - Click to disable weight loading';
+					}
+					
+					// Save state
+					vscode.setState({weightsEnabled: !newSkipWeights});
+					
+					// Clear cache and reload model with new configuration
+					vscode.postMessage({command: 'clear_cache'});
+					setTimeout(() => {
+						isLoadingModel = true;
+						window.__view__._host._view.show('welcome spinner');
+						vscode.postMessage({command: 'request_model'});
+					}, 100);
 					break;
 			}
 				

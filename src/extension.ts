@@ -102,6 +102,21 @@ export function activate(context: vscode.ExtensionContext) {
 			// Add name of the graph for file creation
 			html = html.replace(new RegExp('%GRAPHNAME%', 'g'), baseName);
 
+			// Get current skipTensorWeights configuration
+			const config = vscode.workspace.getConfiguration('netron');
+			const skipWeights = config.get<boolean>('loading.skipTensorWeights', true);
+			
+			console.log('[Netron Extension] Initial skipTensorWeights config:', skipWeights);
+			
+			// Replace weight-related placeholders
+			html = html.replace(new RegExp('%SKIP_WEIGHTS%', 'g'), skipWeights.toString());
+			html = html.replace(new RegExp('%WEIGHTS_BUTTON_CLASS%', 'g'), 
+				skipWeights ? 'weights-disabled' : 'weights-enabled');
+			html = html.replace(new RegExp('%WEIGHTS_BUTTON_TITLE%', 'g'), 
+				skipWeights 
+					? 'Weights: Disabled (Fast) - Click to enable full weight loading'
+					: 'Weights: Enabled (Full) - Click to disable weight loading');
+
 			panel.webview.html = html;
 
 			panel.webview.onDidReceiveMessage(
@@ -172,9 +187,41 @@ export function activate(context: vscode.ExtensionContext) {
 					case 'clear_cache':
 						try {
 							await modelLoader.clearCache();
-							vscode.window.showInformationMessage('Cache cleared successfully');
+							// Only show message if not part of toggle operation
+							if (!message.silent) {
+								vscode.window.showInformationMessage('Cache cleared successfully');
+							}
 						} catch (error) {
-							vscode.window.showErrorMessage('Failed to clear cache');
+							if (!message.silent) {
+								vscode.window.showErrorMessage('Failed to clear cache');
+							}
+						}
+						return;
+					case 'toggle_weights':
+						try {
+							// Get current configuration
+							const config = vscode.workspace.getConfiguration('netron');
+							const currentSkipWeights = config.get<boolean>('loading.skipTensorWeights', true);
+							
+							// Toggle the value
+							const newSkipWeights = !currentSkipWeights;
+							
+							// Update configuration globally
+							await config.update('loading.skipTensorWeights', newSkipWeights, vscode.ConfigurationTarget.Global);
+							
+							// Update model loader configuration
+							modelLoader.updateConfiguration();
+							
+							// Send updated config to webview
+							panel.webview.postMessage({
+								command: 'update_config',
+								skipTensorWeights: newSkipWeights
+							});
+							
+							console.log(`[Netron Extension] Toggled skipTensorWeights: ${currentSkipWeights} -> ${newSkipWeights}`);
+						} catch (error) {
+							console.error('[Netron] Failed to toggle weights:', error);
+							vscode.window.showErrorMessage('Failed to toggle weight loading');
 						}
 						return;
 				  }
