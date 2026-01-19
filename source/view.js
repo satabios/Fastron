@@ -459,12 +459,10 @@ view.View = class {
     }
 
     async toggleWeights() {
-        console.log('[DEBUG] toggleWeights called');
         // Toggle the global weight loading configuration
         if (typeof window !== 'undefined' && window.NETRON_CONFIG) {
             const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights;
             const newSkipWeights = !currentSkipWeights;
-            console.log('[DEBUG] Current skipWeights:', currentSkipWeights, '-> New:', newSkipWeights);
 
             // Update global configuration
             window.NETRON_CONFIG.skipTensorWeights = newSkipWeights;
@@ -472,14 +470,12 @@ view.View = class {
 
             // Update button appearance
             const button = this._element('weights-toggle-button');
-            console.log('[DEBUG] Button element:', button);
             if (button) {
                 button.classList.remove('weights-enabled', 'weights-disabled');
                 button.classList.add(newSkipWeights ? 'weights-disabled' : 'weights-enabled');
                 button.title = newSkipWeights
                     ? 'Weights: Disabled (Fast) - Click to enable full weight loading'
                     : 'Weights: Enabled (Full) - Click to disable weight loading';
-                console.log('[DEBUG] Button classes updated to:', newSkipWeights ? 'weights-disabled' : 'weights-enabled');
             }
 
             // Update menu label
@@ -488,17 +484,12 @@ view.View = class {
             // Close any open sidebar to force refresh when re-opened
             if (this._sidebar) {
                 this._sidebar.close();
-                console.log('[DEBUG] Sidebar closed');
             }
 
             // Reload the current model with new weight loading configuration
             if (this._model) {
-                console.log('[DEBUG] Reloading model with new config');
                 await this._updateTarget(this._model, this._path);
             }
-            console.log('[DEBUG] toggleWeights completed');
-        } else {
-            console.log('[DEBUG] Window or NETRON_CONFIG not available');
         }
     }
 
