@@ -661,13 +661,13 @@ base.Tensor = class {
         this.type = tensor.type;
         this.layout = tensor.type.layout;
         this.stride = tensor.stride;
-        
+
         // Check global configuration for skipping weights
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
         this._skipWeights = options.skipWeights !== false && config.skipTensorWeights !== false;
         this._metadataOnly = options.metadataOnly || config.showTensorMetadata || false;
         this._weightsSkipped = false;
-        
+
         base.Tensor._dataTypes = base.Tensor._dataTypes || new Map([
             ['boolean', 1],
             ['qint8', 1], ['qint16', 2], ['qint32', 4],
@@ -685,10 +685,6 @@ base.Tensor = class {
         // Skip loading weights if configured
         if (this._skipWeights && !this._weightsSkipped) {
             this._weightsSkipped = true;
-            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.logMemorySavings) {
-                const size = this.estimateSize();
-                console.log(`[Netron] Skipped loading tensor "${this.name}" (${this.formatSize(size)} saved)`);
-            }
             return null;
         }
         this._read();
@@ -704,10 +700,6 @@ base.Tensor = class {
         // Skip loading data if configured
         if (this._skipWeights && !this._weightsSkipped) {
             this._weightsSkipped = true;
-            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.logMemorySavings) {
-                const size = this.estimateSize();
-                console.log(`[Netron] Skipped loading tensor "${this.name}" (${this.formatSize(size)} saved)`);
-            }
             return null;
         }
         this._read();
@@ -726,7 +718,7 @@ base.Tensor = class {
         if (this._skipWeights) {
             return false;
         }
-        
+
         switch (this.layout) {
             case 'sparse':
             case 'sparse.coo': {
@@ -1208,7 +1200,7 @@ base.Tensor = class {
         if (this._skipWeights) {
             return;
         }
-        
+
         if (this._values === undefined) {
             this._values = null;
             switch (this.encoding) {

@@ -462,11 +462,11 @@ view.View = class {
         if (window.NETRON_CONFIG) {
             const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights;
             const newSkipWeights = !currentSkipWeights;
-            
+
             // Update global configuration
             window.NETRON_CONFIG.skipTensorWeights = newSkipWeights;
             window.NETRON_CONFIG.showTensorMetadata = newSkipWeights;
-            
+
             // Update button appearance
             const button = this._element('weights-toggle-button');
             if (button) {
@@ -476,10 +476,10 @@ view.View = class {
                     ? 'Weights: Disabled (Fast) - Click to enable full weight loading'
                     : 'Weights: Enabled (Full) - Click to disable weight loading';
             }
-            
+
             // Update menu label
             this._updateMenu();
-            
+
             // Reload the current model with new weight loading configuration
             if (this._model) {
                 await this._updateTarget(this._model, this._path);
@@ -3675,6 +3675,14 @@ view.TensorView = class extends view.Expander {
         const content = this.createElement('pre');
         const value = this._value;
         const tensor = this._tensor;
+
+        // Check if weights are skipped
+        if (tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+            const metadataString = tensor.getMetadataString();
+            content.innerHTML = `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`;
+            return content;
+        }
+
         if (tensor.encoding !== '<' && tensor.encoding !== '>' && tensor.encoding !== '|') {
             content.innerHTML = `Tensor encoding '${tensor.layout}' is not implemented.`;
         } else if (tensor.layout && (tensor.layout !== 'sparse' && tensor.layout !== 'sparse.coo')) {
@@ -3969,6 +3977,11 @@ view.TensorSidebar = class extends view.ObjectSidebar {
             const promise = tensor.peek && !tensor.peek() ? tensor.read() : Promise.resolve();
             promise.then(() => {
                 this._tensor = new base.Tensor(tensor);
+                // Skip metrics calculation if weights are skipped
+                if (this._tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+                    // Don't calculate metrics when weights are not loaded
+                    return;
+                }
                 if (!this._tensor.empty) {
                     if (!this._metrics) {
                         const tensor = new metrics.Tensor(this._tensor);
