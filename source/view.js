@@ -46,6 +46,17 @@ view.View = class {
                 lazyRenderButton.title = 'Lazy Rendering: ON (Viewport-based)';
             }
 
+            // Initialize weights toggle button state
+            const weightsButton = this._element('weights-toggle-button');
+            if (weightsButton) {
+                const skipWeights = window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
+                weightsButton.classList.remove('weights-enabled', 'weights-disabled');
+                weightsButton.classList.add(skipWeights ? 'weights-disabled' : 'weights-enabled');
+                weightsButton.title = skipWeights
+                    ? 'Weights: Disabled (Fast) - Click to enable full weight loading'
+                    : 'Weights: Enabled (Full) - Click to disable weight loading';
+            }
+
             this._element('sidebar-model-button').addEventListener('click', () => {
                 this.showModelProperties();
             });
@@ -60,6 +71,9 @@ view.View = class {
             });
             this._element('lazy-render-button').addEventListener('click', async () => {
                 await this.toggleLazyRendering();
+            });
+            this._element('weights-toggle-button').addEventListener('click', async () => {
+                await this.toggleWeights();
             });
             this._element('toolbar-path-back-button').addEventListener('click', async () => {
                 await this.popTarget();

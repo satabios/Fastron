@@ -653,7 +653,7 @@ base.StreamReader = class {
 
 base.Tensor = class {
 
-    constructor(tensor) {
+    constructor(tensor, options = {}) {
         this._tensor = tensor;
         this.name = tensor.name || '';
         this.encoding = tensor.encoding;
@@ -661,6 +661,13 @@ base.Tensor = class {
         this.type = tensor.type;
         this.layout = tensor.type.layout;
         this.stride = tensor.stride;
+        
+        // Check global configuration for skipping weights
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
+        this._skipWeights = options.skipWeights !== false && config.skipTensorWeights !== false;
+        this._metadataOnly = options.metadataOnly || config.showTensorMetadata || false;
+        this._weightsSkipped = false;
+        
         base.Tensor._dataTypes = base.Tensor._dataTypes || new Map([
             ['boolean', 1],
             ['qint8', 1], ['qint16', 2], ['qint32', 4],
@@ -675,6 +682,15 @@ base.Tensor = class {
     }
 
     get values() {
+        // Skip loading weights if configured
+        if (this._skipWeights && !this._weightsSkipped) {
+            this._weightsSkipped = true;
+            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.logMemorySavings) {
+                const size = this.estimateSize();
+                console.log(`[Netron] Skipped loading tensor "${this.name}" (${this.formatSize(size)} saved)`);
+            }
+            return null;
+        }
         this._read();
         return this._values;
     }
@@ -685,6 +701,15 @@ base.Tensor = class {
     }
 
     get data() {
+        // Skip loading data if configured
+        if (this._skipWeights && !this._weightsSkipped) {
+            this._weightsSkipped = true;
+            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.logMemorySavings) {
+                const size = this.estimateSize();
+                console.log(`[Netron] Skipped loading tensor "${this.name}" (${this.formatSize(size)} saved)`);
+            }
+            return null;
+        }
         this._read();
         if (this._data && this._data.peek) {
             this._data = this._data.peek();
@@ -697,6 +722,11 @@ base.Tensor = class {
     }
 
     get empty() {
+        // If weights are skipped, consider tensor as having data (metadata exists)
+        if (this._skipWeights) {
+            return false;
+        }
+        
         switch (this.layout) {
             case 'sparse':
             case 'sparse.coo': {
@@ -1100,6 +1130,40 @@ base.Tensor = class {
         return results;
     }
 
+    estimateSize() {
+        // Estimate tensor size in bytes
+        const shape = this.type.shape && this.type.shape.dimensions ? this.type.shape.dimensions : [];
+        const elementCount = shape.reduce((a, b) => {
+            const num = typeof b === 'bigint' ? Number(b) : b;
+            return a * num;
+        }, 1);
+        const dataType = this.type.dataType || 'float32';
+        const bytesPerElement = base.Tensor._dataTypes.get(dataType) || 4;
+        return elementCount * bytesPerElement;
+    }
+
+    formatSize(bytes) {
+        // Format bytes to human-readable string
+        if (bytes < 1024) {
+            return `${bytes} B`;
+        } else if (bytes < 1024 * 1024) {
+            return `${(bytes / 1024).toFixed(2)} KB`;
+        } else if (bytes < 1024 * 1024 * 1024) {
+            return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+        }
+        return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    }
+
+    getMetadataString() {
+        // Get tensor metadata string without loading data
+        const shape = this.type && this.type.shape && this.type.shape.dimensions
+            ? this.type.shape.dimensions.map((d) => typeof d === 'bigint' ? d.toString() : d).join(' × ')
+            : 'unknown';
+        const dataType = this.type && this.type.dataType ? this.type.dataType : 'unknown';
+        const size = this.formatSize(this.estimateSize());
+        return `Tensor(${dataType}, shape=[${shape}], size=${size}) [weights not loaded]`;
+    }
+
     static _stringify(value, indentation, indent) {
         if (Array.isArray(value)) {
             const length = value.length;
@@ -1140,6 +1204,11 @@ base.Tensor = class {
     }
 
     _read() {
+        // Skip reading if weights should be skipped
+        if (this._skipWeights) {
+            return;
+        }
+        
         if (this._values === undefined) {
             this._values = null;
             switch (this.encoding) {
