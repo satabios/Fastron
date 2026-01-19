@@ -480,6 +480,11 @@ view.View = class {
             // Update menu label
             this._updateMenu();
 
+            // Close any open sidebar to force refresh when re-opened
+            if (this._sidebar) {
+                this._sidebar.close();
+            }
+
             // Reload the current model with new weight loading configuration
             if (this._model) {
                 await this._updateTarget(this._model, this._path);

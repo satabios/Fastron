@@ -682,8 +682,12 @@ base.Tensor = class {
     }
 
     get values() {
+        // Check if weights should be skipped (re-check config dynamically)
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
+        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+
         // Skip loading weights if configured
-        if (this._skipWeights && !this._weightsSkipped) {
+        if (skipWeights && !this._weightsSkipped) {
             this._weightsSkipped = true;
             return null;
         }
@@ -697,8 +701,12 @@ base.Tensor = class {
     }
 
     get data() {
+        // Check if weights should be skipped (re-check config dynamically)
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
+        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+
         // Skip loading data if configured
-        if (this._skipWeights && !this._weightsSkipped) {
+        if (skipWeights && !this._weightsSkipped) {
             this._weightsSkipped = true;
             return null;
         }
@@ -714,8 +722,12 @@ base.Tensor = class {
     }
 
     get empty() {
+        // Check if weights should be skipped (re-check config dynamically)
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
+        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+
         // If weights are skipped, consider tensor as having data (metadata exists)
-        if (this._skipWeights) {
+        if (skipWeights) {
             return false;
         }
 
@@ -1196,8 +1208,12 @@ base.Tensor = class {
     }
 
     _read() {
+        // Check if weights should be skipped (re-check config dynamically)
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
+        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+
         // Skip reading if weights should be skipped
-        if (this._skipWeights) {
+        if (skipWeights) {
             return;
         }
 
