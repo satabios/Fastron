@@ -12,14 +12,14 @@ browser.Host = class {
         this._navigator = window.navigator;
         this._document = window.document;
         this._telemetry = new base.Telemetry(this._window);
-        
+
         // Initialize cache manager
         const cacheSize = window.NETRON_CONFIG && window.NETRON_CONFIG.cacheMaxMemoryMB || 500;
         this._cacheManager = new CacheManager(cacheSize);
-        
+
         // Initialize stream reader
         this._streamReader = new StreamReader();
-        
+
         this._window.eval = () => {
             throw new Error('window.eval() not supported.');
         };

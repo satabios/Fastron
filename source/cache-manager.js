@@ -36,11 +36,11 @@ export const CacheManager = class {
                 this._cacheKeys.splice(index, 1);
             }
             this._cacheKeys.push(key);
-            
+
             // Update stats
             this._stats.hits++;
             this._stats.totalBytesServed += entry.size;
-            
+
             return entry.data;
         }
 
@@ -57,7 +57,7 @@ export const CacheManager = class {
         }
 
         const size = data.byteLength || data.length || 0;
-        
+
         // Don't cache if item is larger than max cache size
         if (size > this._maxMemoryBytes) {
             return;
@@ -103,7 +103,7 @@ export const CacheManager = class {
             const entry = this._memoryCache.get(key);
             this._currentMemoryBytes -= entry.size;
             this._memoryCache.delete(key);
-            
+
             const index = this._cacheKeys.indexOf(key);
             if (index > -1) {
                 this._cacheKeys.splice(index, 1);
@@ -157,7 +157,7 @@ export const CacheManager = class {
      */
     setMemoryLimit(maxMemoryMB) {
         this._maxMemoryBytes = maxMemoryMB * 1024 * 1024;
-        
+
         // Evict if over limit
         while (this._currentMemoryBytes > this._maxMemoryBytes && this._cacheKeys.length > 0) {
             this._evictOldest();
@@ -174,7 +174,7 @@ export const CacheManager = class {
 
         const oldestKey = this._cacheKeys.shift();
         const entry = this._memoryCache.get(oldestKey);
-        
+
         if (entry) {
             this._currentMemoryBytes -= entry.size;
             this._memoryCache.delete(oldestKey);
