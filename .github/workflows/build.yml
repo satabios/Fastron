@@ -97,6 +97,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Web Build Artifacts
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: build-web
@@ -104,6 +105,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Python Wheel
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-python

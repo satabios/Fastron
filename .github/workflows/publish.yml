@@ -1,9 +1,9 @@
-
 name: Publish
 
 on:
   push:
     tags: [ 'v**' ]
+  workflow_dispatch:  # Add this to allow manual trigger
 
 jobs:
   publish:
@@ -38,15 +38,16 @@ jobs:
       - name: Publish Electron
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.PUBLISH_GITHUB_TOKEN }}
-          APPLE_API_KEY: ~/.private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          # APPLE_API_KEY: ~/.private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          # APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          # AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          # AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npx electron-builder install-app-deps
           case "${{ matrix.os }}" in
@@ -60,8 +61,6 @@ jobs:
               npm run publish electron linux
               ;;
             windows*)
-              unset CSC_LINK;
-              unset CSC_KEY_PASSWORD;
               npm run publish electron windows
               ;;
           esac
@@ -76,14 +75,14 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu')
         name: Publish Web
         env:
-          GITHUB_TOKEN: ${{ secrets.PUBLISH_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
         run: git push origin HEAD:release --force
 
       - if: false # startsWith(matrix.os, 'macos')
         name: Publish cask
         env:
-          GITHUB_TOKEN: ${{ secrets.PUBLISH_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
         run: npm run publish cask
 
@@ -91,6 +90,6 @@ jobs:
         name: Publish winget
         env:
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
-          GITHUB_TOKEN: ${{ secrets.PUBLISH_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
         run: npm run publish winget
