@@ -14,7 +14,7 @@ browser.Host = class {
         this._telemetry = new base.Telemetry(this._window);
 
         // Initialize cache manager
-        const cacheSize = window.NETRON_CONFIG && window.NETRON_CONFIG.cacheMaxMemoryMB || 500;
+        const cacheSize = this._window.NETRON_CONFIG && this._window.NETRON_CONFIG.cacheMaxMemoryMB || 500;
         this._cacheManager = new CacheManager(cacheSize);
 
         // Initialize stream reader
