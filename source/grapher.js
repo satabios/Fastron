@@ -12,6 +12,23 @@ grapher.Graph = class {
         this._children = new Map();
         this._children.set('\x00', new Map());
         this._parent = new Map();
+        this._tileManager = null;
+        this._viewportCulling = false;
+        this._visibleNodes = null;
+        this._visibleEdges = null;
+        this._renderedNodes = new Set();
+        this._renderedEdges = new Set();
+    }
+
+    enableViewportCulling(enabled = true) {
+        this._viewportCulling = enabled;
+        if (enabled && !this._tileManager) {
+            this._tileManager = new grapher.TileManager(300);
+        }
+    }
+
+    isViewportCullingEnabled() {
+        return this._viewportCulling;
     }
 
     setNode(node) {
@@ -103,6 +120,122 @@ grapher.Graph = class {
         return null;
     }
 
+    updateViewportVisibility(viewportBounds) {
+        if (!this._viewportCulling || !this._tileManager) {
+            return { added: new Set(), removed: new Set() };
+        }
+
+        const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
+        
+        const previousNodes = this._visibleNodes || new Set();
+        const previousEdges = this._visibleEdges || new Set();
+
+        const addedNodes = new Set([...visibleNodes].filter(n => !previousNodes.has(n)));
+        const removedNodes = new Set([...previousNodes].filter(n => !visibleNodes.has(n)));
+        const addedEdges = new Set([...visibleEdges].filter(e => !previousEdges.has(e)));
+        const removedEdges = new Set([...previousEdges].filter(e => !visibleEdges.has(e)));
+
+        this._visibleNodes = visibleNodes;
+        this._visibleEdges = visibleEdges;
+
+        return {
+            addedNodes,
+            removedNodes,
+            addedEdges,
+            removedEdges
+        };
+    }
+
+    updateVisibleElements(document) {
+        if (!this._viewportCulling || !this._visibleNodes) {
+            return;
+        }
+
+        const nodeGroup = document.getElementById('nodes');
+        const edgePathGroup = document.getElementById('edge-paths');
+        const edgePathHitTestGroup = document.getElementById('edge-paths-hit-test');
+        const edgeLabelGroup = document.getElementById('edge-labels');
+
+        if (!nodeGroup) {
+            return;
+        }
+
+        // Performance optimization: batch DOM reads before writes to avoid layout thrashing
+        const nodesToUpdate = [];
+        for (const nodeId of this.nodes.keys()) {
+            const entry = this.node(nodeId);
+            const node = entry.label;
+            if (node.element) {
+                const isVisible = this._visibleNodes.has(nodeId);
+                const wasRendered = this._renderedNodes.has(nodeId);
+                nodesToUpdate.push({ nodeId, node, isVisible, wasRendered });
+            }
+        }
+
+        // Batch DOM writes
+        for (const { nodeId, node, isVisible, wasRendered } of nodesToUpdate) {
+            if (isVisible && !wasRendered) {
+                // Need to render this node
+                if (this.children(nodeId).length === 0) {
+                    node.build(document, nodeGroup);
+                    node.update();
+                }
+                this._renderedNodes.add(nodeId);
+            } else if (node.element) {
+                node.element.style.display = isVisible ? '' : 'none';
+            }
+        }
+
+        // Show/hide edges based on visibility
+        for (const edge of this.edges.values()) {
+            const edgeKey = `${edge.v}:${edge.w}`;
+            const isVisible = this._visibleEdges.has(edgeKey);
+            const label = edge.label;
+            
+            if (label.element) {
+                label.element.style.display = isVisible ? '' : 'none';
+            }
+            if (label.hitTest) {
+                label.hitTest.style.display = isVisible ? '' : 'none';
+            }
+            if (label.labelElement) {
+                label.labelElement.style.display = isVisible ? '' : 'none';
+            }
+        }
+    }
+
+    populateTiles() {
+        if (!this._tileManager) {
+            return;
+        }
+
+        this._tileManager.clear();
+
+        // Add all nodes to tile manager
+        for (const nodeId of this.nodes.keys()) {
+            const entry = this.node(nodeId);
+            const node = entry.label;
+            if (node.x !== undefined && node.y !== undefined) {
+                const bounds = {
+                    x: node.x - (node.width || 0) / 2,
+                    y: node.y - (node.height || 0) / 2,
+                    width: node.width || 0,
+                    height: node.height || 0
+                };
+                this._tileManager.addNode(nodeId, bounds);
+            }
+        }
+
+        // Add all edges to tile manager
+        for (const edge of this.edges.values()) {
+            const edgeKey = `${edge.v}:${edge.w}`;
+            const label = edge.label;
+            if (label.points && label.points.length > 0) {
+                this._tileManager.addEdge(edgeKey, label.points);
+            }
+        }
+    }
+
     build(document) {
 
         const origin = document.getElementById('origin');
@@ -167,11 +300,18 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead"));
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
-        for (const nodeId of this.nodes.keys()) {
+        
+        // Determine which nodes to render
+        const nodesToRender = this._viewportCulling && this._visibleNodes 
+            ? Array.from(this.nodes.keys()).filter(nodeId => this._visibleNodes.has(nodeId))
+            : Array.from(this.nodes.keys());
+
+        for (const nodeId of nodesToRender) {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this.children(nodeId).length === 0) {
                 node.build(document, nodeGroup);
+                this._renderedNodes.add(nodeId);
             } else {
                 // cluster
                 node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -185,14 +325,25 @@ grapher.Graph = class {
                 node.element.setAttribute('class', 'cluster');
                 node.element.appendChild(node.rectangle);
                 clusterGroup.appendChild(node.element);
+                this._renderedNodes.add(nodeId);
             }
         }
 
         this._focusable.clear();
         this._focused = null;
-        for (const edge of this.edges.values()) {
+        
+        // Determine which edges to render
+        const edgesToRender = this._viewportCulling && this._visibleEdges
+            ? Array.from(this.edges.values()).filter(edge => {
+                const edgeKey = `${edge.v}:${edge.w}`;
+                return this._visibleEdges.has(edgeKey);
+            })
+            : Array.from(this.edges.values());
+
+        for (const edge of edgesToRender) {
             edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
             this._focusable.set(edge.label.hitTest, edge.label);
+            this._renderedEdges.add(`${edge.v}:${edge.w}`);
         }
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
@@ -1053,4 +1204,180 @@ grapher.Edge.Path = class {
     }
 };
 
-export const { Graph, Node, Edge, Argument } = grapher;
+grapher.TileManager = class {
+
+    constructor(tileSize = 300) {
+        this._tileSize = tileSize;
+        this._tiles = new Map(); // "x,y" -> { nodes: Set, edges: Set }
+        this._nodeTiles = new Map(); // nodeKey -> Set of tile keys
+        this._edgeTiles = new Map(); // edgeKey -> Set of tile keys
+        this._bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    }
+
+    clear() {
+        this._tiles.clear();
+        this._nodeTiles.clear();
+        this._edgeTiles.clear();
+        this._bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    }
+
+    _getTileKey(tileX, tileY) {
+        return `${tileX},${tileY}`;
+    }
+
+    _getTileCoords(x, y) {
+        return {
+            tileX: Math.floor(x / this._tileSize),
+            tileY: Math.floor(y / this._tileSize)
+        };
+    }
+
+    _ensureTile(tileKey) {
+        if (!this._tiles.has(tileKey)) {
+            this._tiles.set(tileKey, { nodes: new Set(), edges: new Set() });
+        }
+        return this._tiles.get(tileKey);
+    }
+
+    addNode(nodeKey, bounds) {
+        // bounds: { x, y, width, height }
+        const { x, y, width, height } = bounds;
+        
+        // Update global bounds
+        this._bounds.minX = Math.min(this._bounds.minX, x);
+        this._bounds.minY = Math.min(this._bounds.minY, y);
+        this._bounds.maxX = Math.max(this._bounds.maxX, x + width);
+        this._bounds.maxY = Math.max(this._bounds.maxY, y + height);
+
+        // Calculate which tiles this node overlaps
+        const topLeft = this._getTileCoords(x, y);
+        const bottomRight = this._getTileCoords(x + width, y + height);
+
+        const tileset = new Set();
+        for (let tileX = topLeft.tileX; tileX <= bottomRight.tileX; tileX++) {
+            for (let tileY = topLeft.tileY; tileY <= bottomRight.tileY; tileY++) {
+                const tileKey = this._getTileKey(tileX, tileY);
+                this._ensureTile(tileKey).nodes.add(nodeKey);
+                tileset.add(tileKey);
+            }
+        }
+        this._nodeTiles.set(nodeKey, tileset);
+    }
+
+    addEdge(edgeKey, points) {
+        // points: array of {x, y} coordinates for edge path
+        if (!points || points.length === 0) {
+            return;
+        }
+
+        const tileset = new Set();
+        
+        // For each line segment in the edge path
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            const { tileX, tileY } = this._getTileCoords(point.x, point.y);
+            const tileKey = this._getTileKey(tileX, tileY);
+            this._ensureTile(tileKey).edges.add(edgeKey);
+            tileset.add(tileKey);
+        }
+
+        this._edgeTiles.set(edgeKey, tileset);
+    }
+
+    queryViewport(viewportBounds, bufferTiles = 1) {
+        // viewportBounds: { x, y, width, height }
+        const { x, y, width, height } = viewportBounds;
+
+        const topLeft = this._getTileCoords(x, y);
+        const bottomRight = this._getTileCoords(x + width, y + height);
+
+        const visibleNodes = new Set();
+        const visibleEdges = new Set();
+
+        // Query tiles within viewport plus buffer
+        for (let tileX = topLeft.tileX - bufferTiles; tileX <= bottomRight.tileX + bufferTiles; tileX++) {
+            for (let tileY = topLeft.tileY - bufferTiles; tileY <= bottomRight.tileY + bufferTiles; tileY++) {
+                const tileKey = this._getTileKey(tileX, tileY);
+                const tile = this._tiles.get(tileKey);
+                if (tile) {
+                    tile.nodes.forEach(node => visibleNodes.add(node));
+                    tile.edges.forEach(edge => visibleEdges.add(edge));
+                }
+            }
+        }
+
+        return { nodes: visibleNodes, edges: visibleEdges };
+    }
+
+    getTileInfo() {
+        return {
+            tileSize: this._tileSize,
+            tileCount: this._tiles.size,
+            nodeCount: this._nodeTiles.size,
+            edgeCount: this._edgeTiles.size,
+            bounds: { ...this._bounds }
+        };
+    }
+};
+
+grapher.ViewportObserver = class {
+
+    constructor(callback, debounceMs = 150) {
+        this._callback = callback;
+        this._debounceMs = debounceMs;
+        this._debounceTimer = null;
+        this._lastViewport = null;
+        this._threshold = 50; // pixels - minimum movement to trigger update
+        this._rafId = null;
+    }
+
+    observe(viewport) {
+        // viewport: { x, y, width, height, zoom }
+        
+        // Check if viewport changed significantly
+        if (this._lastViewport) {
+            const dx = Math.abs(viewport.x - this._lastViewport.x);
+            const dy = Math.abs(viewport.y - this._lastViewport.y);
+            const dw = Math.abs(viewport.width - this._lastViewport.width);
+            const dh = Math.abs(viewport.height - this._lastViewport.height);
+            const dz = Math.abs(viewport.zoom - this._lastViewport.zoom);
+
+            // Skip if change is below threshold
+            if (dx < this._threshold && dy < this._threshold && 
+                dw < this._threshold && dh < this._threshold && dz < 0.01) {
+                return;
+            }
+        }
+
+        // Cancel existing timers
+        if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer);
+        }
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+        }
+
+        // Debounce the callback
+        this._debounceTimer = setTimeout(() => {
+            this._rafId = requestAnimationFrame(() => {
+                this._lastViewport = { ...viewport };
+                this._callback(viewport);
+                this._rafId = null;
+            });
+        }, this._debounceMs);
+    }
+
+    disconnect() {
+        if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer);
+            this._debounceTimer = null;
+        }
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+        this._lastViewport = null;
+    }
+};
+
+export const { Graph, Node, Edge, Argument, TileManager, ViewportObserver } = grapher;

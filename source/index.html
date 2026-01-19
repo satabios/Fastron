@@ -31,6 +31,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .toolbar { display: flex; align-items: center; position: absolute; bottom: 10px; left: 10px; padding: 0; margin: 0; user-select: none; -webkit-user-select: none; -moz-user-select: none; }
 .toolbar button:focus { outline: 0; }
 .toolbar-button { background: None; border-radius: 6px; border: 0; margin: 0; margin-right: 1px; padding: 0; fill: None; stroke: #777; cursor: pointer; width: 32px; height: 32px; user-select: none; }
+.toolbar-button.active { background: rgba(119, 119, 119, 0.2); stroke: #000; }
 .toolbar-path { display: flex; align-items: center; }
 .toolbar-select { background: transparent; position: relative; width: 170px; margin: 4px 4px 4px 4px; }
 .toolbar-select select { width: 100%; appearance: none; -webkit-appearance: none; -moz-appearance: none; font-family: inherit; font-size: 12px; line-height: 16px; border: 1px solid; padding: 3px 18px 3px 10px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
@@ -300,6 +301,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
     .sidebar-item-value-button { color: #888; }
     .sidebar-item-value-button svg use { fill: #888; stroke: #888; }
     .sidebar-item-value-button:hover svg use { fill: #e5e5e5; stroke: #e5e5e5; }
+    .toolbar-button.active { background: rgba(255, 255, 255, 0.2); stroke: #fff; }
 }
 @media screen and (prefers-reduced-motion: reduce) {
 .menu { transition: none; }
@@ -358,6 +360,20 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
             <circle class="stroke" cx="50" cy="50" r="35" stroke-width="4"></circle>
             <line class="stroke" x1="38" y1="50" x2="62" y2="50" stroke-width="4" stroke-linecap="round"></line>
             <line class="stroke" x1="78" y1="78" x2="82" y2="82" stroke-width="8" stroke-linecap="square"></line>
+        </svg>
+    </button>
+    <button id="lazy-render-button" class="toolbar-button" title="Toggle Lazy Rendering (Viewport-based)">
+        <svg class="toolbar-icon" viewbox="0 0 100 100">
+            <rect class="border" x="12" y="12" width="76" height="76" rx="8" ry="8" stroke-width="8" stroke="#fff"></rect>
+            <rect class="border" x="30" y="30" width="20" height="20" stroke-width="6" stroke="#fff" fill="#fff"></rect>
+            <rect class="border" x="30" y="60" width="20" height="10" stroke-width="6" stroke="#fff" fill="none"></rect>
+            <rect class="border" x="60" y="30" width="20" height="10" stroke-width="6" stroke="#fff" fill="none"></rect>
+            <rect class="border" x="60" y="50" width="20" height="20" stroke-width="6" stroke="#fff" fill="none"></rect>
+            <rect class="stroke" x="12" y="12" width="76" height="76" rx="8" ry="8" stroke-width="4"></rect>
+            <rect class="stroke" x="30" y="30" width="20" height="20" stroke-width="3"></rect>
+            <rect class="stroke" x="30" y="60" width="20" height="10" stroke-width="3"></rect>
+            <rect class="stroke" x="60" y="30" width="20" height="10" stroke-width="3"></rect>
+            <rect class="stroke" x="60" y="50" width="20" height="20" stroke-width="3"></rect>
         </svg>
     </button>
     <button id="sidebar-model-button" class="toolbar-button" title="Model Properties">

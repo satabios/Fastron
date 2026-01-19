@@ -38,6 +38,14 @@ view.View = class {
             for (const [name, value] of Object.entries(options)) {
                 this._options[name] = value;
             }
+            
+            // Update lazy render button state
+            const lazyRenderButton = this._element('lazy-render-button');
+            if (lazyRenderButton && this._options.lazyRender) {
+                lazyRenderButton.classList.add('active');
+                lazyRenderButton.title = 'Lazy Rendering: ON (Viewport-based)';
+            }
+            
             this._element('sidebar-model-button').addEventListener('click', () => {
                 this.showModelProperties();
             });
@@ -49,6 +57,9 @@ view.View = class {
             });
             this._element('zoom-out-button').addEventListener('click', () => {
                 this.zoomOut();
+            });
+            this._element('lazy-render-button').addEventListener('click', async () => {
+                await this.toggleLazyRendering();
             });
             this._element('toolbar-path-back-button').addEventListener('click', async () => {
                 await this.popTarget();
@@ -405,6 +416,33 @@ view.View = class {
         this._target.zoom = 1;
     }
 
+    async toggleLazyRendering() {
+        // Toggle the lazy rendering option
+        this._options.lazyRender = !this._options.lazyRender;
+        
+        // Update button appearance
+        const button = this._element('lazy-render-button');
+        if (button) {
+            if (this._options.lazyRender) {
+                button.classList.add('active');
+                button.title = 'Lazy Rendering: ON (Viewport-based)';
+            } else {
+                button.classList.remove('active');
+                button.title = 'Lazy Rendering: OFF (Full graph)';
+            }
+        }
+
+        // Save the option
+        const options = this._host.get('options') || {};
+        options.lazyRender = this._options.lazyRender;
+        this._host.set('options', options);
+
+        // Reload the current model with new setting
+        if (this._model) {
+            await this._updateTarget(this._model, this._path);
+        }
+    }
+
     async error(error, name, screen) {
         if (this._sidebar) {
             this._sidebar.close();
@@ -645,12 +683,24 @@ view.View = class {
                 graph_skip: 0
             });
             const viewGraph = new view.Graph(this, groups);
+            
+            // Enable viewport culling if lazy rendering is on
+            if (this._options.lazyRender) {
+                viewGraph.enableViewportCulling(true);
+            }
+            
             viewGraph.add(graph, signature);
             viewGraph.build(document);
             await viewGraph.measure();
             status = await viewGraph.layout(this._worker);
             if (status === '') {
                 viewGraph.update();
+                
+                // Populate tiles after layout completes
+                if (viewGraph.isViewportCullingEnabled()) {
+                    viewGraph.populateTiles();
+                }
+                
                 const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
                 viewGraph.restore(state);
                 this.target = viewGraph;
@@ -1524,6 +1574,7 @@ view.Graph = class extends grapher.Graph {
         this._table = new Map();
         this._selection = new Set();
         this._zoom = 1;
+        this._viewportObserver = null;
     }
 
     get model() {
@@ -1854,6 +1905,15 @@ view.Graph = class extends grapher.Graph {
             const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
             container.scrollTo({ left, top, behavior: 'auto' });
         }
+        
+        // Trigger initial viewport update for lazy rendering
+        if (this.isViewportCullingEnabled() && this._viewportObserver) {
+            // Small delay to ensure layout is complete
+            setTimeout(() => {
+                const viewport = this._getViewportBounds();
+                this._onViewportChange(viewport);
+            }, 100);
+        }
     }
 
     register() {
@@ -1875,6 +1935,13 @@ view.Graph = class extends grapher.Graph {
             } else {
                 element.addEventListener('touchstart', this._events.touchstart, { passive: true });
             }
+            
+            // Setup viewport observer for lazy rendering
+            if (this.isViewportCullingEnabled() && !this._viewportObserver) {
+                this._viewportObserver = new grapher.ViewportObserver((viewport) => {
+                    this._onViewportChange(viewport);
+                }, 150);
+            }
         }
     }
 
@@ -1888,6 +1955,10 @@ view.Graph = class extends grapher.Graph {
             element.removeEventListener('gesturestart', this._events.gesturestart);
             element.removeEventListener('touchstart', this._events.touchstart);
             delete this._events;
+        }
+        if (this._viewportObserver) {
+            this._viewportObserver.disconnect();
+            this._viewportObserver = null;
         }
     }
 
@@ -1921,6 +1992,12 @@ view.Graph = class extends grapher.Graph {
         container.scrollLeft = this._scrollLeft;
         container.scrollTop = this._scrollTop;
         this._zoom = zoom;
+        
+        // Trigger viewport observer on zoom
+        if (this._viewportObserver) {
+            const viewport = this._getViewportBounds();
+            this._viewportObserver.observe(viewport);
+        }
     }
 
     _pointerDownHandler(e) {
@@ -2052,6 +2129,12 @@ view.Graph = class extends grapher.Graph {
         if (this._scrollTop && e.target.scrollTop !== Math.floor(this._scrollTop)) {
             delete this._scrollTop;
         }
+        
+        // Trigger viewport observer
+        if (this._viewportObserver) {
+            const viewport = this._getViewportBounds();
+            this._viewportObserver.observe(viewport);
+        }
     }
 
     _wheelHandler(e) {
@@ -2067,6 +2150,70 @@ view.Graph = class extends grapher.Graph {
             const delta = -e.deltaY * factor * (e.ctrlKey ? 10 : 1);
             this._updateZoom(this._zoom * Math.pow(2, delta), e);
             e.preventDefault();
+        }
+    }
+
+    _getViewportBounds() {
+        const document = this.host.document;
+        const container = document.getElementById('target');
+        const origin = document.getElementById('origin');
+        
+        if (!container || !origin) {
+            return { x: 0, y: 0, width: 0, height: 0, zoom: this._zoom };
+        }
+
+        // Get the transform from origin
+        const transform = origin.getAttribute('transform');
+        let translateX = 0;
+        let translateY = 0;
+        if (transform) {
+            const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (match) {
+                translateX = parseFloat(match[1]);
+                translateY = parseFloat(match[2]);
+            }
+        }
+
+        // Calculate viewport in graph coordinates
+        const scrollX = container.scrollLeft / this._zoom;
+        const scrollY = container.scrollTop / this._zoom;
+        const viewportWidth = container.clientWidth / this._zoom;
+        const viewportHeight = container.clientHeight / this._zoom;
+
+        return {
+            x: scrollX - translateX,
+            y: scrollY - translateY,
+            width: viewportWidth,
+            height: viewportHeight,
+            zoom: this._zoom
+        };
+    }
+
+    _onViewportChange(viewport) {
+        if (!this.isViewportCullingEnabled()) {
+            return;
+        }
+
+        const document = this.host.document;
+        const viewportBounds = {
+            x: viewport.x,
+            y: viewport.y,
+            width: viewport.width,
+            height: viewport.height
+        };
+
+        // Update visibility based on new viewport
+        this.updateViewportVisibility(viewportBounds);
+        this.updateVisibleElements(document);
+        
+        // Log performance metrics in debug mode
+        if (this.view.options.debug) {
+            const tileInfo = this._tileManager ? this._tileManager.getTileInfo() : null;
+            if (tileInfo) {
+                console.log('[Viewport] Tiles:', tileInfo.tileCount, 
+                    'Visible nodes:', this._visibleNodes ? this._visibleNodes.size : 0,
+                    'Visible edges:', this._visibleEdges ? this._visibleEdges.size : 0);
+            }
         }
     }
 
