@@ -457,6 +457,36 @@ view.View = class {
         }
     }
 
+    async toggleWeights() {
+        // Toggle the global weight loading configuration
+        if (window.NETRON_CONFIG) {
+            const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights;
+            const newSkipWeights = !currentSkipWeights;
+            
+            // Update global configuration
+            window.NETRON_CONFIG.skipTensorWeights = newSkipWeights;
+            window.NETRON_CONFIG.showTensorMetadata = newSkipWeights;
+            
+            // Update button appearance
+            const button = this._element('weights-toggle-button');
+            if (button) {
+                button.classList.remove('weights-enabled', 'weights-disabled');
+                button.classList.add(newSkipWeights ? 'weights-disabled' : 'weights-enabled');
+                button.title = newSkipWeights
+                    ? 'Weights: Disabled (Fast) - Click to enable full weight loading'
+                    : 'Weights: Enabled (Full) - Click to disable weight loading';
+            }
+            
+            // Update menu label
+            this._updateMenu();
+            
+            // Reload the current model with new weight loading configuration
+            if (this._model) {
+                await this._updateTarget(this._model, this._path);
+            }
+        }
+    }
+
     async error(error, name, screen) {
         if (this._sidebar) {
             this._sidebar.close();
