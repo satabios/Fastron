@@ -49,7 +49,7 @@ view.View = class {
             // Initialize weights toggle button state
             const weightsButton = this._element('weights-toggle-button');
             if (weightsButton) {
-                const skipWeights = window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
+                const skipWeights = typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
                 weightsButton.classList.remove('weights-enabled', 'weights-disabled');
                 weightsButton.classList.add(skipWeights ? 'weights-disabled' : 'weights-enabled');
                 weightsButton.title = skipWeights
@@ -459,7 +459,7 @@ view.View = class {
 
     async toggleWeights() {
         // Toggle the global weight loading configuration
-        if (window.NETRON_CONFIG) {
+        if (typeof window !== 'undefined' && window.NETRON_CONFIG) {
             const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights;
             const newSkipWeights = !currentSkipWeights;
 
@@ -3600,7 +3600,7 @@ view.ValueView = class extends view.Expander {
                     this._code('stride', stride.join(','));
                 }
                 // Only create TensorView if weights are enabled
-                if (!window.NETRON_CONFIG || !window.NETRON_CONFIG.skipTensorWeights) {
+                if (typeof window === 'undefined' || !window.NETRON_CONFIG || !window.NETRON_CONFIG.skipTensorWeights) {
                     const tensor = new view.TensorView(this._view, initializer);
                     const content = tensor.content;
                     const line = this.createElement('div', 'sidebar-item-value-line-border');
@@ -3685,7 +3685,7 @@ view.TensorView = class extends view.Expander {
         const tensor = this._tensor;
 
         // Check if weights are skipped
-        if (tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+        if (tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
             const metadataString = tensor.getMetadataString();
             content.innerHTML = `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`;
             return content;
@@ -3739,7 +3739,7 @@ view.TensorView = class extends view.Expander {
     async export() {
         const tensor = this._tensor;
         // Don't allow export when weights are not loaded
-        if (tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+        if (tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
             this.error(new Error('Cannot export tensor data when weights are disabled. Enable weights using the toolbar toggle button.'), 'Export Error', null);
             return;
         }
@@ -3975,7 +3975,7 @@ view.TensorSidebar = class extends view.ObjectSidebar {
                 this.addProperty('stride', stride.join(','), 'code');
             }
             // Conditionally create TensorView based on skipTensorWeights config
-            if (window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
                 const item = new view.TextView(this._view, '[Tensor weights disabled - Click the weights toggle button in the toolbar to enable]');
                 this.addEntry('value', item);
             } else {
@@ -3997,7 +3997,7 @@ view.TensorSidebar = class extends view.ObjectSidebar {
             promise.then(() => {
                 this._tensor = new base.Tensor(tensor);
                 // Skip metrics calculation if weights are skipped
-                if (this._tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+                if (this._tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
                     // Don't calculate metrics when weights are not loaded
                     return;
                 }
