@@ -16,12 +16,12 @@ export const StreamReader = class {
      */
     async read(file) {
         const size = file.size || 0;
-        
+
         // Use streaming for large files
         if (size > this._streamingThreshold) {
             return this.readStreaming(file);
         }
-        
+
         // Direct read for small files
         return this.readDirect(file);
     }
@@ -32,15 +32,15 @@ export const StreamReader = class {
     async readDirect(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            
+
             reader.onload = (event) => {
                 resolve(new Uint8Array(event.target.result));
             };
-            
+
             reader.onerror = () => {
                 reject(new Error(`Failed to read file: ${file.name}`));
             };
-            
+
             reader.readAsArrayBuffer(file);
         });
     }
@@ -49,16 +49,19 @@ export const StreamReader = class {
      * Read file in chunks (streaming)
      */
     async readStreaming(file) {
-        const chunks = [];
         const totalSize = file.size;
+        const chunkPromises = [];
         let offset = 0;
 
+        // Create all chunk read promises
         while (offset < totalSize) {
             const chunkSize = Math.min(this._chunkSize, totalSize - offset);
-            const chunk = await this._readChunk(file, offset, chunkSize);
-            chunks.push(chunk);
+            chunkPromises.push(this._readChunk(file, offset, chunkSize));
             offset += chunkSize;
         }
+
+        // Wait for all chunks in parallel
+        const chunks = await Promise.all(chunkPromises);
 
         // Concatenate all chunks
         return this._concatenateChunks(chunks);
@@ -71,15 +74,15 @@ export const StreamReader = class {
         return new Promise((resolve, reject) => {
             const slice = file.slice(offset, offset + size);
             const reader = new FileReader();
-            
+
             reader.onload = (event) => {
                 resolve(new Uint8Array(event.target.result));
             };
-            
+
             reader.onerror = () => {
                 reject(new Error(`Failed to read chunk at offset ${offset}`));
             };
-            
+
             reader.readAsArrayBuffer(slice);
         });
     }
@@ -90,13 +93,13 @@ export const StreamReader = class {
     _concatenateChunks(chunks) {
         const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
         const result = new Uint8Array(totalLength);
-        
+
         let offset = 0;
         for (const chunk of chunks) {
             result.set(chunk, offset);
             offset += chunk.length;
         }
-        
+
         return result;
     }
 
