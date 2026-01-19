@@ -684,7 +684,7 @@ base.Tensor = class {
     get values() {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+        const skipWeights = config.skipTensorWeights === true;
 
         // Always skip loading weights if configured, even if already loaded
         if (skipWeights) {
@@ -702,7 +702,7 @@ base.Tensor = class {
     get data() {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+        const skipWeights = config.skipTensorWeights === true;
 
         // Always skip loading data if configured, even if already loaded
         if (skipWeights) {
@@ -722,7 +722,7 @@ base.Tensor = class {
     get empty() {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+        const skipWeights = config.skipTensorWeights === true;
 
         // If weights are skipped, consider tensor as having data (metadata exists)
         if (skipWeights) {
@@ -768,7 +768,7 @@ base.Tensor = class {
     toString() {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+        const skipWeights = config.skipTensorWeights === true;
 
         // Return metadata string if weights are skipped
         if (skipWeights || this._metadataOnly) {
@@ -1217,7 +1217,7 @@ base.Tensor = class {
     _read() {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = this._skipWeights || config.skipTensorWeights === true;
+        const skipWeights = config.skipTensorWeights === true;
 
         // Skip reading if weights should be skipped
         if (skipWeights) {
