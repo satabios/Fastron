@@ -3599,11 +3599,19 @@ view.ValueView = class extends view.Expander {
                 if (Array.isArray(stride) && stride.length > 0) {
                     this._code('stride', stride.join(','));
                 }
-                const tensor = new view.TensorView(this._view, initializer);
-                const content = tensor.content;
-                const line = this.createElement('div', 'sidebar-item-value-line-border');
-                line.appendChild(content);
-                this._add(line);
+                // Only create TensorView if weights are enabled
+                if (!window.NETRON_CONFIG || !window.NETRON_CONFIG.skipTensorWeights) {
+                    const tensor = new view.TensorView(this._view, initializer);
+                    const content = tensor.content;
+                    const line = this.createElement('div', 'sidebar-item-value-line-border');
+                    line.appendChild(content);
+                    this._add(line);
+                } else {
+                    // Show placeholder when weights are disabled
+                    const line = this.createElement('div', 'sidebar-item-value-line-border');
+                    line.innerHTML = '<i style="color: #999;">[Tensor data not loaded - Enable weights to view]</i>';
+                    this._add(line);
+                }
             }
         } catch (error) {
             super.error(error, false);
@@ -3730,6 +3738,11 @@ view.TensorView = class extends view.Expander {
 
     async export() {
         const tensor = this._tensor;
+        // Don't allow export when weights are not loaded
+        if (tensor._skipWeights && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+            this.error(new Error('Cannot export tensor data when weights are disabled. Enable weights using the toolbar toggle button.'), 'Export Error', null);
+            return;
+        }
         const defaultPath = tensor.name ? tensor.name.split('/').join('_').split(':').join('_').split('.').join('_') : 'tensor';
         const file = await this._host.save('NumPy Array', 'npy', defaultPath);
         if (file) {
@@ -3961,8 +3974,14 @@ view.TensorSidebar = class extends view.ObjectSidebar {
             if (Array.isArray(stride) && stride.length > 0) {
                 this.addProperty('stride', stride.join(','), 'code');
             }
-            const value = new view.TensorView(this._view, tensor, this._tensor);
-            this.addEntry('value', value);
+            // Conditionally create TensorView based on skipTensorWeights config
+            if (window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+                const item = new view.TextView(this._view, '[Tensor weights disabled - Click the weights toggle button in the toolbar to enable]');
+                this.addEntry('value', item);
+            } else {
+                const value = new view.TensorView(this._view, tensor, this._tensor);
+                this.addEntry('value', value);
+            }
             const metadata = this._view.model.attachment.metadata.tensor(tensor);
             if (Array.isArray(metadata) && metadata.length > 0) {
                 this.addSection('Metadata');
