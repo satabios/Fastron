@@ -686,9 +686,8 @@ base.Tensor = class {
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
         const skipWeights = this._skipWeights || config.skipTensorWeights === true;
 
-        // Skip loading weights if configured
-        if (skipWeights && !this._weightsSkipped) {
-            this._weightsSkipped = true;
+        // Always skip loading weights if configured, even if already loaded
+        if (skipWeights) {
             return null;
         }
         this._read();
@@ -705,9 +704,8 @@ base.Tensor = class {
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
         const skipWeights = this._skipWeights || config.skipTensorWeights === true;
 
-        // Skip loading data if configured
-        if (skipWeights && !this._weightsSkipped) {
-            this._weightsSkipped = true;
+        // Always skip loading data if configured, even if already loaded
+        if (skipWeights) {
             return null;
         }
         this._read();
