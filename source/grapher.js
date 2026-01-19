@@ -126,14 +126,14 @@ grapher.Graph = class {
         }
 
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
-        
+
         const previousNodes = this._visibleNodes || new Set();
         const previousEdges = this._visibleEdges || new Set();
 
-        const addedNodes = new Set([...visibleNodes].filter(n => !previousNodes.has(n)));
-        const removedNodes = new Set([...previousNodes].filter(n => !visibleNodes.has(n)));
-        const addedEdges = new Set([...visibleEdges].filter(e => !previousEdges.has(e)));
-        const removedEdges = new Set([...previousEdges].filter(e => !visibleEdges.has(e)));
+        const addedNodes = new Set([...visibleNodes].filter((n) => !previousNodes.has(n)));
+        const removedNodes = new Set([...previousNodes].filter((n) => !visibleNodes.has(n)));
+        const addedEdges = new Set([...visibleEdges].filter((e) => !previousEdges.has(e)));
+        const removedEdges = new Set([...previousEdges].filter((e) => !visibleEdges.has(e)));
 
         this._visibleNodes = visibleNodes;
         this._visibleEdges = visibleEdges;
@@ -152,9 +152,6 @@ grapher.Graph = class {
         }
 
         const nodeGroup = document.getElementById('nodes');
-        const edgePathGroup = document.getElementById('edge-paths');
-        const edgePathHitTestGroup = document.getElementById('edge-paths-hit-test');
-        const edgeLabelGroup = document.getElementById('edge-labels');
 
         if (!nodeGroup) {
             return;
@@ -191,7 +188,7 @@ grapher.Graph = class {
             const edgeKey = `${edge.v}:${edge.w}`;
             const isVisible = this._visibleEdges.has(edgeKey);
             const label = edge.label;
-            
+
             if (label.element) {
                 label.element.style.display = isVisible ? '' : 'none';
             }
@@ -300,10 +297,10 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead"));
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
-        
+
         // Determine which nodes to render
-        const nodesToRender = this._viewportCulling && this._visibleNodes 
-            ? Array.from(this.nodes.keys()).filter(nodeId => this._visibleNodes.has(nodeId))
+        const nodesToRender = this._viewportCulling && this._visibleNodes
+            ? Array.from(this.nodes.keys()).filter((nodeId) => this._visibleNodes.has(nodeId))
             : Array.from(this.nodes.keys());
 
         for (const nodeId of nodesToRender) {
@@ -331,10 +328,10 @@ grapher.Graph = class {
 
         this._focusable.clear();
         this._focused = null;
-        
+
         // Determine which edges to render
         const edgesToRender = this._viewportCulling && this._visibleEdges
-            ? Array.from(this.edges.values()).filter(edge => {
+            ? Array.from(this.edges.values()).filter((edge) => {
                 const edgeKey = `${edge.v}:${edge.w}`;
                 return this._visibleEdges.has(edgeKey);
             })
@@ -1242,7 +1239,7 @@ grapher.TileManager = class {
     addNode(nodeKey, bounds) {
         // bounds: { x, y, width, height }
         const { x, y, width, height } = bounds;
-        
+
         // Update global bounds
         this._bounds.minX = Math.min(this._bounds.minX, x);
         this._bounds.minY = Math.min(this._bounds.minY, y);
@@ -1271,7 +1268,7 @@ grapher.TileManager = class {
         }
 
         const tileset = new Set();
-        
+
         // For each line segment in the edge path
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
@@ -1300,8 +1297,8 @@ grapher.TileManager = class {
                 const tileKey = this._getTileKey(tileX, tileY);
                 const tile = this._tiles.get(tileKey);
                 if (tile) {
-                    tile.nodes.forEach(node => visibleNodes.add(node));
-                    tile.edges.forEach(edge => visibleEdges.add(edge));
+                    tile.nodes.forEach((node) => visibleNodes.add(node));
+                    tile.edges.forEach((edge) => visibleEdges.add(edge));
                 }
             }
         }
@@ -1333,7 +1330,7 @@ grapher.ViewportObserver = class {
 
     observe(viewport) {
         // viewport: { x, y, width, height, zoom }
-        
+
         // Check if viewport changed significantly
         if (this._lastViewport) {
             const dx = Math.abs(viewport.x - this._lastViewport.x);
@@ -1343,7 +1340,7 @@ grapher.ViewportObserver = class {
             const dz = Math.abs(viewport.zoom - this._lastViewport.zoom);
 
             // Skip if change is below threshold
-            if (dx < this._threshold && dy < this._threshold && 
+            if (dx < this._threshold && dy < this._threshold &&
                 dw < this._threshold && dh < this._threshold && dz < 0.01) {
                 return;
             }
