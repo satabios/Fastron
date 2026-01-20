@@ -7,7 +7,7 @@ import * as grapher from './grapher.js';
 if (typeof window !== 'undefined') {
     // Check if we're in a test environment
     // Playwright always runs with localhost, tests typically access via http://localhost
-    const isTestEnvironment = 
+    const isTestEnvironment =
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1' ||
         (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
