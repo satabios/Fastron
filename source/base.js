@@ -769,9 +769,10 @@ base.Tensor = class {
         // Check if weights should be skipped (re-check config dynamically)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
         const skipWeights = config.skipTensorWeights === true;
+        const metadataOnly = config.showTensorMetadata === true;
 
         // Return metadata string if weights are skipped
-        if (skipWeights || this._metadataOnly) {
+        if (skipWeights || metadataOnly) {
             return this.getMetadataString();
         }
 
