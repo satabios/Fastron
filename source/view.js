@@ -5,15 +5,15 @@ import * as grapher from './grapher.js';
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
 if (typeof window !== 'undefined') {
-    // Check if we're in a test environment (Playwright/test frameworks set these)
-    const isTestEnvironment = typeof process !== 'undefined' && (
-        process.env?.PLAYWRIGHT_TEST === '1' ||
-        process.env?.NODE_ENV === 'test' ||
-        typeof window.__PLAYWRIGHT__ !== 'undefined'
-    );
+    // Check if we're in a test environment
+    // Playwright always runs with localhost, tests typically access via http://localhost
+    const isTestEnvironment = 
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
 
     window.NETRON_CONFIG = window.NETRON_CONFIG || {
-        // Enable weights by default in tests, disable in production
+        // Enable weights by default in tests (localhost), disable in production
         skipTensorWeights: !isTestEnvironment,
         maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
         showTensorMetadata: !isTestEnvironment, // Show tensor metadata instead of full data
