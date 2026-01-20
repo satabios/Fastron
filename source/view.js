@@ -6,14 +6,18 @@ import * as grapher from './grapher.js';
 // This must be here (not in index.html) to work in both browser and Electron builds
 if (typeof window !== 'undefined') {
     // Check if we're in a test environment
-    // Playwright always runs with localhost, tests typically access via http://localhost
+    // - Browser tests: localhost or 127.0.0.1
+    // - Desktop tests: file: or data: protocol (Electron loads from data URL in tests)
+    // - Production: https: protocol or deployed URLs
     const isTestEnvironment =
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1' ||
+        window.location.protocol === 'file:' ||
+        window.location.protocol === 'data:' ||
         (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
 
     window.NETRON_CONFIG = window.NETRON_CONFIG || {
-        // Enable weights by default in tests (localhost), disable in production
+        // Enable weights by default in tests (localhost/file/data), disable in production
         skipTensorWeights: !isTestEnvironment,
         maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
         showTensorMetadata: !isTestEnvironment, // Show tensor metadata instead of full data
