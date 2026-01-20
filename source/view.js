@@ -2,6 +2,22 @@
 import * as base from './base.js';
 import * as grapher from './grapher.js';
 
+// Initialize global configuration for tensor weight loading optimization
+// This must be here (not in index.html) to work in both browser and Electron builds
+if (typeof window !== 'undefined') {
+    window.NETRON_CONFIG = window.NETRON_CONFIG || {
+        skipTensorWeights: true,           // Skip loading tensor weights by default (huge memory savings!)
+        maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
+        showTensorMetadata: true,          // Show tensor metadata instead of full data
+        logMemorySavings: false,           // Log memory savings to console
+        enableOptimizations: true,         // Enable performance optimizations
+        cacheEnabled: true,                // Enable in-memory caching
+        cacheMaxMemoryMB: 500,            // Max cache memory (MB)
+        streamingChunkSizeMB: 10,         // Chunk size for streaming (MB)
+        streamingThresholdMB: 50          // Stream files larger than this
+    };
+}
+
 const view = {};
 const markdown = {};
 const metadata = {};
