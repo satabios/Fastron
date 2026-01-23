@@ -5,11 +5,22 @@ import * as grapher from './grapher.js';
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
 if (typeof window !== 'undefined') {
+    // Detect test/development environments:
+    // - Browser: localhost, 127.0.0.1, file:, or data: protocol
+    // - Electron tests: check for test file paths or Playwright
+    const isTestEnvironment =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.protocol === 'file:' ||
+        window.location.protocol === 'data:' ||
+        (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') ||
+        (typeof navigator !== 'undefined' && navigator.userAgent?.includes('Electron'));
+
     window.NETRON_CONFIG = window.NETRON_CONFIG || {
-        // Disable weights by default in all environments for better performance
-        skipTensorWeights: true,
+        // Enable weights in test/dev environments, disable in production for performance
+        skipTensorWeights: !isTestEnvironment,
         maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
-        showTensorMetadata: true, // Show tensor metadata instead of full data
+        showTensorMetadata: !isTestEnvironment, // Show tensor metadata instead of full data
         logMemorySavings: false,           // Log memory savings to console
         enableOptimizations: true,         // Enable performance optimizations
         cacheEnabled: true,                // Enable in-memory caching
