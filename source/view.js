@@ -17,10 +17,10 @@ if (typeof window !== 'undefined') {
         (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test');
 
     window.NETRON_CONFIG = window.NETRON_CONFIG || {
-        // Enable weights by default in tests (localhost/file/data), disable in production
-        skipTensorWeights: !isTestEnvironment,
+        // Disable weights by default in all environments for better performance
+        skipTensorWeights: true,
         maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
-        showTensorMetadata: !isTestEnvironment, // Show tensor metadata instead of full data
+        showTensorMetadata: true, // Show tensor metadata instead of full data
         logMemorySavings: false,           // Log memory savings to console
         enableOptimizations: true,         // Enable performance optimizations
         cacheEnabled: true,                // Enable in-memory caching
