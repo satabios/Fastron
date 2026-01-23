@@ -61,7 +61,7 @@ onnx.Model = class {
         if (model.opset_import && model.opset_import.length > 0) {
             for (const opset_import of model.opset_import) {
                 const domain = opset_import.domain || 'ai.onnx';
-                const version = typeof opset_import.version === 'bigint' ? opset_import.version.toNumber() : opset_import.version;
+                const version = typeof opset_import.version === 'bigint' ? Number(opset_import.version) : opset_import.version;
                 if (!imports.has(domain) || imports.get(domain) > version) {
                     imports.set(domain, version);
                 }
