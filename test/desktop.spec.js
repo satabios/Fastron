@@ -54,6 +54,13 @@ playwright.test('desktop', async () => {
     const search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
     playwright.expect(search).toBeDefined();
 
+    // Enable weights for testing tensor values
+    await page.evaluate(() => {
+        if (window.NETRON_CONFIG) {
+            window.NETRON_CONFIG.skipTensorWeights = false;
+        }
+    });
+
     // Find and activate tensor
     await search.fill('convolution1_W');
     await page.waitForSelector('.sidebar-find-content li', { state: 'attached' });
