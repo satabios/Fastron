@@ -54,12 +54,10 @@ playwright.test('desktop', async () => {
     const search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
     playwright.expect(search).toBeDefined();
 
-    // Enable weights for testing tensor values
-    await page.evaluate(() => {
-        if (window.NETRON_CONFIG) {
-            window.NETRON_CONFIG.skipTensorWeights = false;
-        }
-    });
+    // Enable weights by clicking the weights toggle button and waiting for reload
+    const weightsButton = await page.waitForSelector('#weights-toggle-button', { state: 'visible', timeout: 5000 });
+    await weightsButton.click();
+    await page.waitForTimeout(2000); // Wait for model to reload with weights
 
     // Find and activate tensor
     await search.fill('convolution1_W');
