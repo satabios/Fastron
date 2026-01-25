@@ -21,8 +21,16 @@ desktop.Host = class {
         this._global = global;
         this._telemetry = new base.Telemetry(this._window);
         process.on('uncaughtException', (error) => {
-            this.exception(error, true);
-            this.message(error.message);
+            try {
+                this.exception(error, true);
+                // Avoid showing error message for certain recoverable errors
+                if (error && error.message && !error.message.includes('Object has been destroyed')) {
+                    this.message(error.message);
+                }
+            } catch (handlerError) {
+                // eslint-disable-next-line no-console
+                console.error('Error in uncaught exception handler:', handlerError);
+            }
         });
         this._global.eval = () => {
             throw new Error('eval.eval() not supported.');

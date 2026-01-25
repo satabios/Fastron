@@ -133,7 +133,7 @@ app.Application = class {
             repository: `https://github.com/${this._package.repository}`,
             platform: process.platform,
             separator: path.sep,
-            titlebar: true // process.platform === 'darwin'
+            titlebar: process.platform !== 'darwin' // Use custom titlebar on Windows/Linux, native menu on macOS
         };
         return this._environment;
     }
