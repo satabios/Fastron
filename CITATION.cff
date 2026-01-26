@@ -7,6 +7,6 @@ authors:
 doi: "10.5281/zenodo.5854962"
 date-released: 2017-12-04
 license: "MIT"
-url: "https://github.com/lutzroeder/netron"
-repository-code: "https://github.com/lutzroeder/netron"
+url: "https://github.com/satabios/netron"
+repository-code: "https://github.com/satabios/netron"
 message: "If you use Fastron in your research, please cite it using these metadata."

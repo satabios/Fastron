@@ -1,5 +1,5 @@
 {
-    "appId": "com.lutzroeder.netron",
+    "appId": "com.satabios.netron",
     "productName": "Netron",
     "files": [ "source/**/*" ],
     "directories": { "buildResources": "./publish" },
@@ -94,8 +94,8 @@
         "azureSignOptions" : {
             "publisherName": "Lutz Roeder",
             "endpoint": "https://eus.codesigning.azure.net/",
-            "codeSigningAccountName": "lutzroeder",
-            "certificateProfileName": "lutzroeder"
+            "codeSigningAccountName": "satabios",
+            "certificateProfileName": "satabios"
         }
     },
     "dmg": {

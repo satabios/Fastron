@@ -3,14 +3,14 @@
     "productName": "Fastron",
     "author": {
         "name": "satabios",
-        "email": "lutzroeder@users.noreply.github.com",
-        "url": "https://www.lutzroeder.com"
+        "email": "satabios@users.noreply.github.com",
+        "url": "https://www.satabios.com"
     },
     "version": "8.8.1",
     "date": "2026-01-03 04:00:58",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
-    "repository": "lutzroeder/netron",
+    "repository": "satabios/netron",
     "type": "module",
     "main": "source/app.js",
     "scripts": {

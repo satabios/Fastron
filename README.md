@@ -1,6 +1,6 @@
 <div align="center">
-<img width="400px" height="100px" src="https://github.com/lutzroeder/netron/raw/main/.github/logo-light.svg#gh-light-mode-only">
-<img width="400px" height="100px" src="https://github.com/lutzroeder/netron/raw/main/.github/logo-dark.svg#gh-dark-mode-only">
+<img width="400px" height="100px" src="https://github.com/satabios/netron/raw/main/.github/logo-light.svg#gh-light-mode-only">
+<img width="400px" height="100px" src="https://github.com/satabios/netron/raw/main/.github/logo-dark.svg#gh-dark-mode-only">
 </div>
 
 Netron is a viewer for neural network, deep learning and machine learning models.
@@ -9,17 +9,17 @@ Netron supports ONNX, TensorFlow Lite, PyTorch, torch.export, ExecuTorch, Core M
 
 Netron has experimental support for TorchScript, MLIR, TensorFlow, OpenVINO, RKNN, ncnn, MNN, PaddlePaddle, GGUF and scikit-learn.
 
-<p align='center'><a href='https://www.lutzroeder.com/ai'><img src='.github/screenshot.png' width='800'></a></p>
+<p align='center'><a href='https://www.satabios.com/ai'><img src='.github/screenshot.png' width='800'></a></p>
 
 ## Install
 
 **Browser**: [**Start**](https://netron.app) the browser version.
 
-**macOS**: [**Download**](https://github.com/lutzroeder/netron/releases/latest) the `.dmg` file or run `brew install --cask netron`.
+**macOS**: [**Download**](https://github.com/satabios/netron/releases/latest) the `.dmg` file or run `brew install --cask netron`.
 
-**Linux**: [**Download**](https://github.com/lutzroeder/netron/releases/latest) the `.deb` or `.rpm` file.
+**Linux**: [**Download**](https://github.com/satabios/netron/releases/latest) the `.deb` or `.rpm` file.
 
-**Windows**: [**Download**](https://github.com/lutzroeder/netron/releases/latest) the `.exe` installer or run `winget install -s winget netron`.
+**Windows**: [**Download**](https://github.com/satabios/netron/releases/latest) the `.exe` installer or run `winget install -s winget netron`.
 
 **Python**: `pip install netron`, then run `netron [FILE]` or `netron.start('[FILE]')`.
 
