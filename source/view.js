@@ -182,9 +182,12 @@ view.View = class {
                     enabled: () => this.activeTarget
                 });
                 view.add({
-                    label: () => this.options.weights ? 'Hide &Weights' : 'Show &Weights',
+                    label: () => {
+                        const skipWeights = typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
+                        return skipWeights ? 'Enable &Weights' : 'Disable &Weights';
+                    },
                     accelerator: 'CmdOrCtrl+I',
-                    execute: () => this.toggle('weights'),
+                    execute: async () => await this.toggleWeights(),
                     enabled: () => this.activeTarget
                 });
                 view.add({
@@ -375,7 +378,6 @@ view.View = class {
         switch (name) {
             case 'names':
             case 'attributes':
-            case 'weights':
                 this._options[name] = !this._options[name];
                 this._reload();
                 break;
