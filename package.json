@@ -1,8 +1,8 @@
 {
-    "name": "netron",
-    "productName": "Netron",
+    "name": "fastron",
+    "productName": "Fastron",
     "author": {
-        "name": "Lutz Roeder",
+        "name": "satabios",
         "email": "lutzroeder@users.noreply.github.com",
         "url": "https://www.lutzroeder.com"
     },

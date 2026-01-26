@@ -4,11 +4,11 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "netron"
+name = "fastron"
 version = "0.0.0"
 description = "Viewer for neural network, deep learning and machine learning models."
 authors = [
-    { name = "Lutz Roeder", email = "lutzroeder@users.noreply.github.com" }
+    { name = "satabios", email = "lutzroeder@users.noreply.github.com" }
 ]
 keywords = [
     "onnx", "keras", "tensorflow", "tflite", "coreml", "mxnet", "caffe", "caffe2",
@@ -36,11 +36,11 @@ homepage = "https://github.com/lutzroeder/netron"
 
 [project.readme]
 text = """
-Netron is a viewer for neural network, deep learning and machine learning models.
+Fastron is a viewer for neural network, deep learning and machine learning models.
 
-Netron supports ONNX, TensorFlow Lite, Core ML, Keras, Caffe, Darknet, PyTorch, TensorFlow.js, Safetensors and NumPy.
+Fastron supports ONNX, TensorFlow Lite, Core ML, Keras, Caffe, Darknet, PyTorch, TensorFlow.js, Safetensors and NumPy.
 
-Netron has experimental support for TorchScript, torch.export, ExecuTorch, TensorFlow, OpenVINO, RKNN, ncnn, MNN, PaddlePaddle, GGUF and scikit-learn.
+Fastron has experimental support for TorchScript, torch.export, ExecuTorch, TensorFlow, OpenVINO, RKNN, ncnn, MNN, PaddlePaddle, GGUF and scikit-learn.
 """
 content-type = "text/markdown"
 
