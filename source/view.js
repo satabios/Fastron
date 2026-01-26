@@ -76,32 +76,56 @@ view.View = class {
                     : 'Weights: Enabled (Full) - Click to disable weight loading';
             }
 
-            this._element('sidebar-model-button').addEventListener('click', () => {
-                this.showModelProperties();
-            });
-            this._element('sidebar-target-button').addEventListener('click', () => {
-                this.showTargetProperties();
-            });
-            this._element('zoom-in-button').addEventListener('click', () => {
-                this.zoomIn();
-            });
-            this._element('zoom-out-button').addEventListener('click', () => {
-                this.zoomOut();
-            });
-            this._element('lazy-render-button').addEventListener('click', async () => {
-                await this.toggleLazyRendering();
-            });
-            this._element('weights-toggle-button').addEventListener('click', async () => {
-                await this.toggleWeights();
-            });
-            this._element('toolbar-path-back-button').addEventListener('click', async () => {
-                await this.popTarget();
-            });
-            this._element('sidebar').addEventListener('mousewheel', (e) => {
-                if (e.shiftKey || e.ctrlKey) {
-                    e.preventDefault();
-                }
-            }, { passive: false });
+            const sidebarModelButton = this._element('sidebar-model-button');
+            if (sidebarModelButton) {
+                sidebarModelButton.addEventListener('click', () => {
+                    this.showModelProperties();
+                });
+            }
+            const sidebarTargetButton = this._element('sidebar-target-button');
+            if (sidebarTargetButton) {
+                sidebarTargetButton.addEventListener('click', () => {
+                    this.showTargetProperties();
+                });
+            }
+            const zoomInButton = this._element('zoom-in-button');
+            if (zoomInButton) {
+                zoomInButton.addEventListener('click', () => {
+                    this.zoomIn();
+                });
+            }
+            const zoomOutButton = this._element('zoom-out-button');
+            if (zoomOutButton) {
+                zoomOutButton.addEventListener('click', () => {
+                    this.zoomOut();
+                });
+            }
+            const lazyRenderBtn = this._element('lazy-render-button');
+            if (lazyRenderBtn) {
+                lazyRenderBtn.addEventListener('click', async () => {
+                    await this.toggleLazyRendering();
+                });
+            }
+            const weightsToggleBtn = this._element('weights-toggle-button');
+            if (weightsToggleBtn) {
+                weightsToggleBtn.addEventListener('click', async () => {
+                    await this.toggleWeights();
+                });
+            }
+            const toolbarPathBackButton = this._element('toolbar-path-back-button');
+            if (toolbarPathBackButton) {
+                toolbarPathBackButton.addEventListener('click', async () => {
+                    await this.popTarget();
+                });
+            }
+            const sidebar = this._element('sidebar');
+            if (sidebar) {
+                sidebar.addEventListener('mousewheel', (e) => {
+                    if (e.shiftKey || e.ctrlKey) {
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+            }
             this._host.document.addEventListener('keydown', () => {
                 if (this._target) {
                     this._target.select(null);
@@ -481,7 +505,7 @@ view.View = class {
     async toggleWeights() {
         // Toggle the global weight loading configuration
         if (typeof window !== 'undefined' && window.NETRON_CONFIG) {
-            const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights;
+            const currentSkipWeights = window.NETRON_CONFIG.skipTensorWeights !== false;
             const newSkipWeights = !currentSkipWeights;
 
             // Update global configuration
