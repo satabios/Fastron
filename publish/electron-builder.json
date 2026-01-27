@@ -92,7 +92,7 @@
     "win": {
         "target": [ "nsis" ],
         "azureSignOptions" : {
-            "publisherName": "Lutz Roeder",
+            "publisherName": "satabios",
             "endpoint": "https://eus.codesigning.azure.net/",
             "codeSigningAccountName": "satabios",
             "certificateProfileName": "satabios"
