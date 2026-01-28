@@ -348,7 +348,20 @@ view.View = class {
                 this._find = state;
             });
             sidebar.on('select', (sender, value) => {
-                this._target.scrollTo(this._target.select([value]));
+                const selection = this._target.select([value]);
+                if (selection && selection.length > 0) {
+                    this._target.scrollTo(selection);
+                } else {
+                    // If selection failed, try to find the node containing this value
+                    console.warn('[Find] Could not select value directly, attempting to find parent node');
+                    // For arguments/weights, try to get the parent node
+                    if (value && value.node) {
+                        const nodeSelection = this._target.select([value.node]);
+                        if (nodeSelection && nodeSelection.length > 0) {
+                            this._target.scrollTo(nodeSelection);
+                        }
+                    }
+                }
             });
             sidebar.on('focus', (sender, value) => {
                 this._target.focus([value]);
@@ -358,7 +371,16 @@ view.View = class {
             });
             sidebar.on('activate', (sender, value) => {
                 this._sidebar.close();
-                this._target.scrollTo(this._target.activate(value));
+                const selection = this._target.activate(value);
+                if (selection && selection.length > 0) {
+                    this._target.scrollTo(selection);
+                } else if (value && value.node) {
+                    // Fallback to parent node
+                    const nodeSelection = this._target.activate(value.node);
+                    if (nodeSelection && nodeSelection.length > 0) {
+                        this._target.scrollTo(nodeSelection);
+                    }
+                }
             });
             this._sidebar.open(sidebar, 'Find');
         }
@@ -1904,6 +1926,14 @@ view.Graph = class extends grapher.Graph {
                     const element = this._table.get(value);
                     array = array.concat(element.select());
                     this._selection.add(element);
+                } else if (value && value.name && this._values.has(value.name)) {
+                    // Fallback: try to find by name for duplicate values
+                    const element = this._values.get(value.name);
+                    if (element && this._table.has(element.value)) {
+                        const viewElement = this._table.get(element.value);
+                        array = array.concat(viewElement.select());
+                        this._selection.add(viewElement);
+                    }
                 }
             }
             return array;
@@ -1917,6 +1947,15 @@ view.Graph = class extends grapher.Graph {
             const element = this._table.get(value);
             element.activate();
             return this.select([value]);
+        } else if (value && value.name && this._values.has(value.name)) {
+            // Fallback: try to find by name for duplicate values
+            this.select(null);
+            const valueElement = this._values.get(value.name);
+            if (valueElement && this._table.has(valueElement.value)) {
+                const element = this._table.get(valueElement.value);
+                element.activate();
+                return this.select([valueElement.value]);
+            }
         }
         return [];
     }
