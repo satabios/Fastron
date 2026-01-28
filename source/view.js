@@ -351,14 +351,12 @@ view.View = class {
                 const selection = this._target.select([value]);
                 if (selection && selection.length > 0) {
                     this._target.scrollTo(selection);
-                } else {
+                } else if (value && value.node) {
                     // If selection failed, try to find the node containing this value
                     // For arguments/weights, try to get the parent node
-                    if (value && value.node) {
-                        const nodeSelection = this._target.select([value.node]);
-                        if (nodeSelection && nodeSelection.length > 0) {
-                            this._target.scrollTo(nodeSelection);
-                        }
+                    const nodeSelection = this._target.select([value.node]);
+                    if (nodeSelection && nodeSelection.length > 0) {
+                        this._target.scrollTo(nodeSelection);
                     }
                 }
             });
