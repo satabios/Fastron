@@ -353,7 +353,6 @@ view.View = class {
                     this._target.scrollTo(selection);
                 } else {
                     // If selection failed, try to find the node containing this value
-                    console.warn('[Find] Could not select value directly, attempting to find parent node');
                     // For arguments/weights, try to get the parent node
                     if (value && value.node) {
                         const nodeSelection = this._target.select([value.node]);
