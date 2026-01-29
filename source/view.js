@@ -550,8 +550,15 @@ view.View = class {
             }
 
             // Reload the current model with new weight loading configuration
-            if (this._model) {
-                await this._updateTarget(this._model, this._path);
+            if (this._model && this._path) {
+                this.show('welcome spinner');
+                try {
+                    await this._updateTarget(this._model, this._path);
+                } catch (error) {
+                    if (error) {
+                        this.error(error, 'Failed to reload model with new weight settings.', 'welcome');
+                    }
+                }
             }
         }
     }
@@ -4629,20 +4636,25 @@ view.FindSidebar = class extends view.Control {
             this._search.appendChild(toggle.element);
         }
         this._content.addEventListener('click', (e) => {
-            if (this._table.has(e.target)) {
-                this.emit('select', this._table.get(e.target));
+            const listItem = e.target.closest('li');
+            if (listItem && this._table.has(listItem)) {
+                this.emit('select', this._table.get(listItem));
             }
         });
         this._content.addEventListener('dblclick', (e) => {
-            if (this._table.has(e.target)) {
-                this.emit('activate', this._table.get(e.target));
+            const listItem = e.target.closest('li');
+            if (listItem && this._table.has(listItem)) {
+                this.emit('activate', this._table.get(listItem));
             }
         });
         this._content.addEventListener('pointerover', (e) => {
             for (const element of this._focused) {
                 this._blur(element);
             }
-            this._focus(e.target);
+            const listItem = e.target.closest('li');
+            if (listItem) {
+                this._focus(listItem);
+            }
         });
     }
 
