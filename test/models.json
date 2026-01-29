@@ -128,7 +128,7 @@
     "type":     "_",
     "target":   "onnx-metadata.json",
     "source":   "https://raw.githubusercontent.com/satabios/netron/main/source/onnx-metadata.json",
-    "error":    "Invalid file content. File contains Netron metadata.",
+    "error":    "Invalid file content. File contains Fastron metadata.",
     "link":     "https://github.com/satabios/netron/blob/main/source/onnx-metadata.json"
   },
   {

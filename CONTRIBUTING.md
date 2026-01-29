@@ -1,8 +1,8 @@
-# How to Develop Netron
+# How to Develop Fastron
 
 ## Debugging
 
-Netron can run as both an [Electron](https://electronjs.org) app or a web app.
+Fastron can run as both an [Electron](https://electronjs.org) app or a web app.
 
 To start the Electron app, install [Node.js](https://nodejs.org) and run: 
 

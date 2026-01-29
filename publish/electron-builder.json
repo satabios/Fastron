@@ -1,6 +1,6 @@
 {
-    "appId": "com.satabios.netron",
-    "productName": "Netron",
+    "appId": "com.satabios.fastron",
+    "productName": "Fastron",
     "files": [ "source/**/*" ],
     "directories": { "buildResources": "./publish" },
     "fileAssociations": [
@@ -74,7 +74,7 @@
     ],
     "linux": {
         "artifactName":"${productName}-${version}-${arch}.${ext}",
-        "executableName": "netron",
+        "executableName": "fastron",
         "target": [ 
             { "target": "deb", "arch": ["x64"] },
             { "target": "rpm", "arch": ["x64"] }

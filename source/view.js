@@ -351,12 +351,26 @@ view.View = class {
                 const selection = this._target.select([value]);
                 if (selection && selection.length > 0) {
                     this._target.scrollTo(selection);
-                } else if (value && value.node) {
-                    // If selection failed, try to find the node containing this value
-                    // For arguments/weights, try to get the parent node
-                    const nodeSelection = this._target.select([value.node]);
-                    if (nodeSelection && nodeSelection.length > 0) {
-                        this._target.scrollTo(nodeSelection);
+                } else {
+                    // Selection failed, likely due to object identity mismatch
+                    // Try to find by name as fallback
+                    if (value && value.name) {
+                        const allValues = Array.from(this._target._values.values());
+                        const matchedValue = allValues.find((v) => v.value.name === value.name);
+                        if (matchedValue && matchedValue.value) {
+                            const retrySelection = this._target.select([matchedValue.value]);
+                            if (retrySelection && retrySelection.length > 0) {
+                                this._target.scrollTo(retrySelection);
+                                return;
+                            }
+                        }
+                    }
+                    // Last resort: try parent node
+                    if (value && value.node) {
+                        const nodeSelection = this._target.select([value.node]);
+                        if (nodeSelection && nodeSelection.length > 0) {
+                            this._target.scrollTo(nodeSelection);
+                        }
                     }
                 }
             });
@@ -371,11 +385,25 @@ view.View = class {
                 const selection = this._target.activate(value);
                 if (selection && selection.length > 0) {
                     this._target.scrollTo(selection);
-                } else if (value && value.node) {
+                } else {
+                    // Activation failed, try name-based fallback
+                    if (value && value.name) {
+                        const allValues = Array.from(this._target._values.values());
+                        const matchedValue = allValues.find((v) => v.value.name === value.name);
+                        if (matchedValue && matchedValue.value) {
+                            const retrySelection = this._target.activate(matchedValue.value);
+                            if (retrySelection && retrySelection.length > 0) {
+                                this._target.scrollTo(retrySelection);
+                                return;
+                            }
+                        }
+                    }
                     // Fallback to parent node
-                    const nodeSelection = this._target.activate(value.node);
-                    if (nodeSelection && nodeSelection.length > 0) {
-                        this._target.scrollTo(nodeSelection);
+                    if (value && value.node) {
+                        const nodeSelection = this._target.activate(value.node);
+                        if (nodeSelection && nodeSelection.length > 0) {
+                            this._target.scrollTo(nodeSelection);
+                        }
                     }
                 }
             });
@@ -6769,12 +6797,12 @@ view.ModelFactoryService = class {
             const obj = await context.peek('json');
             if (obj) {
                 const formats = [
-                    { name: 'Netron metadata', tags: ['[].name', '[].schema'] },
-                    { name: 'Netron metadata', tags: ['[].name', '[].attributes'] },
-                    { name: 'Netron metadata', tags: ['[].name', '[].category'] },
-                    { name: 'Netron test data', tags: ['[].type', '[].target', '[].source', '[].format', '[].link'] },
-                    { name: 'Netron configuration', tags: ['recents', 'consent'] },
-                    { name: 'Netron metrics data', tags: ['signature', 'metrics'] },
+                    { name: 'Fastron metadata', tags: ['[].name', '[].schema'] },
+                    { name: 'Fastron metadata', tags: ['[].name', '[].attributes'] },
+                    { name: 'Fastron metadata', tags: ['[].name', '[].category'] },
+                    { name: 'Fastron test data', tags: ['[].type', '[].target', '[].source', '[].format', '[].link'] },
+                    { name: 'Fastron configuration', tags: ['recents', 'consent'] },
+                    { name: 'Fastron metrics data', tags: ['signature', 'metrics'] },
                     { name: 'Darkflow metadata', tags: ['net', 'type', 'model'] },
                     { name: 'keras-yolo2 configuration', tags: ['model', 'train', 'valid'] },
                     { name: 'Vulkan SwiftShader ICD manifest', tags: ['file_format_version', 'ICD'] },
