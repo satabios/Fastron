@@ -3,13 +3,40 @@
 <img width="400px" height="100px" src="https://github.com/satabios/netron/raw/main/.github/logo-dark.svg#gh-dark-mode-only">
 </div>
 
-Fastron is a viewer for neural network, deep learning and machine learning models.
+# Fastron - Optimized Neural Network Visualizer
+
+Fastron is a high-performance viewer for neural network, deep learning and machine learning models. This is an optimized fork of [Netron](https://github.com/lutzroeder/netron) with significant performance enhancements for working with large models.
+
+## Overview
 
 Fastron supports ONNX, TensorFlow Lite, PyTorch, torch.export, ExecuTorch, Core ML, Keras, Caffe, Darknet, TensorFlow.js, Safetensors and NumPy.
 
 Fastron has experimental support for TorchScript, MLIR, TensorFlow, OpenVINO, RKNN, ncnn, MNN, PaddlePaddle, GGUF and scikit-learn.
 
 <p align='center'><a href='https://www.satabios.com/ai'><img src='.github/screenshot.png' width='800'></a></p>
+
+## Key Features & Optimizations
+
+### Performance Enhancements
+
+This optimized fork introduces several critical performance improvements:
+
+- **On-the-Fly Node & Edge Loading**: Models load dynamically as you navigate. Only the currently visible nodes and edges are rendered, dramatically improving initial load times and memory usage for large models.
+  
+- **Weight Toggle Button**: Easily toggle the display of model weights on/off to reduce visual clutter and improve performance when analyzing model architecture without weight details.
+
+- **Weight Disabling**: Disable weight data loading entirely for ultra-fast model visualization. Perfect for quickly understanding model topology without the overhead of loading weight tensors.
+
+- **Incremental Rendering**: The visualization uses progressive rendering to ensure responsiveness even with massive neural networks containing millions of nodes.
+
+- **Memory Optimizations**: Efficient data structures and lazy-loading strategies minimize memory footprint while maintaining full feature functionality.
+
+### Standard Features
+
+- **Multiple Format Support**: View models across 40+ neural network framework formats
+- **Interactive Visualization**: Zoom, pan, and inspect model architecture in detail
+- **Metadata Display**: View layer properties, operations, and data flow information
+- **Cross-Platform**: Available as browser app, desktop applications, and Python package
 
 ## Install
 
@@ -38,5 +65,27 @@ Sample model files to download or open using the browser version:
  * **Core ML**: [exermote](https://github.com/Lausbert/Exermote/raw/master/ExermoteInference/ExermoteCoreML/ExermoteCoreML/Model/Exermote.mlmodel) [[open](https://netron.app?url=https://github.com/Lausbert/Exermote/raw/master/ExermoteInference/ExermoteCoreML/ExermoteCoreML/Model/Exermote.mlmodel)]
  * **Darknet**: [yolo](https://github.com/AlexeyAB/darknet/raw/master/cfg/yolo.cfg) [[open](https://netron.app?url=https://github.com/AlexeyAB/darknet/raw/master/cfg/yolo.cfg)]
 
+## Citation
 
-.
+This project is an optimized fork of [Netron](https://github.com/lutzroeder/netron) by Lutz Roeder. Netron is an excellent open-source neural network visualizer that has been enhanced with performance optimizations for handling extremely large models.
+
+If you use Fastron, please consider crediting the original Netron project:
+
+```bibtex
+@software{netron,
+  author = {Lutz Roeder},
+  title = {Netron: Visualizer for neural network, deep learning and machine learning models},
+  url = {https://github.com/lutzroeder/netron},
+  year = {2018}
+}
+```
+
+And my optimizations:
+
+```bibtex
+@software{fastron,
+  title = {Fastron: Performance-Optimized Neural Network Visualizer},
+  url = {https://github.com/satabios/netron},
+  year = {2026}
+}
+```
