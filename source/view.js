@@ -350,7 +350,7 @@ view.View = class {
             sidebar.on('select', (sender, value) => {
                 const selection = this._target.select([value]);
                 if (selection && selection.length > 0) {
-                    this._target.scrollTo(selection);
+                    this._target.scrollToSelection(selection, value);
                 } else {
                     // Selection failed, likely due to object identity mismatch
                     // Try to find by name as fallback
@@ -360,7 +360,7 @@ view.View = class {
                         if (matchedValue && matchedValue.value) {
                             const retrySelection = this._target.select([matchedValue.value]);
                             if (retrySelection && retrySelection.length > 0) {
-                                this._target.scrollTo(retrySelection);
+                                this._target.scrollToSelection(retrySelection, matchedValue.value);
                                 return;
                             }
                         }
@@ -369,7 +369,7 @@ view.View = class {
                     if (value && value.node) {
                         const nodeSelection = this._target.select([value.node]);
                         if (nodeSelection && nodeSelection.length > 0) {
-                            this._target.scrollTo(nodeSelection);
+                            this._target.scrollToSelection(nodeSelection, value.node);
                         }
                     }
                 }
@@ -384,7 +384,7 @@ view.View = class {
                 this._sidebar.close();
                 const selection = this._target.activate(value);
                 if (selection && selection.length > 0) {
-                    this._target.scrollTo(selection);
+                    this._target.scrollToSelection(selection, value);
                 } else {
                     // Activation failed, try name-based fallback
                     if (value && value.name) {
@@ -393,7 +393,7 @@ view.View = class {
                         if (matchedValue && matchedValue.value) {
                             const retrySelection = this._target.activate(matchedValue.value);
                             if (retrySelection && retrySelection.length > 0) {
-                                this._target.scrollTo(retrySelection);
+                                this._target.scrollToSelection(retrySelection, matchedValue.value);
                                 return;
                             }
                         }
@@ -402,7 +402,7 @@ view.View = class {
                     if (value && value.node) {
                         const nodeSelection = this._target.activate(value.node);
                         if (nodeSelection && nodeSelection.length > 0) {
-                            this._target.scrollTo(nodeSelection);
+                            this._target.scrollToSelection(nodeSelection, value.node);
                         }
                     }
                 }
@@ -2370,6 +2370,107 @@ view.Graph = class extends grapher.Graph {
         // Update visibility based on new viewport
         this.updateViewportVisibility(viewportBounds);
         this.updateVisibleElements(document);
+    }
+
+    _getOriginTranslate(origin) {
+        const transform = origin.getAttribute('transform');
+        if (!transform) {
+            return { x: 0, y: 0 };
+        }
+        const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+        if (!match) {
+            return { x: 0, y: 0 };
+        }
+        return { x: parseFloat(match[1]), y: parseFloat(match[2]) };
+    }
+
+    _getGraphBoundsForValue(value) {
+        if (!value || !this._table.has(value)) {
+            return null;
+        }
+        const element = this._table.get(value);
+        if (element && typeof element.x === 'number' && typeof element.y === 'number') {
+            const width = element.width || 0;
+            const height = element.height || 0;
+            return {
+                x: element.x - (width / 2),
+                y: element.y - (height / 2),
+                width,
+                height
+            };
+        }
+        if (element && Array.isArray(element._edges)) {
+            let left = Number.POSITIVE_INFINITY;
+            let right = Number.NEGATIVE_INFINITY;
+            let top = Number.POSITIVE_INFINITY;
+            let bottom = Number.NEGATIVE_INFINITY;
+            let hasPoint = false;
+            for (const edge of element._edges) {
+                const points = edge && edge.label ? edge.label.points : null;
+                if (Array.isArray(points)) {
+                    for (const point of points) {
+                        if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+                            hasPoint = true;
+                            left = Math.min(left, point.x);
+                            right = Math.max(right, point.x);
+                            top = Math.min(top, point.y);
+                            bottom = Math.max(bottom, point.y);
+                        }
+                    }
+                }
+            }
+            if (hasPoint) {
+                return { x: left, y: top, width: right - left, height: bottom - top };
+            }
+        }
+        return null;
+    }
+
+    _scrollToGraphBounds(bounds, behavior) {
+        const document = this.host.document;
+        const container = document.getElementById('target');
+        const origin = document.getElementById('origin');
+        if (!container || !origin) {
+            return;
+        }
+        const translate = this._getOriginTranslate(origin);
+        const centerX = bounds.x + (bounds.width / 2) + translate.x;
+        const centerY = bounds.y + (bounds.height / 2) + translate.y;
+        const left = (centerX * this._zoom) - (container.clientWidth / 2);
+        const top = (centerY * this._zoom) - (container.clientHeight / 2);
+        container.scrollTo({ left, top, behavior: behavior || 'smooth' });
+    }
+
+    scrollToSelection(selection, value, behavior) {
+        if (selection && selection.length > 0) {
+            const hasVisible = selection.some((element) => {
+                if (!element || !element.getBoundingClientRect) {
+                    return false;
+                }
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 || rect.height > 0;
+            });
+            if (hasVisible) {
+                this.scrollTo(selection, behavior);
+                return true;
+            }
+        }
+        return this.scrollToValue(value, behavior);
+    }
+
+    scrollToValue(value, behavior) {
+        if (!value) {
+            return false;
+        }
+        let bounds = this._getGraphBoundsForValue(value);
+        if (!bounds && value.node) {
+            bounds = this._getGraphBoundsForValue(value.node);
+        }
+        if (bounds) {
+            this._scrollToGraphBounds(bounds, behavior);
+            return true;
+        }
+        return false;
     }
 
     scrollTo(selection, behavior) {
