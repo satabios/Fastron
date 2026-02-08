@@ -13,7 +13,16 @@ Fastron supports ONNX, TensorFlow Lite, PyTorch, torch.export, ExecuTorch, Core 
 
 Fastron has experimental support for TorchScript, MLIR, TensorFlow, OpenVINO, RKNN, ncnn, MNN, PaddlePaddle, GGUF and scikit-learn.
 
-<p align='center'><a href='https://www.satabios.com/ai'><img src='.github/screenshot.png' width='800'></a></p>
+### Performance Features in Action
+
+**On-Demand Weight Loading:**
+
+![On-Demand Weight Loading](https://github.com/satabios/Fastron/raw/experiment/gifs/On-Demand-Weight-Loading.gif)
+
+**On-The-Fly Node Loading:**
+
+![On-The-Fly Node Loading](https://github.com/satabios/Fastron/raw/experiment/gifs/On-The-Fly-Node-Loading.gif)
+<!-- <p align='center'><a href='https://www.satabios.com/ai'><img src='.github/screenshot.png' width='800'></a></p> -->
 
 ## Key Features & Optimizations
 
