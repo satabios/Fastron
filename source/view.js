@@ -3898,9 +3898,25 @@ view.TensorView = class extends view.Expander {
         const content = this.createElement('pre');
         const value = this._value;
         const tensor = this._tensor;
+        const skipWeights = typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
 
         // Check if tensor has deferred data that can be loaded on demand
         if (value._deferred) {
+            if (!skipWeights) {
+                // Weights are enabled — auto-materialize deferred data
+                content.innerHTML = '&#x23F3; Loading weight data...';
+                const materialize = async () => {
+                    try {
+                        await value.read();
+                        this._tensor = new base.Tensor(value, { skipWeights: false });
+                        this._renderTensorContent(value, this._tensor, content);
+                    } catch (error) {
+                        content.innerHTML = `Error loading weights: ${error.message}`;
+                    }
+                };
+                materialize();
+                return content;
+            }
             content.innerHTML = `${tensor.getMetadataString()}\n\n<i style="color: #888;">Weight data not loaded. Click to load on demand.</i>`;
             content.style.cursor = 'pointer';
             content.addEventListener('click', async () => {
@@ -3922,7 +3938,7 @@ view.TensorView = class extends view.Expander {
         }
 
         // Check if weights are skipped (legacy path)
-        if (tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+        if (tensor._skipWeights && skipWeights) {
             const metadataString = tensor.getMetadataString();
             content.innerHTML = `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`;
             return content;
