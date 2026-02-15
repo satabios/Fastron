@@ -64,8 +64,16 @@ playwright.test('browser', async ({ page }) => {
     const valueButton = await valueEntry.waitForSelector('.sidebar-item-value-button');
     await valueButton.click();
 
-    // Check first number from tensor value
+    // Check first number from tensor value — wait for async weight materialization
     const pre = await valueEntry.waitForSelector('pre');
+    await page.waitForFunction(
+        (el) => {
+            const text = el.textContent || '';
+            return /\d+\.\d+/.test(text);
+        },
+        pre,
+        { timeout: 10000 }
+    );
     const text = (await pre.textContent()) || '';
     const match = text.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/i);
     playwright.expect(match).not.toBeNull();
