@@ -67,6 +67,13 @@ CNTK.proto.NDArrayView = class NDArrayView {
     static decode(reader, length) {
         const message = new CNTK.proto.NDArrayView();
         const end = length === undefined ? reader.length : reader.position + length;
+        // Skip weight data fields when skipTensorWeights is enabled
+        const lazy = !CNTK.proto.NDArrayView._materializing &&
+                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
+                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
+        if (lazy) {
+            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+        }
         while (reader.position < end) {
             const tag = reader.uint32();
             switch (tag >>> 3) {
@@ -80,16 +87,32 @@ CNTK.proto.NDArrayView = class NDArrayView {
                     message.shape = CNTK.proto.NDShape.decode(reader, reader.uint32());
                     break;
                 case 4:
-                    message.float_values = CNTK.proto.NDArrayView.FloatValues.decode(reader, reader.uint32());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.float_values = CNTK.proto.NDArrayView.FloatValues.decode(reader, reader.uint32());
+                    }
                     break;
                 case 5:
-                    message.double_values = CNTK.proto.NDArrayView.DoubleValues.decode(reader, reader.uint32());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.double_values = CNTK.proto.NDArrayView.DoubleValues.decode(reader, reader.uint32());
+                    }
                     break;
                 case 6:
-                    message.bytes_value = CNTK.proto.NDArrayView.BytesValue.decode(reader, reader.uint32());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.bytes_value = CNTK.proto.NDArrayView.BytesValue.decode(reader, reader.uint32());
+                    }
                     break;
                 case 7:
-                    message.sint32_values = CNTK.proto.NDArrayView.IntValues.decode(reader, reader.uint32());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.sint32_values = CNTK.proto.NDArrayView.IntValues.decode(reader, reader.uint32());
+                    }
                     break;
                 default:
                     reader.skipType(tag & 7);

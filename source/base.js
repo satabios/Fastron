@@ -663,9 +663,14 @@ base.Tensor = class {
         this.stride = tensor.stride;
 
         // Check global configuration for skipping weights
+        // options.skipWeights can explicitly override (false = force enable weights)
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        this._skipWeights = options.skipWeights === true || config.skipTensorWeights === true;
-        this._metadataOnly = options.metadataOnly || config.showTensorMetadata || false;
+        if ('skipWeights' in options) {
+            this._skipWeights = options.skipWeights;
+        } else {
+            this._skipWeights = config.skipTensorWeights === true;
+        }
+        this._metadataOnly = options.metadataOnly || (this._skipWeights && config.showTensorMetadata) || false;
         this._weightsSkipped = false;
 
         base.Tensor._dataTypes = base.Tensor._dataTypes || new Map([

@@ -54,6 +54,13 @@ caffe.BlobProto = class BlobProto {
     static decode(reader, length) {
         const message = new caffe.BlobProto();
         const end = length === undefined ? reader.length : reader.position + length;
+        // Skip weight data fields when skipTensorWeights is enabled for faster loading
+        const lazy = !caffe.BlobProto._materializing &&
+                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
+                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
+        if (lazy) {
+            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+        }
         while (reader.position < end) {
             const tag = reader.uint32();
             switch (tag >>> 3) {
@@ -61,16 +68,32 @@ caffe.BlobProto = class BlobProto {
                     message.shape = caffe.BlobShape.decode(reader, reader.uint32());
                     break;
                 case 5:
-                    message.data = reader.floats(message.data, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.data = reader.floats(message.data, tag);
+                    }
                     break;
                 case 6:
-                    message.diff = reader.floats(message.diff, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.diff = reader.floats(message.diff, tag);
+                    }
                     break;
                 case 8:
-                    message.double_data = reader.doubles(message.double_data, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.double_data = reader.doubles(message.double_data, tag);
+                    }
                     break;
                 case 9:
-                    message.double_diff = reader.doubles(message.double_diff, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.double_diff = reader.doubles(message.double_diff, tag);
+                    }
                     break;
                 case 1:
                     message.num = reader.int32();
