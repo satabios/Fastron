@@ -72,15 +72,16 @@ playwright.test('desktop', async () => {
 
     // Check first number from tensor value — wait for async weight materialization
     const pre = await valueEntry.waitForSelector('pre');
-    await page.waitForFunction(
-        (el) => {
-            const text = el.textContent || '';
-            return /\d+\.\d+/.test(text);
-        },
-        pre,
-        { timeout: 10000 }
-    );
-    const text = (await pre.textContent()) || '';
+    let text = '';
+    /* eslint-disable no-await-in-loop */
+    for (let i = 0; i < 50; i++) {
+        text = (await pre.textContent()) || '';
+        if (/\d+\.\d+/.test(text)) {
+            break;
+        }
+        await page.waitForTimeout(200);
+    }
+    /* eslint-enable no-await-in-loop */
     const match = text.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/i);
     playwright.expect(match).not.toBeNull();
     const first = parseFloat(match[0]);
