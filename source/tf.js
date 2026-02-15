@@ -1118,105 +1118,139 @@ tf.Tensor = class {
         if (tensor) {
             this.type = new tf.TensorType(tensor.dtype, tensor.tensor_shape || tensor.tensorShape);
             this._tensor = tensor;
-            if (Object.prototype.hasOwnProperty.call(tensor, 'tensor_content')) {
-                this._values = tensor.tensor_content;
+            // If tensor has deferred weight data, store reference for on-demand loading
+            if (tensor._deferred) {
+                this._deferred = tensor._deferred;
                 this.encoding = '<';
             } else {
-                const DataType = tf.proto.tensorflow.DataType;
-                switch (tensor.dtype) {
-                    case DataType.DT_INVALID: {
-                        break;
-                    }
-                    case DataType.DT_BFLOAT16: {
-                        const values = tensor.half_val || [];
-                        this._values = new Uint8Array(values.length << 2);
-                        const view = new DataView(this._values.buffer, this._values.byteOffset, this._values.byteLength);
-                        for (let i = 0; i < values.length; i++) {
-                            view.setUint32(i << 2, values[i] << 16, true);
-                        }
-                        this.encoding = '<';
-                        break;
-                    }
-                    case DataType.DT_HALF: {
-                        const values = tensor.half_val || [];
-                        this._values = new Uint8Array(values.length << 1);
-                        const view = new DataView(this._values.buffer, this._values.byteOffset, this._values.byteLength);
-                        for (let i = 0; i < values.length; i++) {
-                            view.setUint16(i << 1, values[i], true);
-                        }
-                        this.encoding = '<';
-                        break;
-                    }
-                    case DataType.DT_FLOAT: {
-                        this._values = tensor.float_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_DOUBLE: {
-                        this._values = tensor.double_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_UINT8:
-                    case DataType.DT_UINT16:
-                    case DataType.DT_INT8:
-                    case DataType.DT_INT16:
-                    case DataType.DT_INT32: {
-                        this._values = tensor.int_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_UINT32: {
-                        this._values = tensor.uint32_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_INT64: {
-                        this._values = tensor.int64_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_UINT64: {
-                        this._values = tensor.uint64_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_BOOL: {
-                        this._values = tensor.bool_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_STRING: {
-                        this._values = tensor.string_val || null;
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_COMPLEX64: {
-                        const values = tensor.scomplex_val || null;
-                        this._values = new Array(values.length >> 1);
-                        for (let i = 0; i < values.length; i += 2) {
-                            this._values[i >> 1] = new base.Complex(values[i], values[i + 1]);
-                        }
-                        this.encoding = '|';
-                        break;
-                    }
-                    case DataType.DT_COMPLEX128: {
-                        const values = tensor.dcomplex_val || null;
-                        this._values = new Array(values.length >> 1);
-                        for (let i = 0; i < values.length; i += 2) {
-                            this._values[i >> 1] = new base.Complex(values[i], values[i + 1]);
-                        }
-                        this.encoding = '|';
-                        break;
-                    }
-                    default: {
-                        throw new tf.Error(`Unsupported tensor data type '${tensor.dtype}'.`);
-                    }
-                }
+                this._initDataFromProto(tensor);
             }
         } else {
             this.type = new tf.TensorType('?', null);
             this._tensor = null;
+        }
+    }
+
+    _initDataFromProto(tensor) {
+        if (Object.prototype.hasOwnProperty.call(tensor, 'tensor_content')) {
+            this._values = tensor.tensor_content;
+            this.encoding = '<';
+        } else {
+            const DataType = tf.proto.tensorflow.DataType;
+            switch (tensor.dtype) {
+                case DataType.DT_INVALID: {
+                    break;
+                }
+                case DataType.DT_BFLOAT16: {
+                    const values = tensor.half_val || [];
+                    this._values = new Uint8Array(values.length << 2);
+                    const view = new DataView(this._values.buffer, this._values.byteOffset, this._values.byteLength);
+                    for (let i = 0; i < values.length; i++) {
+                        view.setUint32(i << 2, values[i] << 16, true);
+                    }
+                    this.encoding = '<';
+                    break;
+                }
+                case DataType.DT_HALF: {
+                    const values = tensor.half_val || [];
+                    this._values = new Uint8Array(values.length << 1);
+                    const view = new DataView(this._values.buffer, this._values.byteOffset, this._values.byteLength);
+                    for (let i = 0; i < values.length; i++) {
+                        view.setUint16(i << 1, values[i], true);
+                    }
+                    this.encoding = '<';
+                    break;
+                }
+                case DataType.DT_FLOAT: {
+                    this._values = tensor.float_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_DOUBLE: {
+                    this._values = tensor.double_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_UINT8:
+                case DataType.DT_UINT16:
+                case DataType.DT_INT8:
+                case DataType.DT_INT16:
+                case DataType.DT_INT32: {
+                    this._values = tensor.int_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_UINT32: {
+                    this._values = tensor.uint32_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_INT64: {
+                    this._values = tensor.int64_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_UINT64: {
+                    this._values = tensor.uint64_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_BOOL: {
+                    this._values = tensor.bool_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_STRING: {
+                    this._values = tensor.string_val || null;
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_COMPLEX64: {
+                    const values = tensor.scomplex_val || null;
+                    this._values = new Array(values.length >> 1);
+                    for (let i = 0; i < values.length; i += 2) {
+                        this._values[i >> 1] = new base.Complex(values[i], values[i + 1]);
+                    }
+                    this.encoding = '|';
+                    break;
+                }
+                case DataType.DT_COMPLEX128: {
+                    const values = tensor.dcomplex_val || null;
+                    this._values = new Array(values.length >> 1);
+                    for (let i = 0; i < values.length; i += 2) {
+                        this._values[i >> 1] = new base.Complex(values[i], values[i + 1]);
+                    }
+                    this.encoding = '|';
+                    break;
+                }
+                default: {
+                    throw new tf.Error(`Unsupported tensor data type '${this._tensor.dtype}'.`);
+                }
+            }
+        }
+    }
+
+    peek() {
+        return !this._deferred;
+    }
+
+    async read() {
+        if (this._deferred) {
+            const { buffer, start, end } = this._deferred;
+            const subBuffer = new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
+            const reader = protobuf.BinaryReader.open(subBuffer);
+            tf.proto.tensorflow.TensorProto._materializing = true;
+            try {
+                const fullTensor = tf.proto.tensorflow.TensorProto.decode(reader);
+                // Copy metadata we already have
+                fullTensor.dtype = this._tensor.dtype;
+                fullTensor.tensor_shape = this._tensor.tensor_shape;
+                this._tensor = fullTensor;
+                this._initDataFromProto(fullTensor);
+            } finally {
+                tf.proto.tensorflow.TensorProto._materializing = false;
+            }
+            delete this._deferred;
         }
     }
 

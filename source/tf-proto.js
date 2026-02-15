@@ -1765,6 +1765,13 @@ tensorflow.TensorProto = class TensorProto {
     static decode(reader, length) {
         const message = new tensorflow.TensorProto();
         const end = length === undefined ? reader.length : reader.position + length;
+        // Skip weight data fields when skipTensorWeights is enabled for faster loading
+        const lazy = !tensorflow.TensorProto._materializing &&
+                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
+                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
+        if (lazy) {
+            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+        }
         while (reader.position < end) {
             const tag = reader.uint32();
             switch (tag >>> 3) {
@@ -1778,49 +1785,109 @@ tensorflow.TensorProto = class TensorProto {
                     message.version_number = reader.int32();
                     break;
                 case 4:
-                    message.tensor_content = reader.bytes();
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.tensor_content = reader.bytes();
+                    }
                     break;
                 case 13:
-                    message.half_val = reader.array(message.half_val, () => reader.int32(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.half_val = reader.array(message.half_val, () => reader.int32(), tag);
+                    }
                     break;
                 case 5:
-                    message.float_val = reader.floats(message.float_val, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.float_val = reader.floats(message.float_val, tag);
+                    }
                     break;
                 case 6:
-                    message.double_val = reader.doubles(message.double_val, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.double_val = reader.doubles(message.double_val, tag);
+                    }
                     break;
                 case 7:
-                    message.int_val = reader.array(message.int_val, () => reader.int32(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.int_val = reader.array(message.int_val, () => reader.int32(), tag);
+                    }
                     break;
                 case 8:
-                    message.string_val.push(reader.bytes());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.string_val.push(reader.bytes());
+                    }
                     break;
                 case 9:
-                    message.scomplex_val = reader.floats(message.scomplex_val, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.scomplex_val = reader.floats(message.scomplex_val, tag);
+                    }
                     break;
                 case 10:
-                    message.int64_val = reader.array(message.int64_val, () => reader.int64(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.int64_val = reader.array(message.int64_val, () => reader.int64(), tag);
+                    }
                     break;
                 case 11:
-                    message.bool_val = reader.array(message.bool_val, () => reader.bool(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.bool_val = reader.array(message.bool_val, () => reader.bool(), tag);
+                    }
                     break;
                 case 12:
-                    message.dcomplex_val = reader.doubles(message.dcomplex_val, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.dcomplex_val = reader.doubles(message.dcomplex_val, tag);
+                    }
                     break;
                 case 14:
-                    message.resource_handle_val.push(tensorflow.ResourceHandleProto.decode(reader, reader.uint32()));
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.resource_handle_val.push(tensorflow.ResourceHandleProto.decode(reader, reader.uint32()));
+                    }
                     break;
                 case 15:
-                    message.variant_val.push(tensorflow.VariantTensorDataProto.decode(reader, reader.uint32()));
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.variant_val.push(tensorflow.VariantTensorDataProto.decode(reader, reader.uint32()));
+                    }
                     break;
                 case 16:
-                    message.uint32_val = reader.array(message.uint32_val, () => reader.uint32(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.uint32_val = reader.array(message.uint32_val, () => reader.uint32(), tag);
+                    }
                     break;
                 case 17:
-                    message.uint64_val = reader.array(message.uint64_val, () => reader.uint64(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.uint64_val = reader.array(message.uint64_val, () => reader.uint64(), tag);
+                    }
                     break;
                 case 18:
-                    message.float8_val = reader.bytes();
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.float8_val = reader.bytes();
+                    }
                     break;
                 default:
                     reader.skipType(tag & 7);

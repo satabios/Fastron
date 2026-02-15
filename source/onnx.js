@@ -449,6 +449,7 @@ onnx.Tensor = class {
 
     constructor(context, tensor, category = null) {
         this._category = category;
+        this._context = context;
         if (tensor.indices && tensor.values) {
             this._name = tensor.values.name || '';
             this._type = context.createTensorType(tensor.values.data_type, tensor.dims, 'sparse');
@@ -459,137 +460,152 @@ onnx.Tensor = class {
             this._name = tensor.name || '';
             this._type = context.createTensorType(tensor.data_type, tensor.dims);
             this._location = context.createLocation(tensor.data_location);
-            switch (tensor.data_location) {
-                case onnx.DataLocation.DEFAULT: {
-                    switch (tensor.data_type) {
-                        case onnx.DataType.UNDEFINED: {
-                            break;
+            // If tensor has deferred weight data, store the reference for on-demand loading
+            // instead of trying to read from empty arrays
+            if (tensor._deferred) {
+                this._deferred = tensor._deferred;
+                this._deferredDataType = tensor.data_type;
+                this._deferredDataLocation = tensor.data_location;
+                this._deferredExternalData = tensor.external_data;
+                // Set encoding hint based on data type for metadata display
+                this._encoding = '<';
+            } else {
+                this._initDataFromProto(context, tensor);
+            }
+        }
+    }
+
+    _initDataFromProto(context, tensor) {
+        switch (tensor.data_location) {
+            case onnx.DataLocation.DEFAULT: {
+                switch (tensor.data_type) {
+                    case onnx.DataType.UNDEFINED: {
+                        break;
+                    }
+                    case onnx.DataType.FLOAT:
+                        this._data = new Float32Array(tensor.float_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.DOUBLE:
+                        this._data = new Float64Array(tensor.double_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.BOOL:
+                        if (tensor.int32_data && tensor.int32_data.length > 0) {
+                            const array = tensor.int32_data;
+                            this._data = new Array(array.length);
+                            for (let i = 0; i < this._data.length; i++) {
+                                this._data[i] = array[i] === 0 ? false : true;
+                            }
+                            this._encoding = '|';
                         }
-                        case onnx.DataType.FLOAT:
-                            this._data = new Float32Array(tensor.float_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.DOUBLE:
-                            this._data = new Float64Array(tensor.double_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.BOOL:
-                            if (tensor.int32_data && tensor.int32_data.length > 0) {
-                                const array = tensor.int32_data;
-                                this._data = new Array(array.length);
-                                for (let i = 0; i < this._data.length; i++) {
-                                    this._data[i] = array[i] === 0 ? false : true;
-                                }
-                                this._encoding = '|';
+                        break;
+                    case onnx.DataType.INT8:
+                        this._data = new Int8Array(tensor.int32_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.UINT8:
+                        this._data = new Uint8Array(tensor.int32_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.INT16:
+                        this._data = new Int32Array(tensor.int32_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.UINT16:
+                        this._data = new Int32Array(tensor.int32_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.INT32:
+                        this._data = new Int32Array(tensor.int32_data);
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.UINT32:
+                    case onnx.DataType.UINT64:
+                        this._data = tensor.uint64_data;
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.INT64:
+                        this._data = tensor.int64_data;
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.STRING:
+                        this._data = tensor.string_data;
+                        this._encoding = '|';
+                        break;
+                    case onnx.DataType.COMPLEX64:
+                    case onnx.DataType.COMPLEX128:
+                        break;
+                    case onnx.DataType.FLOAT16:
+                    case onnx.DataType.BFLOAT16:
+                        if (tensor.int32_data && tensor.int32_data.length > 0) {
+                            const array = tensor.int32_data;
+                            const buffer = new Uint8Array(array.length << 1);
+                            const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+                            for (let i = 0; i < array.length; i++) {
+                                view.setUint16(i << 1, array[i], true);
                             }
-                            break;
-                        case onnx.DataType.INT8:
-                            this._data = new Int8Array(tensor.int32_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.UINT8:
-                            this._data = new Uint8Array(tensor.int32_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.INT16:
-                            this._data = new Int32Array(tensor.int32_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.UINT16:
-                            this._data = new Int32Array(tensor.int32_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.INT32:
-                            this._data = new Int32Array(tensor.int32_data);
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.UINT32:
-                        case onnx.DataType.UINT64:
-                            this._data = tensor.uint64_data;
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.INT64:
-                            this._data = tensor.int64_data;
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.STRING:
-                            this._data = tensor.string_data;
-                            this._encoding = '|';
-                            break;
-                        case onnx.DataType.COMPLEX64:
-                        case onnx.DataType.COMPLEX128:
-                            break;
-                        case onnx.DataType.FLOAT16:
-                        case onnx.DataType.BFLOAT16:
-                            if (tensor.int32_data && tensor.int32_data.length > 0) {
-                                const array = tensor.int32_data;
-                                const buffer = new Uint8Array(array.length << 1);
-                                const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-                                for (let i = 0; i < array.length; i++) {
-                                    view.setUint16(i << 1, array[i], true);
-                                }
-                                this._data = buffer;
-                                this._encoding = '<';
-                            }
-                            break;
-                        case onnx.DataType.FLOAT8E8M0:
-                        case onnx.DataType.FLOAT4E2M1:
-                        case onnx.DataType.FLOAT8E4M3FN:
-                        case onnx.DataType.FLOAT8E4M3FNUZ:
-                        case onnx.DataType.FLOAT8E5M2:
-                        case onnx.DataType.FLOAT8E5M2FNUZ:
-                            if (tensor.int32_data && tensor.int32_data.length > 0) {
-                                this._data = new Uint8Array(Array.from(tensor.int32_data));
-                                this._encoding = '<';
-                            }
-                            break;
-                        case onnx.DataType.INT2:
-                        case onnx.DataType.INT4:
-                        case onnx.DataType.UINT2:
-                        case onnx.DataType.UINT4:
-                            if (tensor.int32_data && tensor.int32_data.length > 0) {
-                                this._data = new Uint8Array(Array.from(tensor.int32_data));
-                                this._encoding = '<';
-                            }
-                            break;
-                        default:
-                            throw new onnx.Error(`Unsupported tensor data type '${tensor.data_type}'.`);
-                    }
-                    if (this._data && (Array.isArray(this._data) || ArrayBuffer.isView(this._data)) && this._data.length === 0) {
-                        this._data = undefined;
-                    }
-                    if (!this._data && tensor.raw_data && tensor.raw_data.length > 0) {
-                        this._data = tensor.raw_data;
-                        this._encoding = '<';
-                    }
-                    break;
-                }
-                case onnx.DataLocation.EXTERNAL: {
-                    if (Array.isArray(tensor.external_data)) {
-                        const data = new Map();
-                        for (const entry of tensor.external_data) {
-                            data.set(entry.key, entry.value);
-                        }
-                        if (data.has('location')) {
-                            this._location = data.get('location').toString();
-                            const location = context.location(this._location);
-                            const offset = data.has('offset') ? parseInt(data.get('offset'), 10) : 0;
-                            const length = data.has('length') ? parseInt(data.get('length'), 10) : -1;
-                            this._request = { location, offset, length };
+                            this._data = buffer;
                             this._encoding = '<';
                         }
+                        break;
+                    case onnx.DataType.FLOAT8E8M0:
+                    case onnx.DataType.FLOAT4E2M1:
+                    case onnx.DataType.FLOAT8E4M3FN:
+                    case onnx.DataType.FLOAT8E4M3FNUZ:
+                    case onnx.DataType.FLOAT8E5M2:
+                    case onnx.DataType.FLOAT8E5M2FNUZ:
+                        if (tensor.int32_data && tensor.int32_data.length > 0) {
+                            this._data = new Uint8Array(Array.from(tensor.int32_data));
+                            this._encoding = '<';
+                        }
+                        break;
+                    case onnx.DataType.INT2:
+                    case onnx.DataType.INT4:
+                    case onnx.DataType.UINT2:
+                    case onnx.DataType.UINT4:
+                        if (tensor.int32_data && tensor.int32_data.length > 0) {
+                            this._data = new Uint8Array(Array.from(tensor.int32_data));
+                            this._encoding = '<';
+                        }
+                        break;
+                    default:
+                        throw new onnx.Error(`Unsupported tensor data type '${tensor.data_type}'.`);
+                }
+                if (this._data && (Array.isArray(this._data) || ArrayBuffer.isView(this._data)) && this._data.length === 0) {
+                    this._data = undefined;
+                }
+                if (!this._data && tensor.raw_data && tensor.raw_data.length > 0) {
+                    this._data = tensor.raw_data;
+                    this._encoding = '<';
+                }
+                break;
+            }
+            case onnx.DataLocation.EXTERNAL: {
+                if (Array.isArray(tensor.external_data)) {
+                    const data = new Map();
+                    for (const entry of tensor.external_data) {
+                        data.set(entry.key, entry.value);
                     }
-                    break;
+                    if (data.has('location')) {
+                        this._location = data.get('location').toString();
+                        const location = this._context.location(this._location);
+                        const offset = data.has('offset') ? parseInt(data.get('offset'), 10) : 0;
+                        const length = data.has('length') ? parseInt(data.get('length'), 10) : -1;
+                        this._request = { location, offset, length };
+                        this._encoding = '<';
+                    }
                 }
-                default: {
-                    break;
-                }
+                break;
+            }
+            default: {
+                break;
             }
         }
     }
 
     peek() {
-        return !this._request;
+        return !this._request && !this._deferred;
     }
 
     async read() {
@@ -599,6 +615,24 @@ onnx.Tensor = class {
             const length = this._request.length;
             this._data = await location.read(offset, length);
             delete this._request;
+        }
+        // Materialize deferred weight data on demand
+        if (this._deferred) {
+            const { buffer, start, end } = this._deferred;
+            const subBuffer = new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
+            const reader = protobuf.BinaryReader.open(subBuffer);
+            // Temporarily disable lazy decoding to get full tensor data
+            onnx.proto.TensorProto._materializing = true;
+            try {
+                const fullTensor = onnx.proto.TensorProto.decode(reader);
+                this._initDataFromProto(this._context, fullTensor);
+            } finally {
+                onnx.proto.TensorProto._materializing = false;
+            }
+            delete this._deferred;
+            delete this._deferredDataType;
+            delete this._deferredDataLocation;
+            delete this._deferredExternalData;
         }
     }
 

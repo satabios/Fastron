@@ -486,6 +486,7 @@ caffe.Node = class {
 caffe.Tensor = class {
 
     constructor(blob) {
+        this._blob = blob;
         let shape = [];
         if (Object.prototype.hasOwnProperty.call(blob, 'num') &&
             Object.prototype.hasOwnProperty.call(blob, 'channels') &&
@@ -506,17 +507,50 @@ caffe.Tensor = class {
         } else if (Object.prototype.hasOwnProperty.call(blob, 'shape')) {
             shape = blob.shape.dim.map((dim) => Number(dim));
         }
-        let dataType = '?';
-        if (blob.data.length > 0) {
-            dataType = 'float32';
-            this.values = blob.data;
-        } else if (blob.double_data.length > 0) {
-            dataType = 'float64';
-            this.values = blob.double_data;
-        }
         this.category = 'Blob';
         this.encoding = '|';
-        this.type = new caffe.TensorType(dataType, new caffe.TensorShape(shape));
+        // If blob has deferred data, don't try to read values yet
+        if (blob._deferred) {
+            this._deferred = blob._deferred;
+            this.type = new caffe.TensorType('?', new caffe.TensorShape(shape));
+        } else {
+            let dataType = '?';
+            if (blob.data.length > 0) {
+                dataType = 'float32';
+                this.values = blob.data;
+            } else if (blob.double_data.length > 0) {
+                dataType = 'float64';
+                this.values = blob.double_data;
+            }
+            this.type = new caffe.TensorType(dataType, new caffe.TensorShape(shape));
+        }
+    }
+
+    peek() {
+        return !this._deferred;
+    }
+
+    async read() {
+        if (this._deferred) {
+            const { buffer, start, end } = this._deferred;
+            const { BinaryReader } = await import('./protobuf.js');
+            const subBuffer = new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
+            const reader = BinaryReader.open(subBuffer);
+            caffe.proto.BlobProto._materializing = true;
+            try {
+                const fullBlob = caffe.proto.BlobProto.decode(reader);
+                if (fullBlob.data.length > 0) {
+                    this.type = new caffe.TensorType('float32', this.type.shape);
+                    this.values = fullBlob.data;
+                } else if (fullBlob.double_data.length > 0) {
+                    this.type = new caffe.TensorType('float64', this.type.shape);
+                    this.values = fullBlob.double_data;
+                }
+            } finally {
+                caffe.proto.BlobProto._materializing = false;
+            }
+            delete this._deferred;
+        }
     }
 };
 

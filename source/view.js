@@ -3821,19 +3821,12 @@ view.ValueView = class extends view.Expander {
                 if (Array.isArray(stride) && stride.length > 0) {
                     this._code('stride', stride.join(','));
                 }
-                // Only create TensorView if weights are enabled
-                if (typeof window === 'undefined' || !window.NETRON_CONFIG || !window.NETRON_CONFIG.skipTensorWeights) {
-                    const tensor = new view.TensorView(this._view, initializer);
-                    const content = tensor.content;
-                    const line = this.createElement('div', 'sidebar-item-value-line-border');
-                    line.appendChild(content);
-                    this._add(line);
-                } else {
-                    // Show placeholder when weights are disabled
-                    const line = this.createElement('div', 'sidebar-item-value-line-border');
-                    line.innerHTML = '<i style="color: #999;">[Tensor data not loaded - Enable weights to view]</i>';
-                    this._add(line);
-                }
+                // Create TensorView - supports on-demand weight loading when deferred
+                const tensor = new view.TensorView(this._view, initializer);
+                const content = tensor.content;
+                const line = this.createElement('div', 'sidebar-item-value-line-border');
+                line.appendChild(content);
+                this._add(line);
             }
         } catch (error) {
             super.error(error, false);
@@ -3906,11 +3899,41 @@ view.TensorView = class extends view.Expander {
         const value = this._value;
         const tensor = this._tensor;
 
-        // Check if weights are skipped
+        // Check if tensor has deferred data that can be loaded on demand
+        if (value._deferred) {
+            content.innerHTML = `${tensor.getMetadataString()}\n\n<i style="color: #888;">Weight data not loaded. Click to load on demand.</i>`;
+            content.style.cursor = 'pointer';
+            content.addEventListener('click', async () => {
+                content.innerHTML = '&#x23F3; Loading weight data...';
+                content.style.cursor = 'default';
+                try {
+                    await value.read();
+                    // Re-create the base.Tensor with skipWeights=false since data was explicitly loaded
+                    this._tensor = new base.Tensor(value, { skipWeights: false });
+                    // Re-render the content
+                    const newContent = this._renderTensorContent(value, this._tensor);
+                    content.innerHTML = '';
+                    content.appendChild(newContent);
+                } catch (error) {
+                    content.innerHTML = `Error loading weights: ${error.message}`;
+                }
+            }, { once: true });
+            return content;
+        }
+
+        // Check if weights are skipped (legacy path)
         if (tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
             const metadataString = tensor.getMetadataString();
             content.innerHTML = `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`;
             return content;
+        }
+
+        return this._renderTensorContent(value, tensor, content);
+    }
+
+    _renderTensorContent(value, tensor, content) {
+        if (!content) {
+            content = this.createElement('pre');
         }
 
         if (tensor.encoding !== '<' && tensor.encoding !== '>' && tensor.encoding !== '|') {
@@ -3959,6 +3982,17 @@ view.TensorView = class extends view.Expander {
     }
 
     async export() {
+        const value = this._value;
+        // If tensor has deferred data, load it first before export
+        if (value && value._deferred) {
+            try {
+                await value.read();
+                this._tensor = new base.Tensor(value, { skipWeights: false });
+            } catch (error) {
+                this.error(new Error(`Cannot load tensor data for export: ${error.message}`), 'Export Error', null);
+                return;
+            }
+        }
         const tensor = this._tensor;
         // Don't allow export when weights are not loaded
         if (tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
@@ -4198,8 +4232,9 @@ view.TensorSidebar = class extends view.ObjectSidebar {
             }
             // Conditionally create TensorView based on skipTensorWeights config
             if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
-                const item = new view.TextView(this._view, '[Tensor weights disabled - Click the weights toggle button in the toolbar to enable]');
-                this.addEntry('value', item);
+                // Still create TensorView so users can load weights on demand
+                const value = new view.TensorView(this._view, tensor, this._tensor);
+                this.addEntry('value', value);
             } else {
                 const value = new view.TensorView(this._view, tensor, this._tensor);
                 this.addEntry('value', value);
@@ -4215,29 +4250,31 @@ view.TensorSidebar = class extends view.ObjectSidebar {
         // Metrics
         if (value.initializer) {
             const tensor = value.initializer;
-            const promise = tensor.peek && !tensor.peek() ? tensor.read() : Promise.resolve();
-            promise.then(() => {
-                this._tensor = new base.Tensor(tensor);
-                // Skip metrics calculation if weights are skipped
-                if (this._tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
-                    // Don't calculate metrics when weights are not loaded
-                    return;
-                }
-                if (!this._tensor.empty) {
-                    if (!this._metrics) {
-                        const tensor = new metrics.Tensor(this._tensor);
-                        this._metrics = this._view.model.attachment.metrics.tensor(tensor);
+            // Skip metrics when tensor data is deferred (not yet loaded)
+            if (!tensor._deferred) {
+                const promise = tensor.peek && !tensor.peek() ? tensor.read() : Promise.resolve();
+                promise.then(() => {
+                    this._tensor = new base.Tensor(tensor);
+                    // Skip metrics calculation if weights are skipped and no data available
+                    if (this._tensor._skipWeights && typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
+                        return;
                     }
-                    if (this._metrics.length > 0) {
-                        this.addSection('Metrics');
-                        for (const metric of this._metrics) {
-                            const value = metric.type === 'percentage' ? `${(metric.value * 100).toFixed(1)}%` : metric.value;
-                            const argument = new metadata.Argument(metric.name, value, metric.type);
-                            this.addArgument(metric.name, argument, 'attribute');
+                    if (!this._tensor.empty) {
+                        if (!this._metrics) {
+                            const tensor = new metrics.Tensor(this._tensor);
+                            this._metrics = this._view.model.attachment.metrics.tensor(tensor);
+                        }
+                        if (this._metrics.length > 0) {
+                            this.addSection('Metrics');
+                            for (const metric of this._metrics) {
+                                const value = metric.type === 'percentage' ? `${(metric.value * 100).toFixed(1)}%` : metric.value;
+                                const argument = new metadata.Argument(metric.name, value, metric.type);
+                                this.addArgument(metric.name, argument, 'attribute');
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
         }
     }
 

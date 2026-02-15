@@ -34,7 +34,7 @@ This optimized fork introduces several critical performance improvements:
   
 - **Weight Toggle Button**: Easily toggle the display of model weights on/off to reduce visual clutter and improve performance when analyzing model architecture without weight details.
 
-- **Weight Disabling**: Disable weight data loading entirely for ultra-fast model visualization. Perfect for quickly understanding model topology without the overhead of loading weight tensors.
+- **Weight Disabling**: Disable weight data loading entirely for ultra-fast model visualization. When disabled, weight tensors are **not parsed** during model loading — only metadata (shape, type, name) is extracted. Weight data can be loaded on demand per-tensor when needed, without reloading the entire model. Perfect for quickly understanding model topology without the overhead of loading weight tensors.
 
 - **Incremental Rendering**: The visualization uses progressive rendering to ensure responsiveness even with massive neural networks containing millions of nodes.
 

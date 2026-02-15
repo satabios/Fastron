@@ -1400,6 +1400,14 @@ onnx.TensorProto = class TensorProto {
     static decode(reader, length) {
         const message = new onnx.TensorProto();
         const end = length === undefined ? reader.length : reader.position + length;
+        // When skipTensorWeights is enabled, skip parsing weight data fields entirely
+        // and store a deferred buffer reference for on-demand loading
+        const lazy = !onnx.TensorProto._materializing &&
+                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
+                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
+        if (lazy) {
+            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+        }
         while (reader.position < end) {
             const tag = reader.uint32();
             switch (tag >>> 3) {
@@ -1410,19 +1418,39 @@ onnx.TensorProto = class TensorProto {
                     message.data_type = reader.int32();
                     break;
                 case 3:
-                    message.segment = onnx.TensorProto.Segment.decode(reader, reader.uint32());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.segment = onnx.TensorProto.Segment.decode(reader, reader.uint32());
+                    }
                     break;
                 case 4:
-                    message.float_data = reader.floats(message.float_data, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.float_data = reader.floats(message.float_data, tag);
+                    }
                     break;
                 case 5:
-                    message.int32_data = reader.array(message.int32_data, () => reader.int32(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.int32_data = reader.array(message.int32_data, () => reader.int32(), tag);
+                    }
                     break;
                 case 6:
-                    message.string_data.push(reader.bytes());
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.string_data.push(reader.bytes());
+                    }
                     break;
                 case 7:
-                    message.int64_data = reader.array(message.int64_data, () => reader.int64(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.int64_data = reader.array(message.int64_data, () => reader.int64(), tag);
+                    }
                     break;
                 case 8:
                     message.name = reader.string();
@@ -1431,7 +1459,11 @@ onnx.TensorProto = class TensorProto {
                     message.doc_string = reader.string();
                     break;
                 case 9:
-                    message.raw_data = reader.bytes();
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.raw_data = reader.bytes();
+                    }
                     break;
                 case 13:
                     message.external_data.push(onnx.StringStringEntryProto.decode(reader, reader.uint32()));
@@ -1440,10 +1472,18 @@ onnx.TensorProto = class TensorProto {
                     message.data_location = reader.int32();
                     break;
                 case 10:
-                    message.double_data = reader.doubles(message.double_data, tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.double_data = reader.doubles(message.double_data, tag);
+                    }
                     break;
                 case 11:
-                    message.uint64_data = reader.array(message.uint64_data, () => reader.uint64(), tag);
+                    if (lazy) {
+                        reader.skipType(tag & 7);
+                    } else {
+                        message.uint64_data = reader.array(message.uint64_data, () => reader.uint64(), tag);
+                    }
                     break;
                 case 16:
                     message.metadata_props.push(onnx.StringStringEntryProto.decode(reader, reader.uint32()));
