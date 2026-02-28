@@ -71,8 +71,8 @@ comparator.Controller = class {
             const containerRight = document.getElementById('target-right');
 
             const options = {
-                weights: false,
-                attributes: false,
+                weights: true,
+                attributes: true,
                 names: false,
                 direction: 'vertical',
                 mousewheel: 'scroll',
