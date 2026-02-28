@@ -664,10 +664,168 @@ desktop.Context = class {
     }
 };
 
+desktop.ComparatorHost = class {
+
+    constructor() {
+        this._document = window.document;
+        this._window = window;
+        this._environment = electron.ipcRenderer.sendSync('get-environment', {});
+        this._environment.menu = this._environment.titlebar && this._environment.platform !== 'darwin';
+    }
+
+    get window() {
+        return this._window;
+    }
+
+    get document() {
+        return this._document;
+    }
+
+    get version() {
+        return this._environment.version;
+    }
+
+    get type() {
+        return 'Electron';
+    }
+
+    environment(name) {
+        return this._environment[name];
+    }
+
+    async require(id) {
+        return import(`${id}.js`);
+    }
+
+    worker(id) {
+        return new this.window.Worker(`${id}.js`, { type: 'module' });
+    }
+
+    async request(file, encoding, basename) {
+        return new Promise((resolve, reject) => {
+            const dirname = path.dirname(url.fileURLToPath(import.meta.url));
+            const pathname = path.join(basename || dirname, file);
+            fs.stat(pathname, (err, stat) => {
+                if (err && err.code === 'ENOENT') {
+                    reject(new Error(`The file '${file}' does not exist.`));
+                } else if (err) {
+                    reject(err);
+                } else if (!stat.isFile()) {
+                    reject(new Error(`The path '${file}' is not a file.`));
+                } else if (stat && stat.size < 0x40000000) {
+                    fs.readFile(pathname, encoding, (err, data) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(encoding ? data : new base.BinaryStream(data));
+                        }
+                    });
+                } else if (encoding) {
+                    reject(new Error(`The file '${file}' size (${stat.size.toString()}) for encoding '${encoding}' is greater than 2 GB.`));
+                } else {
+                    const stream = new node.FileStream(pathname, 0, stat.size, stat.mtimeMs);
+                    resolve(stream);
+                }
+            });
+        });
+    }
+
+    async _context(location) {
+        const basename = path.basename(location);
+        const stat = fs.statSync(location);
+        if (stat.isFile()) {
+            const dirname = path.dirname(location);
+            const stream = await this.request(basename, null, dirname);
+            return new desktop.Context(this, dirname, basename, stream);
+        } else if (stat.isDirectory()) {
+            const entries = new Map();
+            const walk = (dir) => {
+                for (const item of fs.readdirSync(dir)) {
+                    const pathname = path.join(dir, item);
+                    const stat = fs.statSync(pathname);
+                    if (stat.isDirectory()) {
+                        walk(pathname);
+                    } else if (stat.isFile()) {
+                        const stream = new node.FileStream(pathname, 0, stat.size, stat.mtimeMs);
+                        const name = pathname.split(path.sep).join(path.posix.sep);
+                        entries.set(name, stream);
+                    }
+                }
+            };
+            walk(location);
+            return new desktop.Context(this, location, basename, null, entries);
+        }
+        throw new Error(`Unsupported path stat '${JSON.stringify(stat)}'.`);
+    }
+
+    exception(error) {
+        // eslint-disable-next-line no-console
+        console.error(error);
+    }
+
+    event() {
+        // no-op for comparator
+    }
+
+    message() {
+        return new Promise(() => {});
+    }
+
+    _element(id) {
+        return this.document.getElementById(id);
+    }
+};
+
 if (typeof window !== 'undefined') {
-    window.addEventListener('load', () => {
-        const value = new desktop.Host();
-        window.__view__ = new view.View(value);
-        window.__view__.start();
+    window.addEventListener('load', async () => {
+        const isComparator = document.getElementById('target-left') !== null;
+        if (isComparator) {
+            const host = new desktop.ComparatorHost();
+            const { Controller } = await import('./comparator.js');
+            const controller = new Controller(host);
+
+            electron.ipcRenderer.on('compare', (event, data) => {
+                controller.compare(data.pathA, data.pathB).catch((error) => {
+                    // eslint-disable-next-line no-console
+                    console.error('Comparison failed:', error);
+                });
+            });
+
+            // Titlebar setup
+            if (host.environment('titlebar')) {
+                const target = document.querySelector('.comparator-container');
+                if (target) {
+                    target.style.marginTop = '32px';
+                    target.style.height = 'calc(100% - 32px)';
+                }
+                host._element('titlebar').classList.add('titlebar-visible');
+            }
+            if (host.environment('titlebar') && host.environment('platform') !== 'darwin') {
+                host._element('titlebar-control-box').classList.add('titlebar-control-box-visible');
+            }
+            const titlebarClose = host._element('titlebar-close');
+            if (titlebarClose) {
+                titlebarClose.addEventListener('click', () => {
+                    electron.ipcRenderer.sendSync('window-close', {});
+                });
+            }
+            const titlebarToggle = host._element('titlebar-toggle');
+            if (titlebarToggle) {
+                titlebarToggle.addEventListener('click', () => {
+                    electron.ipcRenderer.sendSync('window-toggle', {});
+                });
+            }
+            const titlebarMinimize = host._element('titlebar-minimize');
+            if (titlebarMinimize) {
+                titlebarMinimize.addEventListener('click', () => {
+                    electron.ipcRenderer.sendSync('window-minimize', {});
+                });
+            }
+            electron.ipcRenderer.sendSync('update-window-state', {});
+        } else {
+            const value = new desktop.Host();
+            window.__view__ = new view.View(value);
+            window.__view__.start();
+        }
     });
 }
