@@ -22,7 +22,12 @@ Fastron has experimental support for TorchScript, MLIR, TensorFlow, OpenVINO, RK
 **On-The-Fly Node Loading:**
 
 ![On-The-Fly Node Loading](https://github.com/satabios/Fastron/raw/experiment/gifs/On-The-Fly-Node-Loading.gif)
-<!-- <p align='center'><a href='https://www.satabios.com/ai'><img src='.github/screenshot.png' width='800'></a></p> -->
+
+
+**Model Comparator:**
+
+![On-The-Fly Node Loading](https://github.com/satabios/Fastron/raw/experiment/gifs/Model-Comparator.gif)
+
 
 ## Key Features & Optimizations
 
