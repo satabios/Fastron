@@ -1,6 +1,6 @@
 <div align="center">
-<img width="400px" height="100px" src="https://github.com/satabios/netron/raw/main/.github/logo-light.svg#gh-light-mode-only">
-<img width="400px" height="100px" src="https://github.com/satabios/netron/raw/main/.github/logo-dark.svg#gh-dark-mode-only">
+<img width="400px" height="100px" src="https://github.com/satabios/Fastron/raw/experiment/.github/logo-light.svg#gh-light-mode-only">
+<img width="400px" height="100px" src="https://github.com/satabios/Fastron/raw/experiment/.github/logo-dark.svg#gh-dark-mode-only">
 </div>
 
 # Fastron - Optimized Neural Network Visualizer
