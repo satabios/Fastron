@@ -151,7 +151,7 @@ grapher.Graph = class {
             return;
         }
 
-        const nodeGroup = document.getElementById('nodes');
+        const nodeGroup = this._nodeGroupElement;
 
         if (!nodeGroup) {
             return;
@@ -233,9 +233,9 @@ grapher.Graph = class {
         }
     }
 
-    build(document) {
+    build(document, originElement) {
 
-        const origin = document.getElementById('origin');
+        const origin = originElement || document.getElementById('origin');
 
         const createGroup = (name) => {
             const element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -249,6 +249,7 @@ grapher.Graph = class {
         const edgePathHitTestGroup = createGroup('edge-paths-hit-test');
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
+        this._nodeGroupElement = nodeGroup;
 
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         edgePathGroup.appendChild(edgePathGroupDefs);

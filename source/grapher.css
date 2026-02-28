@@ -143,3 +143,8 @@
     .node-item-type-attention path { fill: rgb(100, 50, 0, 0.7); }
     .node-item-type-custom path { fill: rgb(64, 64, 64, 0.7); }
 }
+
+/* Model comparison diff highlights */
+.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
+.node-diff-added .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
+.node-diff-removed .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }

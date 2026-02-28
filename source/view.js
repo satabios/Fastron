@@ -284,6 +284,14 @@ view.View = class {
                     label: `&About ${this._host.environment('name')}`,
                     execute: async () => await this._host.execute('about')
                 });
+                if (this._host.type === 'Electron') {
+                    const tools = this._menu.group('&Tools');
+                    tools.add({
+                        label: 'Compare &Models...',
+                        accelerator: 'CmdOrCtrl+Shift+C',
+                        execute: async () => await this._host.execute('compare-models')
+                    });
+                }
             }
             const navigator = this._element('toolbar-navigator');
             this._select = new view.TargetSelector(this, navigator);
@@ -1896,13 +1904,15 @@ view.Graph = class extends grapher.Graph {
         }
     }
 
-    build(document) {
-        const element = document.getElementById('target');
+    build(document, containerElement) {
+        const element = containerElement || document.getElementById('target');
         while (element.lastChild) {
             element.removeChild(element.lastChild);
         }
         const canvas = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        canvas.setAttribute('id', 'canvas');
+        if (!containerElement) {
+            canvas.setAttribute('id', 'canvas');
+        }
         canvas.setAttribute('class', 'canvas');
         canvas.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         canvas.setAttribute('width', '100%');
@@ -1911,17 +1921,26 @@ view.Graph = class extends grapher.Graph {
         // Workaround for Safari background drag/zoom issue:
         // https://stackoverflow.com/questions/40887193/d3-js-zoom-is-not-working-with-mousewheel-in-safari
         const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        background.setAttribute('id', 'background');
+        if (!containerElement) {
+            background.setAttribute('id', 'background');
+        }
         background.setAttribute('fill', 'none');
         background.setAttribute('pointer-events', 'all');
         canvas.appendChild(background);
         const origin = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        origin.setAttribute('id', 'origin');
+        if (!containerElement) {
+            origin.setAttribute('id', 'origin');
+        }
         canvas.appendChild(origin);
+        // Store element references for use by other methods
+        this._containerElement = element;
+        this._canvasElement = canvas;
+        this._originElement = origin;
+        this._backgroundElement = background;
         for (const value of this._values.values()) {
             value.build();
         }
-        super.build(document);
+        super.build(document, origin);
     }
 
     async measure() {
@@ -2011,10 +2030,9 @@ view.Graph = class extends grapher.Graph {
     }
 
     restore(state) {
-        const document = this.host.document;
-        const canvas = document.getElementById('canvas');
-        const origin = document.getElementById('origin');
-        const background = document.getElementById('background');
+        const canvas = this._canvasElement;
+        const origin = this._originElement;
+        const background = this._backgroundElement;
         const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
         if (elements.length === 0) {
             const nodeElements = Array.from(canvas.getElementsByClassName('graph-node') || []);
@@ -2038,7 +2056,7 @@ view.Graph = class extends grapher.Graph {
         canvas.setAttribute('height', height);
         this._zoom = state ? state.zoom : 1;
         this._updateZoom(this._zoom);
-        const container = document.getElementById('target');
+        const container = this._containerElement;
         const context = state ? this.select([state.context]) : [];
         if (context.length > 0) {
             this.scrollTo(context, 'instant');
@@ -2089,8 +2107,7 @@ view.Graph = class extends grapher.Graph {
             this._events.gesturestart = (e) => this._gestureStartHandler(e);
             this._events.pointerdown = (e) => this._pointerDownHandler(e);
             this._events.touchstart = (e) => this._touchStartHandler(e);
-            const document = this.host.document;
-            const element = document.getElementById('target');
+            const element = this._containerElement;
             element.focus();
             element.addEventListener('scroll', this._events.scroll);
             element.addEventListener('wheel', this._events.wheel, { passive: false });
@@ -2112,8 +2129,7 @@ view.Graph = class extends grapher.Graph {
 
     unregister() {
         if (this._events) {
-            const document = this.host.document;
-            const element = document.getElementById('target');
+            const element = this._containerElement;
             element.removeEventListener('scroll', this._events.scroll);
             element.removeEventListener('wheel', this._events.wheel);
             element.removeEventListener('pointerdown', this._events.pointerdown);
@@ -2136,9 +2152,8 @@ view.Graph = class extends grapher.Graph {
     }
 
     _updateZoom(zoom, e) {
-        const document = this.host.document;
-        const container = document.getElementById('target');
-        const canvas = document.getElementById('canvas');
+        const container = this._containerElement;
+        const canvas = this._canvasElement;
         const limit = this.view.options.direction === 'vertical' ?
             container.clientHeight / this._height :
             container.clientWidth / this._width;
@@ -2180,7 +2195,7 @@ view.Graph = class extends grapher.Graph {
             }
         }
         const document = this.host.document;
-        const container = document.getElementById('target');
+        const container = this._containerElement;
         e.target.setPointerCapture(e.pointerId);
         this._mousePosition = {
             left: container.scrollLeft,
@@ -2199,8 +2214,6 @@ view.Graph = class extends grapher.Graph {
                 const dy = e.clientY - this._mousePosition.y;
                 this._mousePosition.moved = dx * dx + dy * dy > 0;
                 if (this._mousePosition.moved) {
-                    const document = this.host.document;
-                    const container = document.getElementById('target');
                     container.scrollTop = this._mousePosition.top - dy;
                     container.scrollLeft = this._mousePosition.left - dx;
                 }
@@ -2251,8 +2264,7 @@ view.Graph = class extends grapher.Graph {
                 }
             }
         };
-        const document = this.host.document;
-        const container = document.getElementById('target');
+        const container = this._containerElement;
         const touchEndHandler = () => {
             container.removeEventListener('touchmove', touchMoveHandler, { passive: true });
             container.removeEventListener('touchcancel', touchEndHandler, { passive: true });
@@ -2268,8 +2280,7 @@ view.Graph = class extends grapher.Graph {
     _gestureStartHandler(e) {
         e.preventDefault();
         this._gestureZoom = this._zoom;
-        const document = this.host.document;
-        const container = document.getElementById('target');
+        const container = this._containerElement;
         const gestureChangeHandler = (e) => {
             e.preventDefault();
             this._updateZoom(this._gestureZoom * e.scale, e);
@@ -2319,9 +2330,8 @@ view.Graph = class extends grapher.Graph {
     }
 
     _getViewportBounds() {
-        const document = this.host.document;
-        const container = document.getElementById('target');
-        const origin = document.getElementById('origin');
+        const container = this._containerElement;
+        const origin = this._originElement;
 
         if (!container || !origin) {
             return { x: 0, y: 0, width: 0, height: 0, zoom: this._zoom };
@@ -2427,9 +2437,8 @@ view.Graph = class extends grapher.Graph {
     }
 
     _scrollToGraphBounds(bounds, behavior) {
-        const document = this.host.document;
-        const container = document.getElementById('target');
-        const origin = document.getElementById('origin');
+        const container = this._containerElement;
+        const origin = this._originElement;
         if (!container || !origin) {
             return;
         }
@@ -2475,8 +2484,7 @@ view.Graph = class extends grapher.Graph {
 
     scrollTo(selection, behavior) {
         if (selection && selection.length > 0) {
-            const document = this.host.document;
-            const container = document.getElementById('target');
+            const container = this._containerElement;
             const rect = container.getBoundingClientRect();
             // Exclude scrollbars
             const cw = container.clientWidth;
@@ -7544,6 +7552,8 @@ if (typeof window !== 'undefined' && window.exports) {
 }
 
 export const View = view.View;
+export const Graph = view.Graph;
+export const Worker = view.Worker;
 export const ModelFactoryService = view.ModelFactoryService;
 export const ModelSidebar = view.ModelSidebar;
 export const NodeSidebar = view.NodeSidebar;

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fastron - Compare Models</title>
+<link rel="stylesheet" type="text/css" href="grapher.css">
+<style>
+
+html { touch-action: none; overflow: hidden; width: 100%; height: 100%; }
+body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif;
+    font-size: 12px; display: flex; flex-direction: column; background: #ececec; color: #242424; }
+
+.comparator-container { display: flex; flex: 1; overflow: hidden; }
+
+.comparator-pane { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.comparator-pane-header { height: 28px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #666; background: #e0e0e0;
+    border-bottom: 1px solid #ccc; user-select: none; flex-shrink: 0; padding: 0 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.comparator-divider { width: 3px; background: #999; flex-shrink: 0; cursor: col-resize; }
+
+.comparator-target { flex: 1; display: flex; overflow: auto; outline: none; touch-action: pan-x pan-y; }
+.comparator-target .canvas { margin: auto; flex-shrink: 0; text-rendering: geometricPrecision;
+    user-select: none; -webkit-user-select: none; }
+
+.comparator-legend { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 5px 12px;
+    font-size: 10px; color: #888; background: #e8e8e8; border-top: 1px solid #ddd; flex-shrink: 0; user-select: none; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; border: 2px solid; }
+
+.comparator-spinner { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex;
+    align-items: center; justify-content: center; background: rgba(236,236,236,0.85); z-index: 10; }
+.comparator-spinner.hidden { display: none; }
+.spinner-text { font-size: 14px; color: #666; }
+
+/* Titlebar */
+.titlebar { color: #aaaaaa; display: none; height: 32px; position: relative;
+    left: 0; right: 0; z-index: 2; -webkit-app-region: drag; flex-shrink: 0; }
+.titlebar-visible { display: block; }
+.titlebar-content { display: block; padding: 0 142px; height: 100%; text-align: center;
+    font-size: 14px; line-height: 32px; user-select: none; }
+.titlebar-content-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar-control-box { display: none; align-items: center; flex-direction: row-reverse;
+    height: 100%; position: absolute; top: 0; right: 0; width: 138px; }
+.titlebar-control-box-visible { display: flex; }
+.titlebar-icon { width: 1em; height: 1em; vertical-align: -0.15em; fill: currentColor; overflow: hidden; }
+.titlebar-button { display: flex; justify-content: center; align-items: center;
+    width: 46px; height: 32px; user-select: none; -webkit-app-region: no-drag; }
+.titlebar-button:hover { color: #000000; background-color: rgba(0, 0, 0, 0.15); }
+.titlebar-button-close:hover { color: #ffffff; background-color: #b43029; }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #dfdfdf; }
+    .comparator-pane-header { background: #2a2a2a; color: #aaa; border-color: #444; }
+    .comparator-divider { background: #666; }
+    .comparator-target { background: #1e1e1e; }
+    .comparator-legend { background: #252525; border-color: #444; color: #888; }
+    .comparator-spinner { background: rgba(30,30,30,0.85); }
+    .spinner-text { color: #aaa; }
+    .titlebar { color: #949494; }
+    .titlebar-button:hover { color: #ffffff; background-color: rgba(0, 0, 0, 0.15); }
+    .titlebar-button-close:hover { color: #ffffff; background-color: #b43029; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+}
+
+</style>
+</head>
+<body>
+<div id="titlebar" class="titlebar">
+    <div id="titlebar-content" class="titlebar-content">
+        <span id="titlebar-content-text" class="titlebar-content-text">Compare Models</span>
+    </div>
+    <div id="titlebar-control-box" class="titlebar-control-box">
+        <div id="titlebar-close" class="titlebar-button titlebar-button-close" title="Close">
+            <svg class="titlebar-icon" aria-hidden="true">
+                <path d="M 0,0 0,0.7 4.3,5 0,9.3 0,10 0.7,10 5,5.7 9.3,10 10,10 10,9.3 5.7,5 10,0.7 10,0 9.3,0 5,4.3 0.7,0 Z"></path>
+            </svg>
+        </div>
+        <div id="titlebar-toggle" class="titlebar-button" title="Maximize">
+            <svg id="titlebar-maximize" class="titlebar-icon" aria-hidden="true" style="position: absolute;">
+                <path d="M 0,0 0,10 10,10 10,0 Z M 1,1 9,1 9,9 1,9 Z"></path>
+            </svg>
+            <svg id="titlebar-restore" class="titlebar-icon" aria-hidden="true" style="position: absolute;">
+                <path d="m 2,1e-5 0,2 -2,0 0,8 8,0 0,-2 2,0 0,-8 z m 1,1 6,0 0,6 -1,0 0,-5 -5,0 z m -2,2 6,0 0,6 -6,0 z"></path>
+            </svg>
+        </div>
+        <div id="titlebar-minimize" class="titlebar-button" title="Minimize">
+            <svg class="titlebar-icon" aria-hidden="true">
+                <path d="M 0,5 10,5 10,6 0,6 Z"></path>
+            </svg>
+        </div>
+    </div>
+</div>
+<div class="comparator-container">
+    <div class="comparator-pane" id="pane-left">
+        <div class="comparator-pane-header" id="pane-left-header">Model A</div>
+        <div class="comparator-target" id="target-left" tabindex="0"></div>
+    </div>
+    <div class="comparator-divider" id="comparator-divider"></div>
+    <div class="comparator-pane" id="pane-right">
+        <div class="comparator-pane-header" id="pane-right-header">Model B</div>
+        <div class="comparator-target" id="target-right" tabindex="0"></div>
+    </div>
+</div>
+<div class="comparator-legend">
+    <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Identical</div>
+    <div class="legend-item"><div class="legend-swatch" style="border-color: #e67e22; background: rgba(230,126,34,0.15);"></div> Modified</div>
+    <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Added</div>
+    <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Removed</div>
+</div>
+<div id="comparator-spinner" class="comparator-spinner">
+    <span class="spinner-text">Loading models...</span>
+</div>
+<!-- Preload fonts to workaround Chrome SVG layout issue -->
+<div style="font-weight: normal; color: rgba(0, 0, 0, 0.01); user-select: none;">.</div>
+<div style="font-weight: bold; color: rgba(0, 0, 0, 0.01); user-select: none;">.</div>
+</body>
+</html>
