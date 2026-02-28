@@ -159,7 +159,9 @@ comparator.Controller = class {
                 const nodeB = nodesB[i];
                 const typeNameA = nodeA.type && nodeA.type.name ? nodeA.type.name : '';
                 const typeNameB = nodeB.type && nodeB.type.name ? nodeB.type.name : '';
-                if (typeNameA === typeNameB) {
+                if (typeNameA !== typeNameB) {
+                    result.pairs.push({ indexA: i, indexB: i, status: 'modified' });
+                } else if (this._attributesMatch(nodeA, nodeB)) {
                     result.pairs.push({ indexA: i, indexB: i, status: 'identical' });
                 } else {
                     result.pairs.push({ indexA: i, indexB: i, status: 'modified' });
@@ -171,6 +173,54 @@ comparator.Controller = class {
             }
         }
         return result;
+    }
+
+    _attributesMatch(nodeA, nodeB) {
+        const attrsA = Array.isArray(nodeA.attributes) ? nodeA.attributes : [];
+        const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
+        if (attrsA.length !== attrsB.length) {
+            return false;
+        }
+        const mapA = new Map(attrsA.map((a) => [a.name, a]));
+        const mapB = new Map(attrsB.map((a) => [a.name, a]));
+        for (const [name, attrA] of mapA) {
+            const attrB = mapB.get(name);
+            if (!attrB) {
+                return false;
+            }
+            if (!this._valuesEqual(attrA.value, attrB.value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    _valuesEqual(a, b) {
+        if (a === b) {
+            return true;
+        }
+        if (a === null || a === undefined || b === null || b === undefined) {
+            return false;
+        }
+        if (Array.isArray(a) && Array.isArray(b)) {
+            if (a.length !== b.length) {
+                return false;
+            }
+            for (let i = 0; i < a.length; i++) {
+                if (!this._valuesEqual(a[i], b[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (typeof a === 'object' && typeof b === 'object') {
+            try {
+                return JSON.stringify(a) === JSON.stringify(b);
+            } catch {
+                return false;
+            }
+        }
+        return false;
     }
 
     _applyDiffHighlighting(graphA, graphB, targetA, targetB, diffResult) {
