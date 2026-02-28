@@ -268,6 +268,7 @@ app.Application = class {
     async execute(command, value, window) {
         switch (command) {
             case 'open': this._open(value); break;
+            case 'compare-models': await this._compareModels(window); break;
             case 'export': await this._export(); break;
             case 'close': window.close(); break;
             case 'quit': electron.app.quit(); break;
@@ -315,6 +316,57 @@ app.Application = class {
             view = this._views.openView();
         }
         view.execute('about');
+    }
+
+    async _compareModels(window) {
+        const extensions = new base.Metadata().extensions;
+        const activeView = this._views.get(window) || this._views.activeView;
+        const hasModel = activeView && activeView.path;
+        let paths = null;
+        if (hasModel) {
+            const options = {
+                title: 'Select Model to Compare With',
+                properties: ['openFile'],
+                filters: [{ name: 'All Model Files', extensions }]
+            };
+            const owner = electron.BrowserWindow.getFocusedWindow();
+            const result = electron.dialog.showOpenDialogSync(owner, options);
+            if (!result || result.length === 0) {
+                return;
+            }
+            paths = [activeView.path, result[0]];
+        } else {
+            const options = {
+                title: 'Select Two Models to Compare',
+                properties: ['openFile', 'multiSelections'],
+                filters: [{ name: 'All Model Files', extensions }]
+            };
+            const owner = electron.BrowserWindow.getFocusedWindow();
+            const result = electron.dialog.showOpenDialogSync(owner, options);
+            if (!result || result.length === 0) {
+                return;
+            }
+            if (result.length === 1) {
+                const options2 = {
+                    title: 'Select Second Model to Compare',
+                    properties: ['openFile'],
+                    filters: [{ name: 'All Model Files', extensions }]
+                };
+                const result2 = electron.dialog.showOpenDialogSync(owner, options2);
+                if (!result2 || result2.length === 0) {
+                    return;
+                }
+                paths = [result[0], result2[0]];
+            } else {
+                paths = [result[0], result[1]];
+            }
+        }
+        this._openComparator(paths[0], paths[1]);
+    }
+
+    _openComparator(pathA, pathB) {
+        const view = new app.ComparatorView(this._views, pathA, pathB);
+        return view;
     }
 
     _updateRecents(path) {
@@ -539,6 +591,18 @@ app.Application = class {
             }
             menuTemplate.push(viewTemplate);
 
+            menuTemplate.push({
+                label: '&Tools',
+                submenu: [
+                    {
+                        id: 'tools.compare-models',
+                        label: 'Compare &Models...',
+                        accelerator: 'CmdOrCtrl+Shift+C',
+                        click: async () => await this.execute('compare-models', null)
+                    }
+                ]
+            });
+
             if (darwin) {
                 menuTemplate.push({
                     role: 'window',
@@ -624,6 +688,9 @@ app.Application = class {
             });
             commandTable.set('view.show-properties', {
                 enabled: (view) => view && view.path ? true : false
+            });
+            commandTable.set('tools.compare-models', {
+                enabled: () => true
             });
 
             this._menu.build(menuTemplate, commandTable);
@@ -846,6 +913,60 @@ app.View = class {
                 this.execute(obj.command, obj.data);
             }
         }
+    }
+};
+
+app.ComparatorView = class {
+
+    constructor(owner, pathA, pathB) {
+        this._owner = owner;
+        this._pathA = pathA;
+        this._pathB = pathB;
+        const dirname = path.dirname(url.fileURLToPath(import.meta.url));
+        const size = electron.screen.getPrimaryDisplay().workAreaSize;
+        const options = {
+            show: false,
+            title: `Compare Models - ${electron.app.name}`,
+            backgroundColor: electron.nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ececec',
+            icon: electron.nativeImage.createFromPath(path.join(dirname, 'icon.png')),
+            minWidth: 900,
+            minHeight: 600,
+            width: Math.min(size.width, 1400),
+            height: size.height > 768 ? 768 : size.height,
+            webPreferences: {
+                preload: path.join(dirname, 'desktop.mjs'),
+                contextIsolation: true,
+                nodeIntegration: true,
+                enableDeprecatedPaste: true
+            }
+        };
+        if (owner.application.environment.titlebar) {
+            options.frame = false;
+            options.thickFrame = true;
+            options.titleBarStyle = 'hiddenInset';
+        }
+        this._window = new electron.BrowserWindow(options);
+        this._window.once('ready-to-show', () => {
+            this._window.show();
+        });
+        this._window.webContents.once('did-finish-load', () => {
+            const locationA = app.Application.location(pathA);
+            const locationB = app.Application.location(pathB);
+            this._window.webContents.send('compare', {
+                pathA: { path: pathA, label: locationA.label },
+                pathB: { path: pathB, label: locationB.label }
+            });
+        });
+        if (owner.application.environment.titlebar && process.platform !== 'darwin') {
+            this._window.removeMenu();
+        }
+        const pathname = path.join(dirname, 'comparator.html');
+        let content = fs.readFileSync(pathname, 'utf-8');
+        content = content.replace(/<\s*script[^>]*>[\s\S]*?(<\s*\/script[^>]*>|$)/ig, '');
+        const data = `data:text/html;charset=utf-8,${encodeURIComponent(content)}`;
+        this._window.loadURL(data, {
+            baseURLForDataURL: url.pathToFileURL(pathname).toString()
+        });
     }
 };
 
