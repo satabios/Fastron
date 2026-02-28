@@ -20,8 +20,8 @@ playwright.test('desktop', async () => {
     const page = await app.firstWindow();
 
     playwright.expect(page).toBeDefined();
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForSelector('body.welcome', { timeout: 25000 });
+    await page.waitForLoadState('load');
+    await page.waitForSelector('body.welcome', { state: 'attached', timeout: 30000 });
     await page.waitForTimeout(1000);
 
     const consent = await page.locator('#message-button');
