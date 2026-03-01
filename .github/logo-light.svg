@@ -6,9 +6,9 @@
         </style>
     </defs>
     <g transform="translate(60, 190)">
-        <text class="logo-text">FAST</text>
+        <text class="logo-text">FASTRON</text>
     </g>
-    <g transform="matrix(0.20968,0,0,0.20968,448,10)">
+    <g transform="matrix(0.20968,0,0,0.20968,830,10)">
         <circle cx="512" cy="512" r="431" fill="none" stroke="#24292F" stroke-width="21px"/>
         <path d="M296,392L540,280" stroke="#24292F" stroke-width="6px"/>
         <path d="M296,632L540,280" stroke="#24292F" stroke-width="6px"/>
@@ -29,8 +29,5 @@
         <g transform="translate(540,590)"><circle cx="0" cy="0" r="26" fill="#24292F" /></g>
         <g transform="translate(540,744)"><circle cx="0" cy="0" r="26" fill="#24292F" /></g>
         <g transform="translate(785,512)"><circle cx="0" cy="0" r="26" fill="#24292F" /></g>
-    </g>
-    <g transform="translate(700, 190)">
-        <text class="logo-text">RON</text>
     </g>
 </svg>

@@ -45,6 +45,8 @@ This optimized fork introduces several critical performance improvements:
 
 - **Memory Optimizations**: Efficient data structures and lazy-loading strategies minimize memory footprint while maintaining full feature functionality.
 
+- **Model Comparison**: Visually compare two models side by side, with a common panning element for better comprehension.
+
 ### Standard Features
 
 - **Multiple Format Support**: View models across 40+ neural network framework formats
