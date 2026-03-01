@@ -1,5 +1,5 @@
 
-import { Graph, ModelFactoryService, Worker, Formatter } from './view.js';
+import { Formatter, Graph, ModelFactoryService, Worker } from './view.js';
 
 const comparator = {};
 
@@ -43,16 +43,62 @@ comparator.Controller = class {
         this._modelFactory.import();
         this._worker = host.environment('serial') ? null : new Worker(host);
         this._syncing = false;
+        this._comparing = false;
+        this._graphA = null;
+        this._graphB = null;
+        this._nodeDiffMap = null;
+        this._diffPanelInitialized = false;
+    }
+
+    _reset() {
+        const document = this._host.document;
+        this._hideDiffPanel();
+        // Clear previous graph contents
+        const containerLeft = document.getElementById('target-left');
+        const containerRight = document.getElementById('target-right');
+        if (containerLeft) {
+            containerLeft.replaceChildren();
+        }
+        if (containerRight) {
+            containerRight.replaceChildren();
+        }
+        this._graphA = null;
+        this._graphB = null;
+        this._targetA = null;
+        this._targetB = null;
+        this._diffResult = null;
+        this._nodeDiffMap = null;
+        this._syncing = false;
     }
 
     async compare(pathA, pathB) {
+        if (this._comparing) {
+            return;
+        }
+        this._comparing = true;
+        this._reset();
+
         const document = this._host.document;
 
+        // Show spinner
+        const spinner = document.getElementById('comparator-spinner');
+        if (spinner) {
+            spinner.classList.remove('hidden');
+            const text = spinner.querySelector('.spinner-text');
+            if (text) {
+                text.textContent = 'Loading models...';
+            }
+        }
+
         // Update pane headers
-        document.getElementById('pane-left-header').textContent =
-            pathA.label || pathA.path.split('/').pop();
-        document.getElementById('pane-right-header').textContent =
-            pathB.label || pathB.path.split('/').pop();
+        const leftHeader = document.getElementById('pane-left-header');
+        const rightHeader = document.getElementById('pane-right-header');
+        if (leftHeader) {
+            leftHeader.textContent = pathA.label || pathA.path.split('/').pop();
+        }
+        if (rightHeader) {
+            rightHeader.textContent = pathB.label || pathB.path.split('/').pop();
+        }
 
         try {
             // Load both models in parallel
@@ -138,6 +184,8 @@ comparator.Controller = class {
                 }
             }
             return;
+        } finally {
+            this._comparing = false;
         }
 
         // Hide spinner
@@ -148,11 +196,11 @@ comparator.Controller = class {
     }
 
     _getPrimaryTarget(model) {
-        const modules = Array.isArray(model.functions)
-            ? model.modules.concat(model.functions)
-            : model.modules;
+        const modelModules = Array.isArray(model.modules) ? model.modules : [];
+        const modelFunctions = Array.isArray(model.functions) ? model.functions : [];
+        const modules = modelModules.concat(modelFunctions);
         for (const module of modules) {
-            if (Array.isArray(module.nodes) && module.nodes.length > 0) {
+            if (module && Array.isArray(module.nodes) && module.nodes.length > 0) {
                 return module;
             }
         }
@@ -167,30 +215,102 @@ comparator.Controller = class {
             onlyInA: [],
             onlyInB: []
         };
-        const maxLen = Math.max(nodesA.length, nodesB.length);
-        for (let i = 0; i < maxLen; i++) {
-            if (i < nodesA.length && i < nodesB.length) {
-                const nodeA = nodesA[i];
-                const nodeB = nodesB[i];
-                const typeNameA = nodeA.type && nodeA.type.name ? nodeA.type.name : '';
-                const typeNameB = nodeB.type && nodeB.type.name ? nodeB.type.name : '';
-                if (typeNameA !== typeNameB) {
-                    result.pairs.push({ indexA: i, indexB: i, status: 'modified' });
-                } else if (this._attributesMatch(nodeA, nodeB)) {
-                    result.pairs.push({ indexA: i, indexB: i, status: 'identical' });
-                } else {
-                    result.pairs.push({ indexA: i, indexB: i, status: 'modified' });
+
+        const matchedB = new Set();
+
+        // Helper to build a match key from node type name and node name
+        const nodeKey = (node) => {
+            const typeName = node && node.type && node.type.name ? node.type.name : '';
+            const name = node && node.name ? node.name : '';
+            return `${typeName}\0${name}`;
+        };
+
+        const typeName = (node) => {
+            return node && node.type && node.type.name ? node.type.name : '';
+        };
+
+        // Build lookup maps for B nodes
+        // Key: "typeName\0nodeName" -> array of indices (multiple nodes can share a key)
+        const keyMapB = new Map();
+        for (let j = 0; j < nodesB.length; j++) {
+            const key = nodeKey(nodesB[j]);
+            if (!keyMapB.has(key)) {
+                keyMapB.set(key, []);
+            }
+            keyMapB.get(key).push(j);
+        }
+        // Type-only lookup for fallback matching
+        const typeMapB = new Map();
+        for (let j = 0; j < nodesB.length; j++) {
+            const tn = typeName(nodesB[j]);
+            if (!typeMapB.has(tn)) {
+                typeMapB.set(tn, []);
+            }
+            typeMapB.get(tn).push(j);
+        }
+
+        const unmatchedA = [];
+
+        // Pass 1: Match by exact key (type name + node name)
+        for (let i = 0; i < nodesA.length; i++) {
+            const key = nodeKey(nodesA[i]);
+            const candidates = keyMapB.get(key);
+            let matched = false;
+            if (candidates) {
+                for (const j of candidates) {
+                    if (!matchedB.has(j)) {
+                        matchedB.add(j);
+                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
+                        result.pairs.push({ indexA: i, indexB: j, status });
+                        matched = true;
+                        break;
+                    }
                 }
-            } else if (i < nodesA.length) {
-                result.onlyInA.push(i);
-            } else {
-                result.onlyInB.push(i);
+            }
+            if (!matched) {
+                unmatchedA.push(i);
             }
         }
+
+        // Pass 2: Match remaining A nodes by type name only
+        const stillUnmatchedA = [];
+        for (const i of unmatchedA) {
+            const tn = typeName(nodesA[i]);
+            const candidates = typeMapB.get(tn);
+            let matched = false;
+            if (candidates) {
+                for (const j of candidates) {
+                    if (!matchedB.has(j)) {
+                        matchedB.add(j);
+                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
+                        result.pairs.push({ indexA: i, indexB: j, status });
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched) {
+                stillUnmatchedA.push(i);
+            }
+        }
+
+        // Remaining unmatched nodes
+        for (const i of stillUnmatchedA) {
+            result.onlyInA.push(i);
+        }
+        for (let j = 0; j < nodesB.length; j++) {
+            if (!matchedB.has(j)) {
+                result.onlyInB.push(j);
+            }
+        }
+
         return result;
     }
 
     _attributesMatch(nodeA, nodeB) {
+        if (!nodeA || !nodeB) {
+            return false;
+        }
         const attrsA = Array.isArray(nodeA.attributes) ? nodeA.attributes : [];
         const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
         if (attrsA.length !== attrsB.length) {
@@ -214,7 +334,10 @@ comparator.Controller = class {
         if (a === b) {
             return true;
         }
-        if (a === null || a === undefined || b === null || b === undefined) {
+        if (a === null || a === undefined) {
+            return b === null || b === undefined;
+        }
+        if (b === null || b === undefined) {
             return false;
         }
         if (Array.isArray(a) && Array.isArray(b)) {
@@ -229,11 +352,23 @@ comparator.Controller = class {
             return true;
         }
         if (typeof a === 'object' && typeof b === 'object') {
-            try {
-                return JSON.stringify(a) === JSON.stringify(b);
-            } catch {
+            if (Array.isArray(a) !== Array.isArray(b)) {
                 return false;
             }
+            const keysA = Object.keys(a);
+            const keysB = Object.keys(b);
+            if (keysA.length !== keysB.length) {
+                return false;
+            }
+            for (const key of keysA) {
+                if (!Object.prototype.hasOwnProperty.call(b, key)) {
+                    return false;
+                }
+                if (!this._valuesEqual(a[key], b[key])) {
+                    return false;
+                }
+            }
+            return true;
         }
         return false;
     }
@@ -278,10 +413,13 @@ comparator.Controller = class {
             if (this._syncing) {
                 return;
             }
-            this._syncing = true;
-            target.scrollLeft = source.scrollLeft;
-            target.scrollTop = source.scrollTop;
-            this._syncing = false;
+            try {
+                this._syncing = true;
+                target.scrollLeft = source.scrollLeft;
+                target.scrollTop = source.scrollTop;
+            } finally {
+                this._syncing = false;
+            }
         };
 
         containerLeft.addEventListener('scroll', () => {
@@ -292,28 +430,37 @@ comparator.Controller = class {
         });
 
         // Synchronized zooming — wrap _updateZoom on both graphs
+        if (!this._graphA._updateZoom || !this._graphB._updateZoom) {
+            return;
+        }
         const originalZoomA = this._graphA._updateZoom.bind(this._graphA);
         const originalZoomB = this._graphB._updateZoom.bind(this._graphB);
 
         this._graphA._updateZoom = (zoom, e) => {
             originalZoomA(zoom, e);
             if (!this._syncing) {
-                this._syncing = true;
-                originalZoomB(zoom, null);
-                containerRight.scrollLeft = containerLeft.scrollLeft;
-                containerRight.scrollTop = containerLeft.scrollTop;
-                this._syncing = false;
+                try {
+                    this._syncing = true;
+                    originalZoomB(zoom, null);
+                    containerRight.scrollLeft = containerLeft.scrollLeft;
+                    containerRight.scrollTop = containerLeft.scrollTop;
+                } finally {
+                    this._syncing = false;
+                }
             }
         };
 
         this._graphB._updateZoom = (zoom, e) => {
             originalZoomB(zoom, e);
             if (!this._syncing) {
-                this._syncing = true;
-                originalZoomA(zoom, null);
-                containerLeft.scrollLeft = containerRight.scrollLeft;
-                containerLeft.scrollTop = containerRight.scrollTop;
-                this._syncing = false;
+                try {
+                    this._syncing = true;
+                    originalZoomA(zoom, null);
+                    containerLeft.scrollLeft = containerRight.scrollLeft;
+                    containerLeft.scrollTop = containerRight.scrollTop;
+                } finally {
+                    this._syncing = false;
+                }
             }
         };
     }
@@ -323,16 +470,26 @@ comparator.Controller = class {
         const nodesB = targetB.nodes || [];
         this._nodeDiffMap = new Map();
         for (const pair of diffResult.pairs) {
-            const nodeA = nodesA[pair.indexA];
-            const nodeB = nodesB[pair.indexB];
-            this._nodeDiffMap.set(nodeA, { status: pair.status, nodeA, nodeB });
-            this._nodeDiffMap.set(nodeB, { status: pair.status, nodeA, nodeB });
+            const nodeA = pair.indexA < nodesA.length ? nodesA[pair.indexA] : null;
+            const nodeB = pair.indexB < nodesB.length ? nodesB[pair.indexB] : null;
+            if (nodeA) {
+                this._nodeDiffMap.set(nodeA, { status: pair.status, nodeA, nodeB });
+            }
+            if (nodeB) {
+                this._nodeDiffMap.set(nodeB, { status: pair.status, nodeA, nodeB });
+            }
         }
         for (const idx of diffResult.onlyInA) {
-            this._nodeDiffMap.set(nodesA[idx], { status: 'removed', nodeA: nodesA[idx], nodeB: null });
+            const node = idx < nodesA.length ? nodesA[idx] : null;
+            if (node) {
+                this._nodeDiffMap.set(node, { status: 'removed', nodeA: node, nodeB: null });
+            }
         }
         for (const idx of diffResult.onlyInB) {
-            this._nodeDiffMap.set(nodesB[idx], { status: 'added', nodeA: null, nodeB: nodesB[idx] });
+            const node = idx < nodesB.length ? nodesB[idx] : null;
+            if (node) {
+                this._nodeDiffMap.set(node, { status: 'added', nodeA: null, nodeB: node });
+            }
         }
     }
 
@@ -346,6 +503,9 @@ comparator.Controller = class {
         const backdrop = document.getElementById('diff-panel-backdrop');
         const title = document.getElementById('diff-panel-title');
         const content = document.getElementById('diff-panel-content');
+        if (!panel || !backdrop || !title || !content) {
+            return;
+        }
         content.innerHTML = '';
         const typeName = node.type && node.type.name ? node.type.name : 'Unknown';
         title.textContent = `Node: ${typeName}`;
@@ -415,6 +575,12 @@ comparator.Controller = class {
     }
 
     _renderModifiedDiff(document, container, nodeA, nodeB) {
+        if (!nodeA || !nodeB) {
+            const typeName = (nodeA || nodeB).type && (nodeA || nodeB).type.name ? (nodeA || nodeB).type.name : 'Node';
+            this._renderSingleStatus(document, container, typeName,
+                nodeA ? 'removed' : 'added', nodeA ? 'Only in Model A' : 'Only in Model B');
+            return;
+        }
         // Type section
         const typeSection = this._createSection(document, 'Type');
         let hasTypeDiffs = false;
@@ -557,21 +723,30 @@ comparator.Controller = class {
 
     _diffConnections(connectionsA, connectionsB) {
         const diffs = [];
-        const maxLen = Math.max(connectionsA.length, connectionsB.length);
-        for (let i = 0; i < maxLen; i++) {
-            const a = i < connectionsA.length ? connectionsA[i] : null;
-            const b = i < connectionsB.length ? connectionsB[i] : null;
-            const nameA = a ? a.name || `[${i}]` : '';
-            const nameB = b ? b.name || `[${i}]` : '';
-            const label = nameA || nameB;
+        const mapA = new Map();
+        const mapB = new Map();
+        for (let i = 0; i < connectionsA.length; i++) {
+            const a = connectionsA[i];
+            const name = a && a.name ? a.name : `[${i}]`;
+            mapA.set(name, a);
+        }
+        for (let i = 0; i < connectionsB.length; i++) {
+            const b = connectionsB[i];
+            const name = b && b.name ? b.name : `[${i}]`;
+            mapB.set(name, b);
+        }
+        const allNames = new Set([...mapA.keys(), ...mapB.keys()]);
+        for (const name of allNames) {
+            const a = mapA.get(name);
+            const b = mapB.get(name);
             const descA = a ? this._describeConnection(a) : '';
             const descB = b ? this._describeConnection(b) : '';
-            if (!a) {
-                diffs.push({ name: label, valueA: '', valueB: descB, type: 'added' });
-            } else if (!b) {
-                diffs.push({ name: label, valueA: descA, valueB: '', type: 'removed' });
+            if (a && !b) {
+                diffs.push({ name, valueA: descA, valueB: '', type: 'removed' });
+            } else if (!a && b) {
+                diffs.push({ name, valueA: '', valueB: descB, type: 'added' });
             } else if (descA !== descB) {
-                diffs.push({ name: label, valueA: descA, valueB: descB, type: 'changed' });
+                diffs.push({ name, valueA: descA, valueB: descB, type: 'changed' });
             }
         }
         return diffs;
