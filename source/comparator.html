@@ -36,6 +36,46 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
 .comparator-spinner.hidden { display: none; }
 .spinner-text { font-size: 14px; color: #666; }
 
+/* Diff panel */
+.diff-panel-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.25); z-index: 20; }
+.diff-panel-backdrop.hidden { display: none; }
+.diff-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 520px; max-width: 90vw; max-height: 70vh; display: flex; flex-direction: column;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18); z-index: 21;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif;
+    font-size: 12px; color: #242424; }
+.diff-panel.hidden { display: none; }
+.diff-panel-header { display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
+.diff-panel-title { font-weight: 600; font-size: 13px; }
+.diff-panel-close { background: none; border: none; font-size: 18px; cursor: pointer;
+    color: #888; padding: 0 4px; line-height: 1; }
+.diff-panel-close:hover { color: #333; }
+.diff-panel-content { overflow-y: auto; padding: 12px 14px; flex: 1; }
+.diff-section { margin-bottom: 10px; }
+.diff-section-title { font-weight: 600; font-size: 11px; color: #666;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+    padding-bottom: 3px; border-bottom: 1px solid #eee; }
+.diff-row { display: flex; gap: 8px; padding: 3px 0; font-size: 11px; align-items: baseline; }
+.diff-label { width: 90px; flex-shrink: 0; color: #888; text-align: right; }
+.diff-value-a { flex: 1; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+.diff-value-b { flex: 1; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+.diff-arrow { flex-shrink: 0; color: #888; }
+.diff-changed .diff-value-a { background: rgba(231,76,60,0.1); color: #c0392b; }
+.diff-changed .diff-value-b { background: rgba(39,174,96,0.1); color: #27ae60; }
+.diff-added .diff-value-b { background: rgba(39,174,96,0.1); color: #27ae60; }
+.diff-removed .diff-value-a { background: rgba(231,76,60,0.1); color: #c0392b; }
+.diff-identical .diff-value-a { color: #888; }
+.diff-status { text-align: center; padding: 20px; color: #888; font-size: 13px; }
+.diff-status-badge { display: inline-block; padding: 3px 10px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+.diff-status-identical { background: rgba(136,136,136,0.15); color: #888; }
+.diff-status-added { background: rgba(39,174,96,0.15); color: #27ae60; }
+.diff-status-removed { background: rgba(231,76,60,0.15); color: #e74c3c; }
+.diff-status-modified { background: rgba(230,126,34,0.15); color: #e67e22; }
+
 /* Titlebar */
 .titlebar { color: #aaaaaa; display: none; height: 32px; position: relative;
     left: 0; right: 0; z-index: 2; -webkit-app-region: drag; flex-shrink: 0; }
@@ -64,6 +104,19 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
     .titlebar { color: #949494; }
     .titlebar-button:hover { color: #ffffff; background-color: rgba(0, 0, 0, 0.15); }
     .titlebar-button-close:hover { color: #ffffff; background-color: #b43029; }
+    .diff-panel { background: #2a2a2a; border-color: #444; color: #dfdfdf;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .diff-panel-header { border-color: #444; }
+    .diff-panel-close { color: #888; }
+    .diff-panel-close:hover { color: #ddd; }
+    .diff-section-title { color: #aaa; border-color: #444; }
+    .diff-label { color: #888; }
+    .diff-changed .diff-value-a { background: rgba(231,76,60,0.15); color: #e74c3c; }
+    .diff-changed .diff-value-b { background: rgba(39,174,96,0.15); color: #2ecc71; }
+    .diff-added .diff-value-b { background: rgba(39,174,96,0.15); color: #2ecc71; }
+    .diff-removed .diff-value-a { background: rgba(231,76,60,0.15); color: #e74c3c; }
+    .diff-identical .diff-value-a { color: #888; }
+    .diff-panel-backdrop { background: rgba(0,0,0,0.4); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -117,6 +170,14 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
 </div>
 <div id="comparator-spinner" class="comparator-spinner">
     <span class="spinner-text">Loading models...</span>
+</div>
+<div id="diff-panel-backdrop" class="diff-panel-backdrop hidden"></div>
+<div id="diff-panel" class="diff-panel hidden">
+    <div class="diff-panel-header">
+        <span class="diff-panel-title" id="diff-panel-title">Node Diff</span>
+        <button class="diff-panel-close" id="diff-panel-close">&times;</button>
+    </div>
+    <div class="diff-panel-content" id="diff-panel-content"></div>
 </div>
 <!-- Preload fonts to workaround Chrome SVG layout issue -->
 <div style="font-weight: normal; color: rgba(0, 0, 0, 0.01); user-select: none;">.</div>

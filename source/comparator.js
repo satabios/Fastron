@@ -1,5 +1,5 @@
 
-import { Graph, ModelFactoryService, Worker } from './view.js';
+import { Graph, ModelFactoryService, Worker, Formatter } from './view.js';
 
 const comparator = {};
 
@@ -9,6 +9,7 @@ comparator.ViewProxy = class {
         this._host = host;
         this._model = model;
         this._options = options;
+        this._controller = null;
     }
 
     get host() {
@@ -25,6 +26,12 @@ comparator.ViewProxy = class {
 
     get options() {
         return this._options;
+    }
+
+    showNodeProperties(node) {
+        if (this._controller) {
+            this._controller.showNodeDiff(node);
+        }
     }
 };
 
@@ -81,6 +88,7 @@ comparator.Controller = class {
 
             // Render Model A
             const viewProxyA = new comparator.ViewProxy(this._host, modelA, options);
+            viewProxyA._controller = this;
             const groupsA = targetA.groups || false;
             this._graphA = new Graph(viewProxyA, groupsA);
             this._graphA.add(targetA, null);
@@ -92,6 +100,7 @@ comparator.Controller = class {
 
             // Render Model B (must be sequential — worker handles one request at a time)
             const viewProxyB = new comparator.ViewProxy(this._host, modelB, options);
+            viewProxyB._controller = this;
             const groupsB = targetB.groups || false;
             this._graphB = new Graph(viewProxyB, groupsB);
             this._graphB.add(targetB, null);
@@ -104,6 +113,12 @@ comparator.Controller = class {
             // Perform node comparison and apply highlighting
             const diffResult = this._compareNodes(targetA, targetB);
             this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, diffResult);
+
+            // Store references for diff panel lookup
+            this._targetA = targetA;
+            this._targetB = targetB;
+            this._diffResult = diffResult;
+            this._buildDiffLookup(targetA, targetB, diffResult);
 
             // Setup synchronized navigation
             this._setupSync(containerLeft, containerRight);
@@ -301,6 +316,281 @@ comparator.Controller = class {
                 this._syncing = false;
             }
         };
+    }
+
+    _buildDiffLookup(targetA, targetB, diffResult) {
+        const nodesA = targetA.nodes || [];
+        const nodesB = targetB.nodes || [];
+        this._nodeDiffMap = new Map();
+        for (const pair of diffResult.pairs) {
+            const nodeA = nodesA[pair.indexA];
+            const nodeB = nodesB[pair.indexB];
+            this._nodeDiffMap.set(nodeA, { status: pair.status, nodeA, nodeB });
+            this._nodeDiffMap.set(nodeB, { status: pair.status, nodeA, nodeB });
+        }
+        for (const idx of diffResult.onlyInA) {
+            this._nodeDiffMap.set(nodesA[idx], { status: 'removed', nodeA: nodesA[idx], nodeB: null });
+        }
+        for (const idx of diffResult.onlyInB) {
+            this._nodeDiffMap.set(nodesB[idx], { status: 'added', nodeA: null, nodeB: nodesB[idx] });
+        }
+    }
+
+    showNodeDiff(node) {
+        const diffInfo = this._nodeDiffMap ? this._nodeDiffMap.get(node) : null;
+        if (!diffInfo) {
+            return;
+        }
+        const document = this._host.document;
+        const panel = document.getElementById('diff-panel');
+        const backdrop = document.getElementById('diff-panel-backdrop');
+        const title = document.getElementById('diff-panel-title');
+        const content = document.getElementById('diff-panel-content');
+        content.innerHTML = '';
+        const typeName = node.type && node.type.name ? node.type.name : 'Unknown';
+        title.textContent = `Node: ${typeName}`;
+        if (diffInfo.status === 'identical') {
+            this._renderIdenticalStatus(document, content, typeName);
+        } else if (diffInfo.status === 'added') {
+            this._renderSingleStatus(document, content, typeName, 'added', 'Only in Model B');
+        } else if (diffInfo.status === 'removed') {
+            this._renderSingleStatus(document, content, typeName, 'removed', 'Only in Model A');
+        } else if (diffInfo.status === 'modified') {
+            this._renderModifiedDiff(document, content, diffInfo.nodeA, diffInfo.nodeB);
+        }
+        panel.classList.remove('hidden');
+        backdrop.classList.remove('hidden');
+        if (!this._diffPanelInitialized) {
+            this._diffPanelInitialized = true;
+            document.getElementById('diff-panel-close').addEventListener('click', () => {
+                this._hideDiffPanel();
+            });
+            backdrop.addEventListener('click', () => {
+                this._hideDiffPanel();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this._hideDiffPanel();
+                }
+            });
+        }
+    }
+
+    _hideDiffPanel() {
+        const document = this._host.document;
+        const panel = document.getElementById('diff-panel');
+        const backdrop = document.getElementById('diff-panel-backdrop');
+        if (panel) {
+            panel.classList.add('hidden');
+        }
+        if (backdrop) {
+            backdrop.classList.add('hidden');
+        }
+    }
+
+    _renderIdenticalStatus(document, container, typeName) {
+        const div = document.createElement('div');
+        div.className = 'diff-status';
+        const badge = document.createElement('div');
+        badge.className = 'diff-status-badge diff-status-identical';
+        badge.textContent = 'Identical';
+        div.appendChild(badge);
+        const text = document.createElement('div');
+        text.textContent = `This node (${typeName}) is identical in both models.`;
+        div.appendChild(text);
+        container.appendChild(div);
+    }
+
+    _renderSingleStatus(document, container, typeName, status, message) {
+        const div = document.createElement('div');
+        div.className = 'diff-status';
+        const badge = document.createElement('div');
+        badge.className = `diff-status-badge diff-status-${status}`;
+        badge.textContent = status === 'added' ? 'Added' : 'Removed';
+        div.appendChild(badge);
+        const text = document.createElement('div');
+        text.textContent = `${typeName}: ${message}`;
+        div.appendChild(text);
+        container.appendChild(div);
+    }
+
+    _renderModifiedDiff(document, container, nodeA, nodeB) {
+        // Type section
+        const typeSection = this._createSection(document, 'Type');
+        let hasTypeDiffs = false;
+        const typeNameA = nodeA.type && nodeA.type.name ? nodeA.type.name : '';
+        const typeNameB = nodeB.type && nodeB.type.name ? nodeB.type.name : '';
+        if (typeNameA !== typeNameB) {
+            typeSection.appendChild(this._createDiffRow(document, 'name', typeNameA, typeNameB, 'changed'));
+            hasTypeDiffs = true;
+        }
+        const moduleA = (nodeA.type && nodeA.type.module) || '';
+        const moduleB = (nodeB.type && nodeB.type.module) || '';
+        if (moduleA !== moduleB) {
+            typeSection.appendChild(this._createDiffRow(document, 'module', moduleA, moduleB, 'changed'));
+            hasTypeDiffs = true;
+        }
+        const versionA = (nodeA.type && nodeA.type.version) || '';
+        const versionB = (nodeB.type && nodeB.type.version) || '';
+        if (versionA !== versionB) {
+            typeSection.appendChild(this._createDiffRow(document, 'version', versionA, versionB, 'changed'));
+            hasTypeDiffs = true;
+        }
+        if (hasTypeDiffs) {
+            container.appendChild(typeSection);
+        }
+
+        // Properties section
+        const propsSection = this._createSection(document, 'Properties');
+        let hasPropDiffs = false;
+        for (const prop of ['name', 'identifier', 'description', 'device']) {
+            const valA = nodeA[prop] || '';
+            const valB = nodeB[prop] || '';
+            if (valA !== valB) {
+                propsSection.appendChild(this._createDiffRow(document, prop, valA, valB, 'changed'));
+                hasPropDiffs = true;
+            }
+        }
+        if (hasPropDiffs) {
+            container.appendChild(propsSection);
+        }
+
+        // Attributes section
+        const attrsA = Array.isArray(nodeA.attributes) ? nodeA.attributes : [];
+        const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
+        const attrDiffs = this._diffNamedItems(attrsA, attrsB, (attr) => {
+            try {
+                return new Formatter(attr.value, attr.type).toString();
+            } catch {
+                return String(attr.value);
+            }
+        });
+        if (attrDiffs.length > 0) {
+            const section = this._createSection(document, 'Attributes');
+            for (const diff of attrDiffs) {
+                section.appendChild(this._createDiffRow(document, diff.name, diff.valueA, diff.valueB, diff.type));
+            }
+            container.appendChild(section);
+        }
+
+        // Inputs section
+        const inputsA = Array.isArray(nodeA.inputs) ? nodeA.inputs : [];
+        const inputsB = Array.isArray(nodeB.inputs) ? nodeB.inputs : [];
+        const inputDiffs = this._diffConnections(inputsA, inputsB);
+        if (inputDiffs.length > 0) {
+            const section = this._createSection(document, 'Inputs');
+            for (const diff of inputDiffs) {
+                section.appendChild(this._createDiffRow(document, diff.name, diff.valueA, diff.valueB, diff.type));
+            }
+            container.appendChild(section);
+        }
+
+        // Outputs section
+        const outputsA = Array.isArray(nodeA.outputs) ? nodeA.outputs : [];
+        const outputsB = Array.isArray(nodeB.outputs) ? nodeB.outputs : [];
+        const outputDiffs = this._diffConnections(outputsA, outputsB);
+        if (outputDiffs.length > 0) {
+            const section = this._createSection(document, 'Outputs');
+            for (const diff of outputDiffs) {
+                section.appendChild(this._createDiffRow(document, diff.name, diff.valueA, diff.valueB, diff.type));
+            }
+            container.appendChild(section);
+        }
+
+        // Fallback if no specific diffs found
+        if (!container.hasChildNodes()) {
+            const typeName = nodeA.type && nodeA.type.name ? nodeA.type.name : 'Node';
+            this._renderIdenticalStatus(document, container, typeName);
+        }
+    }
+
+    _createSection(document, title) {
+        const section = document.createElement('div');
+        section.className = 'diff-section';
+        const heading = document.createElement('div');
+        heading.className = 'diff-section-title';
+        heading.textContent = title;
+        section.appendChild(heading);
+        return section;
+    }
+
+    _createDiffRow(document, label, valueA, valueB, type) {
+        const row = document.createElement('div');
+        row.className = `diff-row diff-${type}`;
+        const labelEl = document.createElement('span');
+        labelEl.className = 'diff-label';
+        labelEl.textContent = label;
+        row.appendChild(labelEl);
+        const valA = document.createElement('span');
+        valA.className = 'diff-value-a';
+        valA.textContent = type === 'added' ? '' : (valueA || '(empty)');
+        row.appendChild(valA);
+        const arrow = document.createElement('span');
+        arrow.className = 'diff-arrow';
+        arrow.textContent = '\u2192';
+        row.appendChild(arrow);
+        const valB = document.createElement('span');
+        valB.className = 'diff-value-b';
+        valB.textContent = type === 'removed' ? '' : (valueB || '(empty)');
+        row.appendChild(valB);
+        return row;
+    }
+
+    _diffNamedItems(itemsA, itemsB, formatter) {
+        const diffs = [];
+        const mapA = new Map(itemsA.map((a) => [a.name, a]));
+        const mapB = new Map(itemsB.map((a) => [a.name, a]));
+        const allNames = new Set([...mapA.keys(), ...mapB.keys()]);
+        for (const name of allNames) {
+            const a = mapA.get(name);
+            const b = mapB.get(name);
+            if (a && !b) {
+                diffs.push({ name, valueA: formatter(a), valueB: '', type: 'removed' });
+            } else if (!a && b) {
+                diffs.push({ name, valueA: '', valueB: formatter(b), type: 'added' });
+            } else if (a && b && !this._valuesEqual(a.value, b.value)) {
+                diffs.push({ name, valueA: formatter(a), valueB: formatter(b), type: 'changed' });
+            }
+        }
+        return diffs;
+    }
+
+    _diffConnections(connectionsA, connectionsB) {
+        const diffs = [];
+        const maxLen = Math.max(connectionsA.length, connectionsB.length);
+        for (let i = 0; i < maxLen; i++) {
+            const a = i < connectionsA.length ? connectionsA[i] : null;
+            const b = i < connectionsB.length ? connectionsB[i] : null;
+            const nameA = a ? a.name || `[${i}]` : '';
+            const nameB = b ? b.name || `[${i}]` : '';
+            const label = nameA || nameB;
+            const descA = a ? this._describeConnection(a) : '';
+            const descB = b ? this._describeConnection(b) : '';
+            if (!a) {
+                diffs.push({ name: label, valueA: '', valueB: descB, type: 'added' });
+            } else if (!b) {
+                diffs.push({ name: label, valueA: descA, valueB: '', type: 'removed' });
+            } else if (descA !== descB) {
+                diffs.push({ name: label, valueA: descA, valueB: descB, type: 'changed' });
+            }
+        }
+        return diffs;
+    }
+
+    _describeConnection(connection) {
+        if (Array.isArray(connection.value)) {
+            return connection.value.map((arg) => {
+                const parts = [];
+                if (arg.name) {
+                    parts.push(arg.name);
+                }
+                if (arg.type) {
+                    parts.push(`[${arg.type}]`);
+                }
+                return parts.join(' ') || '?';
+            }).join(', ');
+        }
+        return connection.type || '';
     }
 };
 
