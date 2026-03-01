@@ -173,6 +173,12 @@ comparator.Controller = class {
             this._graphA.register();
             this._graphB.register();
 
+            // Hide spinner on success
+            const loadSpinner = document.getElementById('comparator-spinner');
+            if (loadSpinner) {
+                loadSpinner.classList.add('hidden');
+            }
+
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('Comparison failed:', error);
@@ -186,12 +192,6 @@ comparator.Controller = class {
             return;
         } finally {
             this._comparing = false;
-        }
-
-        // Hide spinner
-        const spinner = document.getElementById('comparator-spinner');
-        if (spinner) {
-            spinner.classList.add('hidden');
         }
     }
 
