@@ -218,84 +218,115 @@ comparator.Controller = class {
 
         const matchedB = new Set();
 
-        // Helper to build a match key from node type name and node name
-        const nodeKey = (node) => {
-            const typeName = node && node.type && node.type.name ? node.type.name : '';
-            const name = node && node.name ? node.name : '';
-            return `${typeName}\0${name}`;
-        };
+        // Precompute fingerprints for all nodes
+        const fingerprintsA = nodesA.map((n) => this._nodeFingerprint(n));
+        const fingerprintsB = nodesB.map((n) => this._nodeFingerprint(n));
 
-        const typeName = (node) => {
-            return node && node.type && node.type.name ? node.type.name : '';
-        };
-
-        // Build lookup maps for B nodes
-        // Key: "typeName\0nodeName" -> array of indices (multiple nodes can share a key)
-        const keyMapB = new Map();
-        for (let j = 0; j < nodesB.length; j++) {
-            const key = nodeKey(nodesB[j]);
-            if (!keyMapB.has(key)) {
-                keyMapB.set(key, []);
-            }
-            keyMapB.get(key).push(j);
-        }
-        // Type-only lookup for fallback matching
-        const typeMapB = new Map();
-        for (let j = 0; j < nodesB.length; j++) {
-            const tn = typeName(nodesB[j]);
-            if (!typeMapB.has(tn)) {
-                typeMapB.set(tn, []);
-            }
-            typeMapB.get(tn).push(j);
-        }
-
-        const unmatchedA = [];
-
-        // Pass 1: Match by exact key (type name + node name)
-        for (let i = 0; i < nodesA.length; i++) {
-            const key = nodeKey(nodesA[i]);
-            const candidates = keyMapB.get(key);
-            let matched = false;
-            if (candidates) {
-                for (const j of candidates) {
-                    if (!matchedB.has(j)) {
-                        matchedB.add(j);
-                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
-                        result.pairs.push({ indexA: i, indexB: j, status });
-                        matched = true;
-                        break;
+        // Helper to build a lookup map: key -> [indices]
+        const buildMap = (fingerprints, keyFn) => {
+            const map = new Map();
+            for (let j = 0; j < fingerprints.length; j++) {
+                const key = keyFn(fingerprints[j]);
+                if (key) {
+                    if (!map.has(key)) {
+                        map.set(key, []);
                     }
+                    map.get(key).push(j);
                 }
             }
-            if (!matched) {
-                unmatchedA.push(i);
-            }
-        }
+            return map;
+        };
 
-        // Pass 2: Match remaining A nodes by type name only
-        const stillUnmatchedA = [];
-        for (const i of unmatchedA) {
-            const tn = typeName(nodesA[i]);
-            const candidates = typeMapB.get(tn);
-            let matched = false;
-            if (candidates) {
-                for (const j of candidates) {
-                    if (!matchedB.has(j)) {
-                        matchedB.add(j);
-                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
-                        result.pairs.push({ indexA: i, indexB: j, status });
-                        matched = true;
-                        break;
+        // Helper to run a matching pass
+        const matchPass = (unmatchedIndices, mapB, keyFn) => {
+            const remaining = [];
+            for (const i of unmatchedIndices) {
+                const key = keyFn(fingerprintsA[i]);
+                const candidates = key ? mapB.get(key) : null;
+                let matched = false;
+                if (candidates) {
+                    for (const j of candidates) {
+                        if (!matchedB.has(j)) {
+                            matchedB.add(j);
+                            const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
+                            result.pairs.push({ indexA: i, indexB: j, status });
+                            matched = true;
+                            break;
+                        }
                     }
                 }
+                if (!matched) {
+                    remaining.push(i);
+                }
             }
-            if (!matched) {
-                stillUnmatchedA.push(i);
+            return remaining;
+        };
+
+        // All A indices start unmatched
+        let unmatched = Array.from({ length: nodesA.length }, (_, i) => i);
+
+        // Pass 1: Type + name + group (highest confidence)
+        const nameGroupMapB = buildMap(fingerprintsB, (fp) => {
+            if (fp.name) {
+                return `${fp.typeName}\0${fp.name}\0${fp.group}`;
             }
-        }
+            return null;
+        });
+        unmatched = matchPass(unmatched, nameGroupMapB, (fp) => {
+            if (fp.name) {
+                return `${fp.typeName}\0${fp.name}\0${fp.group}`;
+            }
+            return null;
+        });
+
+        // Pass 2: Type + name (without group, for cross-framework matching)
+        const nameMapB = buildMap(fingerprintsB, (fp) => {
+            if (fp.name) {
+                return `${fp.typeName}\0${fp.name}`;
+            }
+            return null;
+        });
+        unmatched = matchPass(unmatched, nameMapB, (fp) => {
+            if (fp.name) {
+                return `${fp.typeName}\0${fp.name}`;
+            }
+            return null;
+        });
+
+        // Pass 3: Type + I/O shape signature (disambiguates nodes with same type but different shapes)
+        const ioMapB = buildMap(fingerprintsB, (fp) => {
+            if (fp.inputSignature || fp.outputSignature) {
+                return `${fp.typeName}\0${fp.inputSignature}\0${fp.outputSignature}`;
+            }
+            return null;
+        });
+        unmatched = matchPass(unmatched, ioMapB, (fp) => {
+            if (fp.inputSignature || fp.outputSignature) {
+                return `${fp.typeName}\0${fp.inputSignature}\0${fp.outputSignature}`;
+            }
+            return null;
+        });
+
+        // Pass 4: Type + attribute signature (matches nodes with same config)
+        const attrMapB = buildMap(fingerprintsB, (fp) => {
+            if (fp.attrSignature) {
+                return `${fp.typeName}\0${fp.attrSignature}`;
+            }
+            return null;
+        });
+        unmatched = matchPass(unmatched, attrMapB, (fp) => {
+            if (fp.attrSignature) {
+                return `${fp.typeName}\0${fp.attrSignature}`;
+            }
+            return null;
+        });
+
+        // Pass 5: Type-only fallback
+        const typeMapB = buildMap(fingerprintsB, (fp) => fp.typeName || null);
+        unmatched = matchPass(unmatched, typeMapB, (fp) => fp.typeName || null);
 
         // Remaining unmatched nodes
-        for (const i of stillUnmatchedA) {
+        for (const i of unmatched) {
             result.onlyInA.push(i);
         }
         for (let j = 0; j < nodesB.length; j++) {
@@ -305,6 +336,69 @@ comparator.Controller = class {
         }
 
         return result;
+    }
+
+    _nodeFingerprint(node) {
+        if (!node) {
+            return { typeName: '', name: '', group: '', inputSignature: '', outputSignature: '', attrSignature: '' };
+        }
+        const typeName = node.type && node.type.name ? node.type.name : '';
+        const name = node.name || node.identifier || '';
+        const group = node.group || '';
+        const inputSignature = this._ioSignature(node.inputs);
+        const outputSignature = this._ioSignature(node.outputs);
+        const attrSignature = this._attrSignature(node);
+        return { typeName, name, group, inputSignature, outputSignature, attrSignature };
+    }
+
+    _ioSignature(args) {
+        if (!Array.isArray(args) || args.length === 0) {
+            return '';
+        }
+        const parts = [];
+        for (const arg of args) {
+            if (!arg || !Array.isArray(arg.value)) {
+                parts.push('?');
+                continue;
+            }
+            for (const val of arg.value) {
+                if (val && val.type && val.type.shape && Array.isArray(val.type.shape.dimensions)) {
+                    const dims = val.type.shape.dimensions.map((d) =>
+                        (d !== null && d !== undefined && d !== -1) ? String(d) : '?'
+                    ).join(',');
+                    const dtype = val.type.dataType || '';
+                    parts.push(`${dtype}[${dims}]`);
+                } else if (val && val.type && val.type.dataType) {
+                    parts.push(val.type.dataType);
+                } else {
+                    parts.push('?');
+                }
+            }
+        }
+        return parts.join(';');
+    }
+
+    _attrSignature(node) {
+        const attrs = Array.isArray(node.attributes) ? node.attributes : [];
+        if (attrs.length === 0) {
+            return '';
+        }
+        const sorted = attrs.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const parts = [];
+        for (const attr of sorted) {
+            let valStr = '';
+            try {
+                valStr = JSON.stringify(attr.value);
+            } catch {
+                valStr = String(attr.value);
+            }
+            // Keep signature compact — truncate long values
+            if (valStr && valStr.length > 64) {
+                valStr = valStr.substring(0, 64);
+            }
+            parts.push(`${attr.name}=${valStr}`);
+        }
+        return parts.join(',');
     }
 
     _attributesMatch(nodeA, nodeB) {
