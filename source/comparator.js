@@ -207,127 +207,491 @@ comparator.Controller = class {
         return modules.length > 0 ? modules[0] : null;
     }
 
-    _compareNodes(targetA, targetB) {
-        const nodesA = targetA.nodes || [];
-        const nodesB = targetB.nodes || [];
-        const result = {
-            pairs: [],
-            onlyInA: [],
-            onlyInB: []
-        };
+    _simpleHash(str) {
+        let hash = 5381;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0x7fffffff;
+        }
+        return hash.toString(36);
+    }
 
-        const matchedB = new Set();
-
-        // Precompute fingerprints for all nodes
-        const fingerprintsA = nodesA.map((n) => this._nodeFingerprint(n));
-        const fingerprintsB = nodesB.map((n) => this._nodeFingerprint(n));
-
-        // Helper to build a lookup map: key -> [indices]
-        const buildMap = (fingerprints, keyFn) => {
-            const map = new Map();
-            for (let j = 0; j < fingerprints.length; j++) {
-                const key = keyFn(fingerprints[j]);
-                if (key) {
-                    if (!map.has(key)) {
-                        map.set(key, []);
+    _buildAdjacency(nodes) {
+        const outputMap = new Map();
+        const predecessors = new Map();
+        const successors = new Map();
+        for (let i = 0; i < nodes.length; i++) {
+            predecessors.set(i, []);
+            successors.set(i, []);
+            const outputs = Array.isArray(nodes[i].outputs) ? nodes[i].outputs : [];
+            for (const arg of outputs) {
+                const values = Array.isArray(arg.value) ? arg.value : [];
+                for (const val of values) {
+                    if (val && val.name) {
+                        outputMap.set(val.name, i);
                     }
-                    map.get(key).push(j);
                 }
             }
-            return map;
-        };
-
-        // Helper to run a matching pass
-        const matchPass = (unmatchedIndices, mapB, keyFn) => {
-            const remaining = [];
-            for (const i of unmatchedIndices) {
-                const key = keyFn(fingerprintsA[i]);
-                const candidates = key ? mapB.get(key) : null;
-                let matched = false;
-                if (candidates) {
-                    for (const j of candidates) {
-                        if (!matchedB.has(j)) {
-                            matchedB.add(j);
-                            const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
-                            result.pairs.push({ indexA: i, indexB: j, status });
-                            matched = true;
-                            break;
+        }
+        for (let i = 0; i < nodes.length; i++) {
+            const inputs = Array.isArray(nodes[i].inputs) ? nodes[i].inputs : [];
+            for (const arg of inputs) {
+                const values = Array.isArray(arg.value) ? arg.value : [];
+                for (const val of values) {
+                    if (val && val.name && outputMap.has(val.name)) {
+                        const j = outputMap.get(val.name);
+                        if (j !== i) {
+                            predecessors.get(i).push(j);
+                            successors.get(j).push(i);
                         }
                     }
                 }
-                if (!matched) {
-                    remaining.push(i);
+            }
+        }
+        return { predecessors, successors };
+    }
+
+    _computeWLLabels(nodes, adjacency, rounds) {
+        const { predecessors, successors } = adjacency;
+        let labels = new Map();
+        for (let i = 0; i < nodes.length; i++) {
+            const typeName = nodes[i].type && nodes[i].type.name ? nodes[i].type.name : '';
+            labels.set(i, this._simpleHash(typeName));
+        }
+        for (let r = 0; r < rounds; r++) {
+            const currentLabels = labels;
+            const nextLabels = new Map();
+            for (let i = 0; i < nodes.length; i++) {
+                const predLabels = (predecessors.get(i) || []).map((j) => currentLabels.get(j)).sort();
+                const succLabels = (successors.get(i) || []).map((j) => currentLabels.get(j)).sort();
+                const combined = `${currentLabels.get(i)}|${predLabels.join(',')}|${succLabels.join(',')}`;
+                nextLabels.set(i, this._simpleHash(combined));
+            }
+            labels = nextLabels;
+        }
+        return labels;
+    }
+
+    _scoreOpType(nodeA, nodeB) {
+        const typeA = nodeA.type && nodeA.type.name ? nodeA.type.name : '';
+        const typeB = nodeB.type && nodeB.type.name ? nodeB.type.name : '';
+        if (typeA === typeB) {
+            return 50;
+        }
+        const catA = nodeA.type && nodeA.type.category ? nodeA.type.category : '';
+        const catB = nodeB.type && nodeB.type.category ? nodeB.type.category : '';
+        if (catA && catB && catA === catB) {
+            return 25;
+        }
+        return 0;
+    }
+
+    _scoreAttributes(nodeA, nodeB) {
+        const attrsA = Array.isArray(nodeA.attributes) ? nodeA.attributes : [];
+        const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
+        const mapA = new Map(attrsA.map((a) => [a.name, a]));
+        const mapB = new Map(attrsB.map((a) => [a.name, a]));
+        const allNames = new Set([...mapA.keys(), ...mapB.keys()]);
+        const totalUnique = allNames.size;
+        if (totalUnique === 0) {
+            return 30;
+        }
+        let earned = 0;
+        for (const name of allNames) {
+            const a = mapA.get(name);
+            const b = mapB.get(name);
+            if (a && b) {
+                if (this._valuesEqual(a.value, b.value)) {
+                    earned += 1.0;
+                } else if (a.type === b.type) {
+                    earned += 0.5;
                 }
             }
-            return remaining;
+        }
+        return Math.round(30 * earned / totalUnique);
+    }
+
+    _scoreShapes(nodeA, nodeB, ctxA, ctxB) {
+        let score = 0;
+        const extractShapes = (args) => {
+            const shapes = [];
+            const dtypes = [];
+            const argList = Array.isArray(args) ? args : [];
+            for (const arg of argList) {
+                const values = Array.isArray(arg.value) ? arg.value : [];
+                for (const val of values) {
+                    if (val && val.type && val.type.shape && Array.isArray(val.type.shape.dimensions)) {
+                        shapes.push(val.type.shape.dimensions);
+                    } else {
+                        shapes.push(null);
+                    }
+                    if (val && val.type && val.type.dataType) {
+                        dtypes.push(val.type.dataType);
+                    } else {
+                        dtypes.push(null);
+                    }
+                }
+            }
+            return { shapes, dtypes };
+        };
+        const scoreShapePair = (shapesA, shapesB, maxPts) => {
+            if (shapesA.length === 0 && shapesB.length === 0) {
+                return maxPts;
+            }
+            if (shapesA.length === 0 || shapesB.length === 0) {
+                return 0;
+            }
+            const minLen = Math.min(shapesA.length, shapesB.length);
+            const maxLen = Math.max(shapesA.length, shapesB.length);
+            let matched = 0;
+            for (let k = 0; k < minLen; k++) {
+                const sA = shapesA[k];
+                const sB = shapesB[k];
+                if (sA === null || sB === null) {
+                    matched += 0.25;
+                } else if (sA.length === sB.length) {
+                    const dimMatch = sA.reduce((acc, d, idx) => acc + (d === sB[idx] ? 1 : 0), 0);
+                    matched += 0.5 + 0.5 * dimMatch / sA.length;
+                } else {
+                    matched += 0.25;
+                }
+            }
+            return Math.round(maxPts * matched / maxLen);
+        };
+        const scoreDtypes = (dtA, dtB, maxPts) => {
+            if (dtA.length === 0 && dtB.length === 0) {
+                return maxPts;
+            }
+            const maxLen = Math.max(dtA.length, dtB.length);
+            if (maxLen === 0) {
+                return maxPts;
+            }
+            const minLen = Math.min(dtA.length, dtB.length);
+            let dtMatch = 0;
+            for (let k = 0; k < minLen; k++) {
+                if (dtA[k] && dtB[k] && dtA[k] === dtB[k]) {
+                    dtMatch += 1;
+                }
+            }
+            return Math.round(maxPts * dtMatch / maxLen);
         };
 
-        // All A indices start unmatched
-        let unmatched = Array.from({ length: nodesA.length }, (_, i) => i);
+        const inputA = extractShapes(nodeA.inputs);
+        const inputB = extractShapes(nodeB.inputs);
+        const outputA = extractShapes(nodeA.outputs);
+        const outputB = extractShapes(nodeB.outputs);
 
-        // Pass 1: Type + name + group (highest confidence)
-        const nameGroupMapB = buildMap(fingerprintsB, (fp) => {
-            if (fp.name) {
-                return `${fp.typeName}\0${fp.name}\0${fp.group}`;
-            }
-            return null;
-        });
-        unmatched = matchPass(unmatched, nameGroupMapB, (fp) => {
-            if (fp.name) {
-                return `${fp.typeName}\0${fp.name}\0${fp.group}`;
-            }
-            return null;
-        });
+        score += scoreShapePair(inputA.shapes, inputB.shapes, 5);
+        score += scoreShapePair(outputA.shapes, outputB.shapes, 5);
+        score += scoreDtypes(inputA.dtypes, inputB.dtypes, 2);
+        score += scoreDtypes(outputA.dtypes, outputB.dtypes, 2);
 
-        // Pass 2: Type + name (without group, for cross-framework matching)
-        const nameMapB = buildMap(fingerprintsB, (fp) => {
-            if (fp.name) {
-                return `${fp.typeName}\0${fp.name}`;
+        if (ctxA && ctxB) {
+            const degreeA = (ctxA.predCount || 0) + (ctxA.succCount || 0);
+            const degreeB = (ctxB.predCount || 0) + (ctxB.succCount || 0);
+            const maxDeg = Math.max(degreeA, degreeB, 1);
+            const degSim = 1 - Math.abs(degreeA - degreeB) / maxDeg;
+            score += Math.round(2 * degSim);
+            if (ctxA.wlLabel && ctxB.wlLabel && ctxA.wlLabel === ctxB.wlLabel) {
+                score += 2;
             }
-            return null;
-        });
-        unmatched = matchPass(unmatched, nameMapB, (fp) => {
-            if (fp.name) {
-                return `${fp.typeName}\0${fp.name}`;
-            }
-            return null;
-        });
+        }
 
-        // Pass 3: Type + I/O shape signature (disambiguates nodes with same type but different shapes)
-        const ioMapB = buildMap(fingerprintsB, (fp) => {
-            if (fp.inputSignature || fp.outputSignature) {
-                return `${fp.typeName}\0${fp.inputSignature}\0${fp.outputSignature}`;
-            }
-            return null;
-        });
-        unmatched = matchPass(unmatched, ioMapB, (fp) => {
-            if (fp.inputSignature || fp.outputSignature) {
-                return `${fp.typeName}\0${fp.inputSignature}\0${fp.outputSignature}`;
-            }
-            return null;
-        });
+        return Math.min(score, 20);
+    }
 
-        // Pass 4: Type + attribute signature (matches nodes with same config)
-        const attrMapB = buildMap(fingerprintsB, (fp) => {
-            if (fp.attrSignature) {
-                return `${fp.typeName}\0${fp.attrSignature}`;
-            }
-            return null;
-        });
-        unmatched = matchPass(unmatched, attrMapB, (fp) => {
-            if (fp.attrSignature) {
-                return `${fp.typeName}\0${fp.attrSignature}`;
-            }
-            return null;
-        });
+    _calculateSimilarity(nodeA, nodeB, ctxA, ctxB) {
+        const opScore = this._scoreOpType(nodeA, nodeB);
+        const attrScore = this._scoreAttributes(nodeA, nodeB);
+        const shapeScore = this._scoreShapes(nodeA, nodeB, ctxA, ctxB);
+        return opScore + attrScore + shapeScore;
+    }
 
-        // Pass 5: Type-only fallback
-        const typeMapB = buildMap(fingerprintsB, (fp) => fp.typeName || null);
-        unmatched = matchPass(unmatched, typeMapB, (fp) => fp.typeName || null);
+    _hungarianMatch(costMatrix) {
+        const n = costMatrix.length;
+        if (n === 0) {
+            return [];
+        }
+        const m = costMatrix[0].length;
+        if (m === 0) {
+            return Array.from({ length: n }, () => -1);
+        }
+        const size = Math.max(n, m);
+        const cost = Array.from({ length: size }, (_, i) =>
+            Array.from({ length: size }, (__, j) =>
+                (i < n && j < m) ? costMatrix[i][j] : 0
+            )
+        );
+        const u = Array.from({ length: size + 1 }, () => 0);
+        const v = Array.from({ length: size + 1 }, () => 0);
+        const p = Array.from({ length: size + 1 }, () => 0);
+        const way = Array.from({ length: size + 1 }, () => 0);
 
-        // Remaining unmatched nodes
-        for (const i of unmatched) {
-            result.onlyInA.push(i);
+        for (let i = 1; i <= size; i++) {
+            p[0] = i;
+            let j0 = 0;
+            const minv = Array.from({ length: size + 1 }, () => Infinity);
+            const used = Array.from({ length: size + 1 }, () => false);
+            do {
+                used[j0] = true;
+                const i0 = p[j0];
+                let delta = Infinity;
+                let j1 = -1;
+                for (let j = 1; j <= size; j++) {
+                    if (!used[j]) {
+                        const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+                        if (cur < minv[j]) {
+                            minv[j] = cur;
+                            way[j] = j0;
+                        }
+                        if (minv[j] < delta) {
+                            delta = minv[j];
+                            j1 = j;
+                        }
+                    }
+                }
+                for (let j = 0; j <= size; j++) {
+                    if (used[j]) {
+                        u[p[j]] += delta;
+                        v[j] -= delta;
+                    } else {
+                        minv[j] -= delta;
+                    }
+                }
+                j0 = j1;
+            } while (p[j0] !== 0);
+            do {
+                const j1 = way[j0];
+                p[j0] = p[j1];
+                j0 = j1;
+            } while (j0 !== 0);
+        }
+
+        const assignment = Array.from({ length: n }, () => -1);
+        for (let j = 1; j <= size; j++) {
+            if (p[j] > 0 && p[j] <= n && j <= m) {
+                assignment[p[j] - 1] = j - 1;
+            }
+        }
+        return assignment;
+    }
+
+    _compareNodes(targetA, targetB) {
+        const nodesA = targetA.nodes || [];
+        const nodesB = targetB.nodes || [];
+        const result = { pairs: [], onlyInA: [], onlyInB: [] };
+
+        if (nodesA.length === 0 && nodesB.length === 0) {
+            return result;
+        }
+
+        // Phase 0: Precompute adjacency, WL labels, and node contexts
+        const adjA = this._buildAdjacency(nodesA);
+        const adjB = this._buildAdjacency(nodesB);
+        const wlA = this._computeWLLabels(nodesA, adjA, 2);
+        const wlB = this._computeWLLabels(nodesB, adjB, 2);
+
+        const ctxA = nodesA.map((_, i) => ({
+            wlLabel: wlA.get(i),
+            predCount: (adjA.predecessors.get(i) || []).length,
+            succCount: (adjA.successors.get(i) || []).length
+        }));
+        const ctxB = nodesB.map((_, i) => ({
+            wlLabel: wlB.get(i),
+            predCount: (adjB.predecessors.get(i) || []).length,
+            succCount: (adjB.successors.get(i) || []).length
+        }));
+
+        const matchedA = new Set();
+        const matchedB = new Set();
+
+        // Phase 1: Exact name matching (fast O(n) passes)
+        const nameKeyFn = (nodes, idx, withGroup) => {
+            const node = nodes[idx];
+            const typeName = node.type && node.type.name ? node.type.name : '';
+            const name = node.name || node.identifier || '';
+            if (!name) {
+                return null;
+            }
+            if (withGroup) {
+                const group = node.group || '';
+                return `${typeName}\0${name}\0${group}`;
+            }
+            return `${typeName}\0${name}`;
+        };
+
+        const exactMatch = (withGroup) => {
+            const mapB = new Map();
+            for (let j = 0; j < nodesB.length; j++) {
+                if (matchedB.has(j)) {
+                    continue;
+                }
+                const key = nameKeyFn(nodesB, j, withGroup);
+                if (key) {
+                    if (!mapB.has(key)) {
+                        mapB.set(key, []);
+                    }
+                    mapB.get(key).push(j);
+                }
+            }
+            for (let i = 0; i < nodesA.length; i++) {
+                if (matchedA.has(i)) {
+                    continue;
+                }
+                const key = nameKeyFn(nodesA, i, withGroup);
+                if (!key) {
+                    continue;
+                }
+                const candidates = mapB.get(key);
+                if (!candidates) {
+                    continue;
+                }
+                for (const j of candidates) {
+                    if (!matchedB.has(j)) {
+                        matchedA.add(i);
+                        matchedB.add(j);
+                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
+                        result.pairs.push({ indexA: i, indexB: j, status });
+                        break;
+                    }
+                }
+            }
+        };
+
+        exactMatch(true);
+        exactMatch(false);
+
+        // Phase 2: Hungarian matching for remaining unmatched nodes
+        const unmatchedA = [];
+        const unmatchedB = [];
+        for (let i = 0; i < nodesA.length; i++) {
+            if (!matchedA.has(i)) {
+                unmatchedA.push(i);
+            }
+        }
+        for (let j = 0; j < nodesB.length; j++) {
+            if (!matchedB.has(j)) {
+                unmatchedB.push(j);
+            }
+        }
+
+        const typeGroupsA = new Map();
+        const typeGroupsB = new Map();
+        for (const i of unmatchedA) {
+            const t = nodesA[i].type && nodesA[i].type.name ? nodesA[i].type.name : '';
+            if (!typeGroupsA.has(t)) {
+                typeGroupsA.set(t, []);
+            }
+            typeGroupsA.get(t).push(i);
+        }
+        for (const j of unmatchedB) {
+            const t = nodesB[j].type && nodesB[j].type.name ? nodesB[j].type.name : '';
+            if (!typeGroupsB.has(t)) {
+                typeGroupsB.set(t, []);
+            }
+            typeGroupsB.get(t).push(j);
+        }
+
+        const matchGroup = (groupA, groupB, threshold) => {
+            const costMatrix = groupA.map((idxA) =>
+                groupB.map((idxB) =>
+                    100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
+                )
+            );
+            if (Math.max(groupA.length, groupB.length) > 200) {
+                // Greedy fallback for very large groups
+                const allPairs = [];
+                for (let ai = 0; ai < groupA.length; ai++) {
+                    for (let bi = 0; bi < groupB.length; bi++) {
+                        allPairs.push({ ai, bi, sim: 100 - costMatrix[ai][bi] });
+                    }
+                }
+                allPairs.sort((a, b) => b.sim - a.sim);
+                const usedA = new Set();
+                const usedB = new Set();
+                for (const pair of allPairs) {
+                    if (pair.sim < threshold) {
+                        break;
+                    }
+                    if (usedA.has(pair.ai) || usedB.has(pair.bi)) {
+                        continue;
+                    }
+                    usedA.add(pair.ai);
+                    usedB.add(pair.bi);
+                    const idxA = groupA[pair.ai];
+                    const idxB = groupB[pair.bi];
+                    matchedA.add(idxA);
+                    matchedB.add(idxB);
+                    const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
+                    result.pairs.push({ indexA: idxA, indexB: idxB, status });
+                }
+            } else {
+                const assignment = this._hungarianMatch(costMatrix);
+                for (let k = 0; k < assignment.length; k++) {
+                    const col = assignment[k];
+                    if (col >= 0 && col < groupB.length) {
+                        const similarity = 100 - costMatrix[k][col];
+                        if (similarity >= threshold) {
+                            const idxA = groupA[k];
+                            const idxB = groupB[col];
+                            matchedA.add(idxA);
+                            matchedB.add(idxB);
+                            const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
+                            result.pairs.push({ indexA: idxA, indexB: idxB, status });
+                        }
+                    }
+                }
+            }
+        };
+
+        // Same-type matching (threshold 40)
+        for (const [typeName, groupA] of typeGroupsA) {
+            const groupB = typeGroupsB.get(typeName);
+            if (!groupB || groupB.length === 0) {
+                continue;
+            }
+            matchGroup(groupA, groupB, 40);
+        }
+
+        // Phase 2b: Cross-type category matching for fused ops (threshold 50)
+        const catGroupsA = new Map();
+        const catGroupsB = new Map();
+        for (let i = 0; i < nodesA.length; i++) {
+            if (matchedA.has(i)) {
+                continue;
+            }
+            const cat = nodesA[i].type && nodesA[i].type.category ? nodesA[i].type.category : '';
+            if (cat) {
+                if (!catGroupsA.has(cat)) {
+                    catGroupsA.set(cat, []);
+                }
+                catGroupsA.get(cat).push(i);
+            }
+        }
+        for (let j = 0; j < nodesB.length; j++) {
+            if (matchedB.has(j)) {
+                continue;
+            }
+            const cat = nodesB[j].type && nodesB[j].type.category ? nodesB[j].type.category : '';
+            if (cat) {
+                if (!catGroupsB.has(cat)) {
+                    catGroupsB.set(cat, []);
+                }
+                catGroupsB.get(cat).push(j);
+            }
+        }
+        for (const [cat, groupA] of catGroupsA) {
+            const groupB = catGroupsB.get(cat);
+            if (!groupB || groupB.length === 0) {
+                continue;
+            }
+            matchGroup(groupA, groupB, 50);
+        }
+
+        // Phase 4: Collect remaining unmatched
+        for (let i = 0; i < nodesA.length; i++) {
+            if (!matchedA.has(i)) {
+                result.onlyInA.push(i);
+            }
         }
         for (let j = 0; j < nodesB.length; j++) {
             if (!matchedB.has(j)) {
@@ -336,69 +700,6 @@ comparator.Controller = class {
         }
 
         return result;
-    }
-
-    _nodeFingerprint(node) {
-        if (!node) {
-            return { typeName: '', name: '', group: '', inputSignature: '', outputSignature: '', attrSignature: '' };
-        }
-        const typeName = node.type && node.type.name ? node.type.name : '';
-        const name = node.name || node.identifier || '';
-        const group = node.group || '';
-        const inputSignature = this._ioSignature(node.inputs);
-        const outputSignature = this._ioSignature(node.outputs);
-        const attrSignature = this._attrSignature(node);
-        return { typeName, name, group, inputSignature, outputSignature, attrSignature };
-    }
-
-    _ioSignature(args) {
-        if (!Array.isArray(args) || args.length === 0) {
-            return '';
-        }
-        const parts = [];
-        for (const arg of args) {
-            if (!arg || !Array.isArray(arg.value)) {
-                parts.push('?');
-                continue;
-            }
-            for (const val of arg.value) {
-                if (val && val.type && val.type.shape && Array.isArray(val.type.shape.dimensions)) {
-                    const dims = val.type.shape.dimensions.map((d) =>
-                        (d !== null && d !== undefined && d !== -1) ? String(d) : '?'
-                    ).join(',');
-                    const dtype = val.type.dataType || '';
-                    parts.push(`${dtype}[${dims}]`);
-                } else if (val && val.type && val.type.dataType) {
-                    parts.push(val.type.dataType);
-                } else {
-                    parts.push('?');
-                }
-            }
-        }
-        return parts.join(';');
-    }
-
-    _attrSignature(node) {
-        const attrs = Array.isArray(node.attributes) ? node.attributes : [];
-        if (attrs.length === 0) {
-            return '';
-        }
-        const sorted = attrs.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-        const parts = [];
-        for (const attr of sorted) {
-            let valStr = '';
-            try {
-                valStr = JSON.stringify(attr.value);
-            } catch {
-                valStr = String(attr.value);
-            }
-            // Keep signature compact — truncate long values
-            if (valStr && valStr.length > 64) {
-                valStr = valStr.substring(0, 64);
-            }
-            parts.push(`${attr.name}=${valStr}`);
-        }
-        return parts.join(',');
     }
 
     _attributesMatch(nodeA, nodeB) {
