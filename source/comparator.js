@@ -41,18 +41,32 @@ comparator.Controller = class {
         this._host = host;
         this._modelFactory = new ModelFactoryService(host);
         this._modelFactory.import();
-        this._worker = host.environment('serial') ? null : new Worker(host);
+        this._workerA = host.environment('serial') ? null : new Worker(host);
+        this._workerB = host.environment('serial') ? null : new Worker(host);
         this._syncing = false;
         this._comparing = false;
         this._graphA = null;
         this._graphB = null;
         this._nodeDiffMap = null;
         this._diffPanelInitialized = false;
+        this._phase2Timer = null;
     }
 
     _reset() {
         const document = this._host.document;
         this._hideDiffPanel();
+        // Unregister viewport observers and event handlers
+        if (this._graphA) {
+            this._graphA.unregister();
+        }
+        if (this._graphB) {
+            this._graphB.unregister();
+        }
+        // Cancel any pending Phase 2 comparison
+        if (this._phase2Timer) {
+            clearTimeout(this._phase2Timer);
+            this._phase2Timer = null;
+        }
         // Clear previous graph contents
         const containerLeft = document.getElementById('target-left');
         const containerRight = document.getElementById('target-right');
@@ -129,42 +143,55 @@ comparator.Controller = class {
                 names: false,
                 direction: 'vertical',
                 mousewheel: 'scroll',
-                lazyRender: false
+                lazyRender: true
             };
 
-            // Render Model A
+            // Build both graphs
             const viewProxyA = new comparator.ViewProxy(this._host, modelA, options);
             viewProxyA._controller = this;
             const groupsA = targetA.groups || false;
             this._graphA = new Graph(viewProxyA, groupsA);
+            this._graphA.enableViewportCulling(true);
             this._graphA.add(targetA, null);
             this._graphA.build(document, containerLeft);
-            await this._graphA.measure();
-            await this._graphA.layout(this._worker);
-            this._graphA.update();
-            this._graphA.restore(null);
 
-            // Render Model B (must be sequential — worker handles one request at a time)
             const viewProxyB = new comparator.ViewProxy(this._host, modelB, options);
             viewProxyB._controller = this;
             const groupsB = targetB.groups || false;
             this._graphB = new Graph(viewProxyB, groupsB);
+            this._graphB.enableViewportCulling(true);
             this._graphB.add(targetB, null);
             this._graphB.build(document, containerRight);
-            await this._graphB.measure();
-            await this._graphB.layout(this._worker);
+
+            // Parallel measure
+            await Promise.all([this._graphA.measure(), this._graphB.measure()]);
+
+            // Parallel layout (dual workers) + Phase 1 comparison (overlapped)
+            const [,, phase1State] = await Promise.all([
+                this._graphA.layout(this._workerA),
+                this._graphB.layout(this._workerB),
+                Promise.resolve(this._compareNodesPhase1(targetA, targetB))
+            ]);
+
+            // Populate spatial tiles for viewport culling
+            this._graphA.populateTiles();
+            this._graphB.populateTiles();
+
+            // Update and restore both graphs
+            this._graphA.update();
+            this._graphA.restore(null);
             this._graphB.update();
             this._graphB.restore(null);
 
-            // Perform node comparison and apply highlighting
-            const diffResult = this._compareNodes(targetA, targetB);
-            this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, diffResult);
+            // Apply Phase 1 diff highlighting (works on elements with display:none)
+            const phase1Result = phase1State.result;
+            this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, phase1Result);
 
             // Store references for diff panel lookup
             this._targetA = targetA;
             this._targetB = targetB;
-            this._diffResult = diffResult;
-            this._buildDiffLookup(targetA, targetB, diffResult);
+            this._diffResult = phase1Result;
+            this._buildDiffLookup(targetA, targetB, phase1Result);
 
             // Setup synchronized navigation
             this._setupSync(containerLeft, containerRight);
@@ -173,18 +200,25 @@ comparator.Controller = class {
             this._graphA.register();
             this._graphB.register();
 
-            // Hide spinner on success
+            // Hide spinner — user can now interact
             const loadSpinner = document.getElementById('comparator-spinner');
             if (loadSpinner) {
                 loadSpinner.classList.add('hidden');
             }
 
+            // Deferred Phase 2: Hungarian matching in background
+            this._compareNodesPhase2(phase1State, (fullResult) => {
+                this._diffResult = fullResult;
+                this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, fullResult);
+                this._buildDiffLookup(targetA, targetB, fullResult);
+            });
+
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('Comparison failed:', error);
-            const spinner = document.getElementById('comparator-spinner');
-            if (spinner) {
-                const text = spinner.querySelector('.spinner-text');
+            const loadSpinner = document.getElementById('comparator-spinner');
+            if (loadSpinner) {
+                const text = loadSpinner.querySelector('.spinner-text');
                 if (text) {
                     text.textContent = `Error: ${error.message}`;
                 }
@@ -475,13 +509,14 @@ comparator.Controller = class {
         return assignment;
     }
 
-    _compareNodes(targetA, targetB) {
+    _compareNodesPhase1(targetA, targetB) {
         const nodesA = targetA.nodes || [];
         const nodesB = targetB.nodes || [];
         const result = { pairs: [], onlyInA: [], onlyInB: [] };
 
         if (nodesA.length === 0 && nodesB.length === 0) {
-            return result;
+            return { result, matchedA: new Set(), matchedB: new Set(),
+                ctxA: [], ctxB: [], nodesA, nodesB };
         }
 
         // Phase 0: Precompute adjacency, WL labels, and node contexts
@@ -560,99 +595,62 @@ comparator.Controller = class {
         exactMatch(true);
         exactMatch(false);
 
-        // Phase 2: Hungarian matching for remaining unmatched nodes
-        const unmatchedA = [];
-        const unmatchedB = [];
-        for (let i = 0; i < nodesA.length; i++) {
-            if (!matchedA.has(i)) {
-                unmatchedA.push(i);
-            }
-        }
-        for (let j = 0; j < nodesB.length; j++) {
-            if (!matchedB.has(j)) {
-                unmatchedB.push(j);
-            }
-        }
+        return { result, matchedA, matchedB, ctxA, ctxB, nodesA, nodesB };
+    }
 
-        const typeGroupsA = new Map();
-        const typeGroupsB = new Map();
-        for (const i of unmatchedA) {
-            const t = nodesA[i].type && nodesA[i].type.name ? nodesA[i].type.name : '';
-            if (!typeGroupsA.has(t)) {
-                typeGroupsA.set(t, []);
-            }
-            typeGroupsA.get(t).push(i);
-        }
-        for (const j of unmatchedB) {
-            const t = nodesB[j].type && nodesB[j].type.name ? nodesB[j].type.name : '';
-            if (!typeGroupsB.has(t)) {
-                typeGroupsB.set(t, []);
-            }
-            typeGroupsB.get(t).push(j);
-        }
-
-        const matchGroup = (groupA, groupB, threshold) => {
-            const costMatrix = groupA.map((idxA) =>
-                groupB.map((idxB) =>
-                    100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
-                )
-            );
-            if (Math.max(groupA.length, groupB.length) > 200) {
-                // Greedy fallback for very large groups
-                const allPairs = [];
-                for (let ai = 0; ai < groupA.length; ai++) {
-                    for (let bi = 0; bi < groupB.length; bi++) {
-                        allPairs.push({ ai, bi, sim: 100 - costMatrix[ai][bi] });
-                    }
+    _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
+        const costMatrix = groupA.map((idxA) =>
+            groupB.map((idxB) =>
+                100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
+            )
+        );
+        if (Math.max(groupA.length, groupB.length) > 200) {
+            // Greedy fallback for very large groups
+            const allPairs = [];
+            for (let ai = 0; ai < groupA.length; ai++) {
+                for (let bi = 0; bi < groupB.length; bi++) {
+                    allPairs.push({ ai, bi, sim: 100 - costMatrix[ai][bi] });
                 }
-                allPairs.sort((a, b) => b.sim - a.sim);
-                const usedA = new Set();
-                const usedB = new Set();
-                for (const pair of allPairs) {
-                    if (pair.sim < threshold) {
-                        break;
-                    }
-                    if (usedA.has(pair.ai) || usedB.has(pair.bi)) {
-                        continue;
-                    }
-                    usedA.add(pair.ai);
-                    usedB.add(pair.bi);
-                    const idxA = groupA[pair.ai];
-                    const idxB = groupB[pair.bi];
-                    matchedA.add(idxA);
-                    matchedB.add(idxB);
-                    const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
-                    result.pairs.push({ indexA: idxA, indexB: idxB, status });
+            }
+            allPairs.sort((a, b) => b.sim - a.sim);
+            const usedA = new Set();
+            const usedB = new Set();
+            for (const pair of allPairs) {
+                if (pair.sim < threshold) {
+                    break;
                 }
-            } else {
-                const assignment = this._hungarianMatch(costMatrix);
-                for (let k = 0; k < assignment.length; k++) {
-                    const col = assignment[k];
-                    if (col >= 0 && col < groupB.length) {
-                        const similarity = 100 - costMatrix[k][col];
-                        if (similarity >= threshold) {
-                            const idxA = groupA[k];
-                            const idxB = groupB[col];
-                            matchedA.add(idxA);
-                            matchedB.add(idxB);
-                            const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
-                            result.pairs.push({ indexA: idxA, indexB: idxB, status });
-                        }
+                if (usedA.has(pair.ai) || usedB.has(pair.bi)) {
+                    continue;
+                }
+                usedA.add(pair.ai);
+                usedB.add(pair.bi);
+                const idxA = groupA[pair.ai];
+                const idxB = groupB[pair.bi];
+                matchedA.add(idxA);
+                matchedB.add(idxB);
+                const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
+                result.pairs.push({ indexA: idxA, indexB: idxB, status });
+            }
+        } else {
+            const assignment = this._hungarianMatch(costMatrix);
+            for (let k = 0; k < assignment.length; k++) {
+                const col = assignment[k];
+                if (col >= 0 && col < groupB.length) {
+                    const similarity = 100 - costMatrix[k][col];
+                    if (similarity >= threshold) {
+                        const idxA = groupA[k];
+                        const idxB = groupB[col];
+                        matchedA.add(idxA);
+                        matchedB.add(idxB);
+                        const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
+                        result.pairs.push({ indexA: idxA, indexB: idxB, status });
                     }
                 }
             }
-        };
-
-        // Same-type matching (threshold 40)
-        for (const [typeName, groupA] of typeGroupsA) {
-            const groupB = typeGroupsB.get(typeName);
-            if (!groupB || groupB.length === 0) {
-                continue;
-            }
-            matchGroup(groupA, groupB, 40);
         }
+    }
 
-        // Phase 2b: Cross-type category matching for fused ops (threshold 50)
+    _crossTypeMatch(nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
         const catGroupsA = new Map();
         const catGroupsB = new Map();
         for (let i = 0; i < nodesA.length; i++) {
@@ -684,22 +682,75 @@ comparator.Controller = class {
             if (!groupB || groupB.length === 0) {
                 continue;
             }
-            matchGroup(groupA, groupB, 50);
+            this._matchGroupInPlace(groupA, groupB, 50, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
         }
+    }
 
-        // Phase 4: Collect remaining unmatched
+    _compareNodesPhase2(phase1State, onComplete) {
+        const { matchedA, matchedB, ctxA, ctxB, nodesA, nodesB, result } = phase1State;
+
+        // Build type groups from unmatched nodes
+        const typeGroupsA = new Map();
+        const typeGroupsB = new Map();
         for (let i = 0; i < nodesA.length; i++) {
             if (!matchedA.has(i)) {
-                result.onlyInA.push(i);
+                const t = nodesA[i].type && nodesA[i].type.name ? nodesA[i].type.name : '';
+                if (!typeGroupsA.has(t)) {
+                    typeGroupsA.set(t, []);
+                }
+                typeGroupsA.get(t).push(i);
             }
         }
         for (let j = 0; j < nodesB.length; j++) {
             if (!matchedB.has(j)) {
-                result.onlyInB.push(j);
+                const t = nodesB[j].type && nodesB[j].type.name ? nodesB[j].type.name : '';
+                if (!typeGroupsB.has(t)) {
+                    typeGroupsB.set(t, []);
+                }
+                typeGroupsB.get(t).push(j);
             }
         }
 
-        return result;
+        // Collect type group pairs to process
+        const typeGroupPairs = [];
+        for (const [typeName, groupA] of typeGroupsA) {
+            const groupB = typeGroupsB.get(typeName);
+            if (groupB && groupB.length > 0) {
+                typeGroupPairs.push({ groupA, groupB });
+            }
+        }
+
+        // Process one type group per frame to yield to browser
+        let groupIndex = 0;
+        const processNext = () => {
+            if (groupIndex < typeGroupPairs.length) {
+                const { groupA, groupB } = typeGroupPairs[groupIndex];
+                this._matchGroupInPlace(groupA, groupB, 40, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+                groupIndex++;
+                this._phase2Timer = setTimeout(processNext, 0);
+            } else {
+                // Phase 2b: Cross-type category matching for fused ops
+                this._crossTypeMatch(nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+
+                // Phase 4: Collect remaining unmatched
+                result.onlyInA = [];
+                result.onlyInB = [];
+                for (let i = 0; i < nodesA.length; i++) {
+                    if (!matchedA.has(i)) {
+                        result.onlyInA.push(i);
+                    }
+                }
+                for (let j = 0; j < nodesB.length; j++) {
+                    if (!matchedB.has(j)) {
+                        result.onlyInB.push(j);
+                    }
+                }
+
+                this._phase2Timer = null;
+                onComplete(result);
+            }
+        };
+        this._phase2Timer = setTimeout(processNext, 0);
     }
 
     _attributesMatch(nodeA, nodeB) {
