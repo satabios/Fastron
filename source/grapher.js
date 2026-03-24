@@ -1655,16 +1655,24 @@ grapher.ViewportObserver = class {
             clearTimeout(this._debounceTimer);
         }
         if (this._rafId) {
-            cancelAnimationFrame(this._rafId);
+            if (typeof cancelAnimationFrame !== 'undefined') {
+                cancelAnimationFrame(this._rafId);
+            }
+            this._rafId = null;
         }
 
         // Debounce the callback
         this._debounceTimer = setTimeout(() => {
-            this._rafId = requestAnimationFrame(() => {
+            if (typeof requestAnimationFrame !== 'undefined') {
+                this._rafId = requestAnimationFrame(() => {
+                    this._lastViewport = { ...viewport };
+                    this._callback(viewport);
+                    this._rafId = null;
+                });
+            } else {
                 this._lastViewport = { ...viewport };
                 this._callback(viewport);
-                this._rafId = null;
-            });
+            }
         }, this._debounceMs);
     }
 
@@ -1674,7 +1682,9 @@ grapher.ViewportObserver = class {
             this._debounceTimer = null;
         }
         if (this._rafId) {
-            cancelAnimationFrame(this._rafId);
+            if (typeof cancelAnimationFrame !== 'undefined') {
+                cancelAnimationFrame(this._rafId);
+            }
             this._rafId = null;
         }
         this._lastViewport = null;
