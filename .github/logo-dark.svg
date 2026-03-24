@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="280" viewBox="0 0 1120 280">
+    <defs>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@600');
+            .logo-text { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-weight: 600; font-size: 130px; fill: #C9D1D9; letter-spacing: -2px; }
+        </style>
+    </defs>
+    <g transform="translate(60, 190)">
+        <text class="logo-text">FASTRON</text>
+    </g>
+    <g transform="matrix(0.20968,0,0,0.20968,830,10)">
+        <circle cx="512" cy="512" r="431" fill="none" stroke="#C9D1D9" stroke-width="21px"/>
+        <path d="M296,392L540,280" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,632L540,280" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,392L540,435" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,632L540,435" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,392L540,590" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,632L540,590" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,392L540,744" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M296,632L540,744" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M540,280L785,512" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M540,590L785,512" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M540,435L785,512" stroke="#C9D1D9" stroke-width="6px"/>
+        <path d="M540,744L785,512" stroke="#C9D1D9" stroke-width="6px"/>
+        <g transform="translate(296,392)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(296,632)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(540,280)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(540,435)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(540,590)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(540,744)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+        <g transform="translate(785,512)"><circle cx="0" cy="0" r="26" fill="#C9D1D9" /></g>
+    </g>
+</svg>

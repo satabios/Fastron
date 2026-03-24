@@ -1,0 +1,13 @@
+{
+    "eslint.lintTask.enable": true,
+    "files.exclude": {
+        "dist": true,
+        "node_modules": true,
+        "third_party": true
+    },
+    "search.exclude": {
+        "dist": true,
+        "node_modules": true,
+        "third_party": true
+    }
+}

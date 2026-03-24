@@ -1,0 +1,109 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Desktop View",
+            "type": "chrome",
+            "request": "launch",
+            "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron",
+            "windows": {
+                "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron.cmd"
+            },
+            "osx": {
+                "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+            },
+            "runtimeArgs": [
+                "${workspaceRoot}",
+                "--enable-logging",
+                "--remote-debugging-port=9222"
+            ],
+            "webRoot": "${workspaceRoot}"
+        },
+        {
+            "name": "Desktop App",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/source/app.js",
+            "runtimeExecutable": "electron",
+            "osx": {
+                "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+            }
+        },
+        {
+            "name": "Browser",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/package.py",
+            "args": [ "build", "start" ],
+            "justMyCode": true,
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/source",
+                    "remoteRoot": "${workspaceFolder}/dist/pypi/netron",
+                }
+            ],
+            "serverReadyAction": {
+                "action": "debugWithChrome",
+                "pattern": "Serving .*at http://localhost:([0-9]+)",
+                "uriFormat": "http://localhost:%s",
+                "webRoot": "${workspaceFolder}/source",
+            },
+        },
+        {
+            "name": "Test Models",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/test/models.js",
+            "args": [ "tag:validation" ],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Test Desktop",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "test", "desktop"],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Test Browser",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "test", "browser"],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Test Backend",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/test/backend.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "serverReadyAction": {
+                "action": "debugWithChrome",
+                "pattern": "Serving .*at http://localhost:([0-9]+)",
+                "uriFormat": "http://localhost:%s",
+                "webRoot": "${workspaceFolder}/source",
+            },
+        },
+        {
+            "name": "Tools Python",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Tools JavaScript",
+            "type": "node",
+            "request": "launch",
+            "program": "${file}",
+            "args": [],
+            "console": "integratedTerminal",
+        }
+    ]
+}
