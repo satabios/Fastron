@@ -1663,15 +1663,15 @@ grapher.ViewportObserver = class {
 
         // Debounce the callback
         this._debounceTimer = setTimeout(() => {
-            if (typeof requestAnimationFrame !== 'undefined') {
+            if (typeof requestAnimationFrame === 'undefined') {
+                this._lastViewport = { ...viewport };
+                this._callback(viewport);
+            } else {
                 this._rafId = requestAnimationFrame(() => {
                     this._lastViewport = { ...viewport };
                     this._callback(viewport);
                     this._rafId = null;
                 });
-            } else {
-                this._lastViewport = { ...viewport };
-                this._callback(viewport);
             }
         }, this._debounceMs);
     }
