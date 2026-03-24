@@ -406,13 +406,19 @@ grapher.Graph = class {
         }
         const state = { /* log: true */ };
         if (worker) {
-            const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, 2500, 'This large graph layout might take a very long time to complete.');
-            if (message.type === 'cancel' || message.type === 'terminate') {
-                return message.type;
+            try {
+                const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, 2500, 'This large graph layout might take a very long time to complete.');
+                if (message.type === 'cancel' || message.type === 'terminate') {
+                    return message.type;
+                }
+                nodes = message.nodes;
+                edges = message.edges;
+                state.log = message.state.log;
+            } catch {
+                // Fall back to single-threaded layout when worker creation/execution fails.
+                const dagre = await import('./dagre.js');
+                dagre.layout(nodes, edges, layout, state);
             }
-            nodes = message.nodes;
-            edges = message.edges;
-            state.log = message.state.log;
         } else {
             const dagre = await import('./dagre.js');
             dagre.layout(nodes, edges, layout, state);

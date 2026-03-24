@@ -16,6 +16,9 @@ browser.Host = class {
         // Initialize cache manager
         const cacheSize = this._window.NETRON_CONFIG && this._window.NETRON_CONFIG.cacheMaxMemoryMB || 500;
         this._cacheManager = new CacheManager(cacheSize);
+        if (this._window.NETRON_CONFIG && this._window.NETRON_CONFIG.cacheEnabled === false) {
+            this._cacheManager.setEnabled(false);
+        }
 
         // Initialize stream reader
         this._streamReader = new StreamReader();
@@ -638,7 +641,11 @@ browser.BrowserFileContext = class {
         }
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            const size = 0x10000000;
+            const config = (this._host.window && this._host.window.NETRON_CONFIG) || {};
+            const chunkSizeMB = Number.isFinite(config.fileReadChunkSizeMB) ? config.fileReadChunkSizeMB : 512;
+            const size = Math.max(4, Math.min(1024, chunkSizeMB)) * 1024 * 1024;
+            const streamWindowMB = Number.isFinite(config.streamWindowSizeMB) ? config.streamWindowSizeMB : chunkSizeMB;
+            const streamWindowSize = Math.max(4, Math.min(1024, streamWindowMB)) * 1024 * 1024;
             let position = 0;
             const chunks = [];
             reader.onload = (e) => {
@@ -656,7 +663,7 @@ browser.BrowserFileContext = class {
                             const slice = blob.slice(position, Math.min(position + size, blob.size));
                             reader.readAsArrayBuffer(slice);
                         } else {
-                            const stream = new browser.FileStream(chunks, size, 0, position);
+                            const stream = new browser.FileStream(chunks, size, streamWindowSize, 0, position);
                             resolve(stream);
                         }
                     }
@@ -706,9 +713,10 @@ browser.BrowserFileContext = class {
 
 browser.FileStream = class {
 
-    constructor(chunks, size, start, length) {
+    constructor(chunks, size, windowSize, start, length) {
         this._chunks = chunks;
         this._size = size;
+        this._windowSize = windowSize || size;
         this._start = start;
         this._length = length;
         this._position = 0;
@@ -723,7 +731,7 @@ browser.FileStream = class {
     }
 
     stream(length) {
-        const file = new browser.FileStream(this._chunks, this._size, this._start + this._position, length);
+        const file = new browser.FileStream(this._chunks, this._size, this._windowSize, this._start + this._position, length);
         this.skip(length);
         return file;
     }
@@ -785,7 +793,7 @@ browser.FileStream = class {
         }
         if (!this._buffer || this._position < this._offset || this._position + length > this._offset + this._buffer.length) {
             this._offset = this._start + this._position;
-            const length = Math.min(0x10000000, this._start + this._length - this._offset);
+            const length = Math.min(this._windowSize, this._start + this._length - this._offset);
             if (!this._buffer || length !== this._buffer.length) {
                 this._buffer = new Uint8Array(length);
             }

@@ -5,7 +5,8 @@ import * as grapher from './grapher.js';
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
 if (typeof window !== 'undefined') {
-    window.NETRON_CONFIG = window.NETRON_CONFIG || {
+    const hardwareConcurrency = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : 4;
+    const defaults = {
         // Disable weights by default in ALL environments for better performance
         // Users can enable via the toolbar toggle button on demand
         skipTensorWeights: true,
@@ -14,10 +15,17 @@ if (typeof window !== 'undefined') {
         logMemorySavings: false,           // Log memory savings to console
         enableOptimizations: true,         // Enable performance optimizations
         cacheEnabled: true,                // Enable in-memory caching
-        cacheMaxMemoryMB: 500,            // Max cache memory (MB)
+        cacheMaxMemoryMB: 2048,           // Max cache memory (MB)
         streamingChunkSizeMB: 10,         // Chunk size for streaming (MB)
-        streamingThresholdMB: 50          // Stream files larger than this
+        streamingThresholdMB: 50,         // Stream files larger than this
+        fileReadChunkSizeMB: 512,         // Browser file read chunk size (MB)
+        streamWindowSizeMB: 512,          // Buffered stream window size (MB)
+        maxLayoutWorkers: Math.max(1, Math.min(4, hardwareConcurrency - 1)),
+        gpuAcceleration: true,            // Enable GPU compositing hints for rendering
+        gpuAvailable: false,              // Runtime-detected GPU availability
+        gpuBackend: 'cpu'                 // Runtime backend: webgpu|webgl2|webgl|cpu
     };
+    window.NETRON_CONFIG = { ...defaults, ...(window.NETRON_CONFIG || {}) };
 }
 
 const view = {};
@@ -48,11 +56,49 @@ view.View = class {
         this._worker = this._host.environment('serial') ? null : new view.Worker(this._host);
     }
 
+    static async detectGPUBackend() {
+        if (typeof window === 'undefined') {
+            return 'cpu';
+        }
+        if (navigator && navigator.gpu) {
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (adapter) {
+                    return 'webgpu';
+                }
+            } catch {
+                // fall through to WebGL detection
+            }
+        }
+        try {
+            const canvas = document.createElement('canvas');
+            if (canvas.getContext('webgl2')) {
+                return 'webgl2';
+            }
+            if (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')) {
+                return 'webgl';
+            }
+        } catch {
+            // continue with cpu
+        }
+        return 'cpu';
+    }
+
+    async _initializePerformanceBackend() {
+        if (typeof window === 'undefined' || !window.NETRON_CONFIG) {
+            return;
+        }
+        const backend = await view.View.detectGPUBackend();
+        window.NETRON_CONFIG.gpuBackend = backend;
+        window.NETRON_CONFIG.gpuAvailable = backend !== 'cpu';
+    }
+
     async start() {
         try {
             const zip = await import('./zip.js');
             await zip.Archive.import();
             await this._host.view(this);
+            await this._initializePerformanceBackend();
             const options = this._host.get('options') || {};
             for (const [name, value] of Object.entries(options)) {
                 this._options[name] = value;
@@ -1645,13 +1691,25 @@ view.Menu.Separator = class {
 
 view.Worker = class {
 
+    static _activeWorkers = 0;
+
     constructor(host) {
         this._host = host;
         this._timeout = -1;
+        this._disabled = false;
+        this._error = null;
+        this._notifiedUnavailable = false;
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : {};
+        const configuredLimit = Number.isFinite(config.maxLayoutWorkers) ? config.maxLayoutWorkers : 1;
+        this._workerLimit = Math.max(1, Math.min(16, configuredLimit));
         this._create();
     }
 
     async request(message, delay, notification) {
+        if (this._disabled) {
+            const reason = this._error && this._error.message ? this._error.message : 'worker is unavailable';
+            throw new Error(`Worker unavailable: ${reason}`);
+        }
         if (this._resolve) {
             const resolve = this._resolve;
             resolve({ type: 'terminate' });
@@ -1677,8 +1735,29 @@ view.Worker = class {
     }
 
     _create() {
-        if (!this._worker) {
-            this._worker = this._host.worker('./worker');
+        if (!this._worker && !this._disabled) {
+            if (view.Worker._activeWorkers >= this._workerLimit) {
+                this._disabled = true;
+                this._error = new Error(`worker budget reached (${this._workerLimit})`);
+                if (!this._notifiedUnavailable) {
+                    this._notifiedUnavailable = true;
+                    this._host.message(`Worker budget reached (${this._workerLimit}). Falling back to single-threaded layout.`);
+                }
+                return;
+            }
+            try {
+                this._worker = this._host.worker('./worker');
+                view.Worker._activeWorkers++;
+            } catch (error) {
+                this._disabled = true;
+                this._error = error;
+                this._worker = null;
+                if (!this._notifiedUnavailable) {
+                    this._notifiedUnavailable = true;
+                    this._host.message('Graph worker unavailable. Falling back to single-threaded layout.');
+                }
+                return;
+            }
             this._worker.addEventListener('message', (e) => {
                 this.cancel(false);
                 const message = e.data;
@@ -1695,11 +1774,13 @@ view.Worker = class {
             });
             this._worker.addEventListener('error', (e) => {
                 this.cancel(true);
+                this._disabled = true;
+                this._error = new Error(`Worker error type '${e.type}'.`);
                 const reject = this._reject;
                 delete this._resolve;
                 delete this._reject;
                 if (reject) {
-                    reject(new Error(`Unknown worker error type '${e.type}'.`));
+                    reject(this._error);
                 }
             });
         }
@@ -1709,6 +1790,7 @@ view.Worker = class {
         if (this._worker && terminate) {
             this._worker.terminate();
             this._worker = null;
+            view.Worker._activeWorkers = Math.max(0, view.Worker._activeWorkers - 1);
         }
         if (this._timeout !== -1) {
             clearTimeout(this._timeout);
@@ -1917,6 +1999,17 @@ view.Graph = class extends grapher.Graph {
         canvas.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         canvas.setAttribute('width', '100%');
         canvas.setAttribute('height', '100%');
+
+        // Hint GPU compositing when available to improve pan/zoom responsiveness.
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        if (config && config.gpuAcceleration && config.gpuAvailable) {
+            element.style.willChange = 'scroll-position, transform';
+            canvas.style.willChange = 'transform';
+            canvas.style.transform = 'translateZ(0)';
+            canvas.style.transformOrigin = '0 0';
+            canvas.style.backfaceVisibility = 'hidden';
+        }
+
         element.appendChild(canvas);
         // Workaround for Safari background drag/zoom issue:
         // https://stackoverflow.com/questions/40887193/d3-js-zoom-is-not-working-with-mousewheel-in-safari
