@@ -2278,6 +2278,22 @@ view.Graph = class extends grapher.Graph {
                 }, { threshold: 0 });
                 this._intersectionObserver.observe(element);
             }
+
+            // Force an initial visible-time pass after registration to avoid
+            // a blank graph when early culling updates happened during loading.
+            const refreshViewport = (attempt = 0) => {
+                const viewport = this._getViewportBounds();
+                if ((viewport.width <= 0 || viewport.height <= 0) && attempt < 4) {
+                    setTimeout(() => refreshViewport(attempt + 1), 50);
+                    return;
+                }
+                this._onViewportChange(viewport);
+            };
+            if (typeof requestAnimationFrame === 'undefined') {
+                setTimeout(refreshViewport, 0);
+            } else {
+                requestAnimationFrame(() => refreshViewport());
+            }
         }
     }
 
