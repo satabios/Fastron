@@ -18,13 +18,79 @@ grapher.Graph = class {
         this._visibleEdges = null;
         this._renderedNodes = new Set();
         this._renderedEdges = new Set();
+        this._deferredNodeBuild = false;
+        this._deferredEdgeBuild = false;
+        this._skipHiddenUpdate = false;
+        this._estimatedNodeSizeThreshold = 500;
+        this._estimatedNodeWidth = 150;
+        this._estimatedNodeHeight = 40;
+        this._detachInvisible = false;
     }
 
-    enableViewportCulling(enabled = true) {
+    enableViewportCulling(enabled = true, tileSize = undefined) {
         this._viewportCulling = enabled;
         if (enabled && !this._tileManager) {
-            this._tileManager = new grapher.TileManager(300);
+            this._tileManager = new grapher.TileManager(tileSize || 300);
         }
+    }
+
+    configureDeferredRendering(options = {}) {
+        this._deferredNodeBuild = options.deferredNodeBuild !== false;
+        this._deferredEdgeBuild = options.deferredEdgeBuild !== false;
+        this._skipHiddenUpdate = options.skipHiddenUpdate !== false;
+        if (options.detachInvisible !== undefined) {
+            this._detachInvisible = Boolean(options.detachInvisible);
+        }
+        if (Number.isFinite(options.estimatedNodeSizeThreshold)) {
+            this._estimatedNodeSizeThreshold = options.estimatedNodeSizeThreshold;
+        }
+        if (Number.isFinite(options.estimatedNodeWidth)) {
+            this._estimatedNodeWidth = options.estimatedNodeWidth;
+        }
+        if (Number.isFinite(options.estimatedNodeHeight)) {
+            this._estimatedNodeHeight = options.estimatedNodeHeight;
+        }
+    }
+
+    useEstimatedNodeSizes() {
+        return this._viewportCulling && this._deferredNodeBuild && this.nodes.size > this._estimatedNodeSizeThreshold;
+    }
+
+    _isLeafNode(nodeId) {
+        return this.children(nodeId).length === 0;
+    }
+
+    _ensureNodeElement(nodeId, document) {
+        const entry = this.node(nodeId);
+        if (!entry) {
+            return null;
+        }
+        const node = entry.label;
+        if (node.element || !this._isLeafNode(nodeId) || !this._nodeGroupElement) {
+            return node;
+        }
+        node.build(document, this._nodeGroupElement);
+        this._renderedNodes.add(nodeId);
+        return node;
+    }
+
+    _ensureEdgeElement(edge, document) {
+        const label = edge.label;
+        const edgeKey = `${edge.v}:${edge.w}`;
+        if (label.element || !this._deferredEdgeBuild || !this._edgePathGroupElement || !this._edgePathHitTestGroupElement || !this._edgeLabelGroupElement) {
+            return label;
+        }
+        label.build(document, this._edgePathGroupElement, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
+        if (label.hitTest) {
+            this._focusable.set(label.hitTest, label);
+        }
+        if (label.labelElement) {
+            const box = label.labelElement.getBBox();
+            label.width = box.width;
+            label.height = box.height;
+        }
+        this._renderedEdges.add(edgeKey);
+        return label;
     }
 
     isViewportCullingEnabled() {
@@ -120,9 +186,106 @@ grapher.Graph = class {
         return null;
     }
 
+    _showNode(node) {
+        if (!node.element) {
+            return;
+        }
+        if (this._detachInvisible) {
+            if (!node.element.parentNode && this._nodeGroupElement) {
+                this._nodeGroupElement.appendChild(node.element);
+            }
+        } else {
+            node.element.style.display = '';
+        }
+    }
+
+    _hideNode(node) {
+        if (!node.element) {
+            return;
+        }
+        if (this._detachInvisible) {
+            if (node.element.parentNode) {
+                node.element.parentNode.removeChild(node.element);
+            }
+        } else {
+            node.element.style.display = 'none';
+        }
+    }
+
+    _showEdge(label) {
+        if (this._detachInvisible) {
+            if (label.element && !label.element.parentNode && this._edgePathGroupElement) {
+                this._edgePathGroupElement.appendChild(label.element);
+            }
+            if (label.hitTest && !label.hitTest.parentNode && this._edgePathHitTestGroupElement) {
+                this._edgePathHitTestGroupElement.appendChild(label.hitTest);
+            }
+            if (label.labelElement && !label.labelElement.parentNode && this._edgeLabelGroupElement) {
+                this._edgeLabelGroupElement.appendChild(label.labelElement);
+            }
+        } else {
+            if (label.element) {
+                label.element.style.display = '';
+            }
+            if (label.hitTest) {
+                label.hitTest.style.display = '';
+            }
+            if (label.labelElement) {
+                label.labelElement.style.display = '';
+            }
+        }
+    }
+
+    _hideEdge(label) {
+        if (this._detachInvisible) {
+            if (label.element && label.element.parentNode) {
+                label.element.parentNode.removeChild(label.element);
+            }
+            if (label.hitTest && label.hitTest.parentNode) {
+                label.hitTest.parentNode.removeChild(label.hitTest);
+            }
+            if (label.labelElement && label.labelElement.parentNode) {
+                label.labelElement.parentNode.removeChild(label.labelElement);
+            }
+        } else {
+            if (label.element) {
+                label.element.style.display = 'none';
+            }
+            if (label.hitTest) {
+                label.hitTest.style.display = 'none';
+            }
+            if (label.labelElement) {
+                label.labelElement.style.display = 'none';
+            }
+        }
+    }
+
+    _buildVisibleNodes(nodeIds, document) {
+        const CHUNK = 30;
+        const process = (ids) => {
+            const batch = ids.splice(0, CHUNK);
+            for (const nodeId of batch) {
+                this._ensureNodeElement(nodeId, document);
+                const node = this.node(nodeId).label;
+                if (node.element) {
+                    node.update();
+                    node._needsUpdate = false;
+                }
+            }
+            if (ids.length > 0) {
+                if (typeof requestIdleCallback === 'undefined') {
+                    setTimeout(() => process(ids), 0);
+                } else {
+                    requestIdleCallback(() => process(ids), { timeout: 300 });
+                }
+            }
+        };
+        process(nodeIds);
+    }
+
     updateViewportVisibility(viewportBounds) {
         if (!this._viewportCulling || !this._tileManager) {
-            return { added: new Set(), removed: new Set() };
+            return { addedNodes: new Set(), removedNodes: new Set(), addedEdges: new Set(), removedEdges: new Set() };
         }
 
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
@@ -130,74 +293,167 @@ grapher.Graph = class {
         const previousNodes = this._visibleNodes || new Set();
         const previousEdges = this._visibleEdges || new Set();
 
-        const addedNodes = new Set([...visibleNodes].filter((n) => !previousNodes.has(n)));
-        const removedNodes = new Set([...previousNodes].filter((n) => !visibleNodes.has(n)));
-        const addedEdges = new Set([...visibleEdges].filter((e) => !previousEdges.has(e)));
-        const removedEdges = new Set([...previousEdges].filter((e) => !visibleEdges.has(e)));
+        // Efficient set difference — avoids intermediate array allocation
+        const addedNodes = new Set();
+        for (const n of visibleNodes) {
+            if (!previousNodes.has(n)) {
+                addedNodes.add(n);
+            }
+        }
+        const removedNodes = new Set();
+        for (const n of previousNodes) {
+            if (!visibleNodes.has(n)) {
+                removedNodes.add(n);
+            }
+        }
+        const addedEdges = new Set();
+        for (const e of visibleEdges) {
+            if (!previousEdges.has(e)) {
+                addedEdges.add(e);
+            }
+        }
+        const removedEdges = new Set();
+        for (const e of previousEdges) {
+            if (!visibleEdges.has(e)) {
+                removedEdges.add(e);
+            }
+        }
 
         this._visibleNodes = visibleNodes;
         this._visibleEdges = visibleEdges;
 
-        return {
-            addedNodes,
-            removedNodes,
-            addedEdges,
-            removedEdges
-        };
+        return { addedNodes, removedNodes, addedEdges, removedEdges };
     }
 
-    updateVisibleElements(document) {
+    updateVisibleElements(document, delta) {
         if (!this._viewportCulling || !this._visibleNodes) {
             return;
         }
 
         const nodeGroup = this._nodeGroupElement;
-
         if (!nodeGroup) {
             return;
         }
 
-        // Performance optimization: batch DOM reads before writes to avoid layout thrashing
-        const nodesToUpdate = [];
+        // Fast path: use delta sets to only process nodes/edges that changed visibility.
+        // This reduces per-scroll work from O(N) to O(delta).
+        if (delta) {
+            const { addedNodes, removedNodes, addedEdges, removedEdges } = delta;
+
+            // Hide nodes that left the viewport
+            for (const nodeId of removedNodes) {
+                const entry = this.node(nodeId);
+                if (entry) {
+                    this._hideNode(entry.label);
+                }
+            }
+
+            // Show or build nodes that entered the viewport
+            const newNodeIds = [];
+            for (const nodeId of addedNodes) {
+                const entry = this.node(nodeId);
+                if (!entry) {
+                    continue;
+                }
+                const node = entry.label;
+                if (node.element) {
+                    this._showNode(node);
+                    if (this._skipHiddenUpdate && node._needsUpdate !== false) {
+                        node.update();
+                        node._needsUpdate = false;
+                    }
+                    this._renderedNodes.add(nodeId);
+                } else if (this._isLeafNode(nodeId)) {
+                    newNodeIds.push(nodeId);
+                }
+            }
+            if (newNodeIds.length > 0) {
+                this._buildVisibleNodes(newNodeIds, document);
+            }
+
+            // Hide edges that left the viewport
+            for (const edgeKey of removedEdges) {
+                const edgeEntry = this._edges.get(edgeKey);
+                if (edgeEntry) {
+                    this._hideEdge(edgeEntry.label);
+                }
+            }
+
+            // Show or build edges that entered the viewport
+            for (const edgeKey of addedEdges) {
+                const edgeEntry = this._edges.get(edgeKey);
+                if (!edgeEntry) {
+                    continue;
+                }
+                const label = edgeEntry.label;
+                if (!label.element && this._deferredEdgeBuild) {
+                    this._ensureEdgeElement(edgeEntry, document);
+                }
+                this._showEdge(label);
+                if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
+                    label.update();
+                    label._needsUpdate = false;
+                }
+            }
+            return;
+        }
+
+        // Fallback: full scan used when no delta is available (e.g. first render).
+        const newNodeIds = [];
+
         for (const nodeId of this.nodes.keys()) {
             const entry = this.node(nodeId);
             const node = entry.label;
+            const isVisible = this._visibleNodes.has(nodeId);
+
             if (node.element) {
-                const isVisible = this._visibleNodes.has(nodeId);
-                const wasRendered = this._renderedNodes.has(nodeId);
-                nodesToUpdate.push({ nodeId, node, isVisible, wasRendered });
-            }
-        }
-
-        // Batch DOM writes
-        for (const { nodeId, node, isVisible, wasRendered } of nodesToUpdate) {
-            if (isVisible && !wasRendered) {
-                // Need to render this node
-                if (this.children(nodeId).length === 0) {
-                    node.build(document, nodeGroup);
-                    node.update();
+                if (isVisible) {
+                    this._showNode(node);
+                    if (this._skipHiddenUpdate && node._needsUpdate !== false) {
+                        node.update();
+                        node._needsUpdate = false;
+                    }
+                    this._renderedNodes.add(nodeId);
+                } else {
+                    this._hideNode(node);
                 }
-                this._renderedNodes.add(nodeId);
-            } else if (node.element) {
-                node.element.style.display = isVisible ? '' : 'none';
+            } else if (isVisible && this._isLeafNode(nodeId)) {
+                newNodeIds.push(nodeId);
             }
         }
 
-        // Show/hide edges based on visibility
+        // Build newly visible nodes in idle-time chunks to avoid jank
+        if (newNodeIds.length > 0) {
+            this._buildVisibleNodes(newNodeIds, document);
+        }
+
         for (const edge of this.edges.values()) {
             const edgeKey = `${edge.v}:${edge.w}`;
-            const isVisible = this._visibleEdges.has(edgeKey);
+            const isVisible = this._visibleEdges ? this._visibleEdges.has(edgeKey) : false;
             const label = edge.label;
 
-            if (label.element) {
-                label.element.style.display = isVisible ? '' : 'none';
+            if (isVisible && !label.element && this._deferredEdgeBuild) {
+                this._ensureEdgeElement(edge, document);
             }
-            if (label.hitTest) {
-                label.hitTest.style.display = isVisible ? '' : 'none';
+            if (isVisible) {
+                this._showEdge(label);
+                if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
+                    label.update();
+                    label._needsUpdate = false;
+                }
+            } else {
+                this._hideEdge(label);
             }
-            if (label.labelElement) {
-                label.labelElement.style.display = isVisible ? '' : 'none';
-            }
+        }
+    }
+
+    hideAllNodes() {
+        for (const nodeId of this.nodes.keys()) {
+            const entry = this.node(nodeId);
+            this._hideNode(entry.label);
+        }
+        for (const edge of this.edges.values()) {
+            this._hideEdge(edge.label);
         }
     }
 
@@ -250,6 +506,9 @@ grapher.Graph = class {
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
         this._nodeGroupElement = nodeGroup;
+        this._edgePathGroupElement = edgePathGroup;
+        this._edgePathHitTestGroupElement = edgePathHitTestGroup;
+        this._edgeLabelGroupElement = edgeLabelGroup;
 
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         edgePathGroup.appendChild(edgePathGroupDefs);
@@ -299,17 +558,17 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
 
-        // Determine which nodes to render
-        const nodesToRender = this._viewportCulling && this._visibleNodes
-            ? Array.from(this.nodes.keys()).filter((nodeId) => this._visibleNodes.has(nodeId))
-            : Array.from(this.nodes.keys());
+        const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild;
+        const nodesToRender = Array.from(this.nodes.keys());
 
         for (const nodeId of nodesToRender) {
             const entry = this.node(nodeId);
             const node = entry.label;
-            if (this.children(nodeId).length === 0) {
-                node.build(document, nodeGroup);
-                this._renderedNodes.add(nodeId);
+            if (this._isLeafNode(nodeId)) {
+                if (!deferLeafNodeBuild) {
+                    node.build(document, nodeGroup);
+                    this._renderedNodes.add(nodeId);
+                }
             } else {
                 // cluster
                 node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -330,18 +589,14 @@ grapher.Graph = class {
         this._focusable.clear();
         this._focused = null;
 
-        // Determine which edges to render
-        const edgesToRender = this._viewportCulling && this._visibleEdges
-            ? Array.from(this.edges.values()).filter((edge) => {
-                const edgeKey = `${edge.v}:${edge.w}`;
-                return this._visibleEdges.has(edgeKey);
-            })
-            : Array.from(this.edges.values());
+        const deferEdgeBuild = this._viewportCulling && this._deferredEdgeBuild;
 
-        for (const edge of edgesToRender) {
-            edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
-            this._focusable.set(edge.label.hitTest, edge.label);
-            this._renderedEdges.add(`${edge.v}:${edge.w}`);
+        for (const edge of this.edges.values()) {
+            if (!deferEdgeBuild) {
+                edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
+                this._focusable.set(edge.label.hitTest, edge.label);
+                this._renderedEdges.add(`${edge.v}:${edge.w}`);
+            }
         }
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
@@ -359,11 +614,19 @@ grapher.Graph = class {
     }
 
     async measure() {
+        const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
+        const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild;
         for (const key of this.nodes.keys()) {
             const entry = this.node(key);
-            if (this.children(key).length === 0) {
+            if (this._isLeafNode(key)) {
                 const node = entry.label;
-                node.measure();
+                if (useEstimatedNodeSizes || (deferLeafNodeBuild && !node.element)) {
+                    node.width = node.width || this._estimatedNodeWidth;
+                    node.height = node.height || this._estimatedNodeHeight;
+                    node._needsUpdate = true;
+                } else {
+                    node.measure();
+                }
             }
         }
     }
@@ -407,7 +670,8 @@ grapher.Graph = class {
         const state = { /* log: true */ };
         if (worker) {
             try {
-                const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, 2500, 'This large graph layout might take a very long time to complete.');
+                const timeoutMs = Math.max(30000, nodes.length * 20);
+                const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, timeoutMs, 'This large graph layout might take a very long time to complete.');
                 if (message.type === 'cancel' || message.type === 'terminate') {
                     return message.type;
                 }
@@ -455,12 +719,18 @@ grapher.Graph = class {
     }
 
     update() {
+        const restrictToVisible = this._viewportCulling && this._skipHiddenUpdate && this._visibleNodes instanceof Set;
         for (const nodeId of this.nodes.keys()) {
-            if (this.children(nodeId).length === 0) {
-                // node
+            if (this._isLeafNode(nodeId)) {
                 const entry = this.node(nodeId);
                 const node = entry.label;
-                node.update();
+                const shouldUpdate = !restrictToVisible || this._visibleNodes.has(nodeId);
+                if (node.element && shouldUpdate) {
+                    node.update();
+                    node._needsUpdate = false;
+                } else if (!shouldUpdate) {
+                    node._needsUpdate = true;
+                }
             } else {
                 // cluster
                 const entry = this.node(nodeId);
@@ -472,8 +742,16 @@ grapher.Graph = class {
                 node.rectangle.setAttribute('height', node.height);
             }
         }
+        const restrictEdgesToVisible = this._viewportCulling && this._skipHiddenUpdate && this._visibleEdges instanceof Set;
         for (const edge of this.edges.values()) {
-            edge.label.update();
+            const edgeKey = `${edge.v}:${edge.w}`;
+            const shouldUpdate = !restrictEdgesToVisible || this._visibleEdges.has(edgeKey);
+            if (edge.label.element && shouldUpdate) {
+                edge.label.update();
+                edge.label._needsUpdate = false;
+            } else if (!shouldUpdate) {
+                edge.label._needsUpdate = true;
+            }
         }
     }
 };
@@ -716,6 +994,9 @@ grapher.Node.Header.Entry = class {
     }
 
     measure() {
+        if (!this.text) {
+            return;
+        }
         const yPadding = 4;
         const xPadding = 7;
         const boundingBox = this.text.getBBox();
@@ -904,6 +1185,9 @@ grapher.Argument = class {
     }
 
     measure() {
+        if (!this.text) {
+            return;
+        }
         const yPadding = 1;
         const xPadding = 6;
         const size = this.text.getBBox();
@@ -1311,6 +1595,19 @@ grapher.TileManager = class {
         }
 
         return { nodes: visibleNodes, edges: visibleEdges };
+    }
+
+    static adaptiveSize(nodeCount) {
+        if (nodeCount < 100) {
+            return 200;
+        }
+        if (nodeCount < 500) {
+            return 300;
+        }
+        if (nodeCount < 2000) {
+            return 500;
+        }
+        return 800;
     }
 
     getTileInfo() {
