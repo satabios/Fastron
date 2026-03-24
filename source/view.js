@@ -89,8 +89,9 @@ view.View = class {
             return;
         }
         const backend = await view.View.detectGPUBackend();
-        window.NETRON_CONFIG.gpuBackend = backend;
-        window.NETRON_CONFIG.gpuAvailable = backend !== 'cpu';
+        const netronConfig = window.NETRON_CONFIG;
+        netronConfig.gpuBackend = backend;
+        netronConfig.gpuAvailable = backend !== 'cpu';
     }
 
     async start() {
