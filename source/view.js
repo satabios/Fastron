@@ -889,7 +889,17 @@ view.View = class {
 
             // Enable viewport culling if lazy rendering is on
             if (this._options.lazyRender) {
-                viewGraph.enableViewportCulling(true);
+                const tileSize = grapher.TileManager.adaptiveSize(nodes.length);
+                viewGraph.enableViewportCulling(true, tileSize);
+                viewGraph.configureDeferredRendering({
+                    deferredNodeBuild: true,
+                    deferredEdgeBuild: true,
+                    skipHiddenUpdate: true,
+                    detachInvisible: true,
+                    estimatedNodeSizeThreshold: 500,
+                    estimatedNodeWidth: 150,
+                    estimatedNodeHeight: 40
+                });
             }
 
             viewGraph.add(graph, signature);
@@ -904,9 +914,19 @@ view.View = class {
                     viewGraph.populateTiles();
                 }
 
-                const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
-                viewGraph.restore(state);
                 this.target = viewGraph;
+
+                const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
+                // restore() uses getBBox()/getBoundingClientRect() so nodes must be visible.
+                // After restore() establishes canvas size and scroll position, immediately
+                // apply the initial viewport visibility so the graph never remains blank
+                // waiting for a deferred observer callback.
+                viewGraph.restore(state);
+                if (viewGraph.isViewportCullingEnabled()) {
+                    viewGraph.hideAllNodes();
+                    const viewport = viewGraph._getViewportBounds();
+                    viewGraph._onViewportChange(viewport);
+                }
             }
         }
         return status;
@@ -1814,6 +1834,7 @@ view.Graph = class extends grapher.Graph {
         this._selection = new Set();
         this._zoom = 1;
         this._viewportObserver = null;
+        this._originTranslate = null; // cached origin translate; invalidated on layout change
     }
 
     get model() {
@@ -2139,6 +2160,7 @@ view.Graph = class extends grapher.Graph {
         const width = Math.ceil(margin + size.width + margin);
         const height = Math.ceil(margin + size.height + margin);
         origin.setAttribute('transform', `translate(${margin - size.x}, ${margin - size.y}) scale(1)`);
+        this._originTranslate = null; // invalidate cached translate after layout
         background.setAttribute('width', width);
         background.setAttribute('height', height);
         this._width = width;
@@ -2183,9 +2205,10 @@ view.Graph = class extends grapher.Graph {
             container.scrollTo({ left, top, behavior: 'auto' });
         }
 
-        // Trigger initial viewport update for lazy rendering
-        if (this.isViewportCullingEnabled() && this._viewportObserver) {
-            // Small delay to ensure layout is complete
+        // Trigger initial viewport update for lazy rendering.
+        // Note: _viewportObserver may not exist yet (it is created in register()),
+        // but _onViewportChange does not depend on it, so we call it directly.
+        if (this.isViewportCullingEnabled()) {
             setTimeout(() => {
                 const viewport = this._getViewportBounds();
                 this._onViewportChange(viewport);
@@ -2218,6 +2241,19 @@ view.Graph = class extends grapher.Graph {
                     this._onViewportChange(viewport);
                 }, 150);
             }
+
+            // Setup IntersectionObserver to trigger viewport update when graph becomes visible
+            if (this.isViewportCullingEnabled() && !this._intersectionObserver && typeof IntersectionObserver !== 'undefined') {
+                this._intersectionObserver = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (entry.isIntersecting) {
+                            const viewport = this._getViewportBounds();
+                            this._onViewportChange(viewport);
+                        }
+                    }
+                }, { threshold: 0 });
+                this._intersectionObserver.observe(element);
+            }
         }
     }
 
@@ -2234,6 +2270,10 @@ view.Graph = class extends grapher.Graph {
         if (this._viewportObserver) {
             this._viewportObserver.disconnect();
             this._viewportObserver = null;
+        }
+        if (this._intersectionObserver) {
+            this._intersectionObserver.disconnect();
+            this._intersectionObserver = null;
         }
     }
 
@@ -2431,17 +2471,22 @@ view.Graph = class extends grapher.Graph {
             return { x: 0, y: 0, width: 0, height: 0, zoom: this._zoom };
         }
 
-        // Get the transform from origin
-        const transform = origin.getAttribute('transform');
-        let translateX = 0;
-        let translateY = 0;
-        if (transform) {
-            const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-            if (match) {
-                translateX = parseFloat(match[1]);
-                translateY = parseFloat(match[2]);
+        // Cache the origin translate — it is constant after restore() and only
+        // changes when a new graph is laid out, at which point it is invalidated.
+        if (!this._originTranslate) {
+            const transform = origin.getAttribute('transform');
+            let translateX = 0;
+            let translateY = 0;
+            if (transform) {
+                const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                if (match) {
+                    translateX = parseFloat(match[1]);
+                    translateY = parseFloat(match[2]);
+                }
             }
+            this._originTranslate = { x: translateX, y: translateY };
         }
+        const { x: translateX, y: translateY } = this._originTranslate;
 
         // Calculate viewport in graph coordinates
         const scrollX = container.scrollLeft / this._zoom;
@@ -2471,9 +2516,9 @@ view.Graph = class extends grapher.Graph {
             height: viewport.height
         };
 
-        // Update visibility based on new viewport
-        this.updateViewportVisibility(viewportBounds);
-        this.updateVisibleElements(document);
+        // Compute visibility delta and apply only the changed nodes/edges (O(delta) not O(N)).
+        const delta = this.updateViewportVisibility(viewportBounds);
+        this.updateVisibleElements(document, delta);
     }
 
     _getOriginTranslate(origin) {
