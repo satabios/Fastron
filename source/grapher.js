@@ -70,6 +70,8 @@ grapher.Graph = class {
             return node;
         }
         node.build(document, this._nodeGroupElement);
+        node.measure();
+        node.layout();
         this._renderedNodes.add(nodeId);
         return node;
     }
