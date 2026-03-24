@@ -2145,7 +2145,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     restore(state) {
-        const canvas = this._canvasElement;
+const canvas = this._canvasElement;
         const origin = this._originElement;
         const background = this._backgroundElement;
         const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
@@ -2155,7 +2155,31 @@ view.Graph = class extends grapher.Graph {
                 elements.push(nodeElements[0]);
             }
         }
-        const size = canvas.getBBox();
+        // When viewport culling with deferred node build is active, leaf nodes have no DOM
+        // elements yet, so canvas.getBBox() returns a zero-size box. Compute the bounding
+        // box from layout positions instead so the canvas is sized correctly.
+        let size;
+        if (this.isViewportCullingEnabled() && this._deferredNodeBuild) {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            for (const nodeId of this.nodes.keys()) {
+                const entry = this.node(nodeId);
+                const node = entry.label;
+                if (typeof node.x === 'number' && typeof node.y === 'number') {
+                    const hw = (node.width || 0) / 2;
+                    const hh = (node.height || 0) / 2;
+                    minX = Math.min(minX, node.x - hw);
+                    minY = Math.min(minY, node.y - hh);
+                    maxX = Math.max(maxX, node.x + hw);
+                    maxY = Math.max(maxY, node.y + hh);
+                }
+            }
+            size = isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : canvas.getBBox();
+        } else {
+            size = canvas.getBBox();
+        }
         const margin = 100;
         const width = Math.ceil(margin + size.width + margin);
         const height = Math.ceil(margin + size.height + margin);
