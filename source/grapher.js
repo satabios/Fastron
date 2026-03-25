@@ -729,23 +729,31 @@ grapher.Graph = class {
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
         origin.appendChild(edgePathHitTestGroup);
-        // Edge labels sit above edge paths but below nodes so that nodes remain
-        // clearly visible and unobstructed.  The pushOutsideNode() logic in
-        // grapher.Edge.update() already nudges labels away from their endpoint
-        // nodes, so labels are legible in the spaces between nodes.
-        origin.appendChild(edgeLabelGroup);
         origin.appendChild(nodeGroup);
-        for (const edge of this.edges.values()) {
-            if (edge.label.labelElement) {
-                const label = edge.label;
-                const box = label.labelElement.getBBox();
-                label.width = box.width;
-                label.height = box.height;
-            }
-        }
+        // Edge labels render above nodes so that tensor shape annotations
+        // (e.g. "1×3×224×224") placed on connectors are never hidden behind
+        // node rectangles.  The pushOutsideNode() logic in Edge.update()
+        // nudges labels away from nodes to keep edges legible.
+        origin.appendChild(edgeLabelGroup);
     }
 
     async measure() {
+        // Measure edge labels now that the SVG is in the DOM and visible.
+        // (Moved from build() so that view.Graph.measure() can ensure the
+        // container is not display:none before getBBox() calls.)
+        for (const edge of this.edges.values()) {
+            const label = edge.label;
+            if (label.labelElement) {
+                const box = label.labelElement.getBBox();
+                label.width = box.width;
+                label.height = box.height;
+            } else if (label.label && !label.width) {
+                // Deferred edges: estimate label size so dagre reserves space.
+                // Average character width at 10px font ≈ 6px; height ≈ 14px.
+                label.width = label.label.length * 6;
+                label.height = 14;
+            }
+        }
         const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
         for (const key of this.nodes.keys()) {
             const entry = this.node(key);

@@ -2064,6 +2064,7 @@ view.Graph = class extends grapher.Graph {
     async measure() {
         const document = this.host.document;
         const window = this.host.window;
+        // Wait for web fonts so text metrics are accurate.
         if (document.fonts && document.fonts.ready) {
             try {
                 await document.fonts.ready;
@@ -2071,20 +2072,36 @@ view.Graph = class extends grapher.Graph {
                 // continue regardless of error
             }
         }
-        await new Promise((resolve) => {
-            window.requestAnimationFrame(() => {
-                window.requestAnimationFrame(() => {
-                    window.requestAnimationFrame(resolve);
-                });
-            });
-        });
-        // Force synchronous reflow so that getBBox() on SVG text elements
-        // returns real dimensions even on the very first page load before
-        // the browser has had a chance to shape the text.
+        // getBBox() returns zero when the SVG container has display:none.
+        // During initial load the #target element is hidden (body class is
+        // "welcome spinner") so we must force it visible before measuring,
+        // then restore the original style afterward.
+        const target = this._containerElement;
+        let forceShown = false;
+        if (target) {
+            const style = window.getComputedStyle(target);
+            if (style.display === 'none') {
+                forceShown = true;
+                target.style.setProperty('display', 'flex', 'important');
+                target.style.setProperty('visibility', 'hidden');
+                target.style.setProperty('position', 'absolute');
+            }
+        }
+        // Ensure the browser has committed pending style/layout before
+        // measuring.  Two rAF calls guarantee styles are applied; a
+        // forced reflow via getBBox() flushes remaining recalculations.
+        for (let i = 0; i < 2; i++) {
+            await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        }
         if (this._canvasElement) {
             this._canvasElement.getBBox();
         }
         await super.measure();
+        if (forceShown) {
+            target.style.removeProperty('display');
+            target.style.removeProperty('visibility');
+            target.style.removeProperty('position');
+        }
     }
 
     select(selection) {
