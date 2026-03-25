@@ -719,8 +719,9 @@ grapher.Graph = class {
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
         origin.appendChild(edgePathHitTestGroup);
-        origin.appendChild(edgeLabelGroup);
         origin.appendChild(nodeGroup);
+        // Render edge labels above nodes so long tensor/shape labels remain legible.
+        origin.appendChild(edgeLabelGroup);
         for (const edge of this.edges.values()) {
             if (edge.label.labelElement) {
                 const label = edge.label;
@@ -771,8 +772,9 @@ grapher.Graph = class {
             });
         }
         const layout = {};
-        layout.nodesep = 20;
-        layout.ranksep = 20;
+        const hasEdgeLabels = edges.some((edge) => (edge.width || 0) > 0 && (edge.height || 0) > 0);
+        layout.nodesep = hasEdgeLabels ? 34 : 20;
+        layout.ranksep = hasEdgeLabels ? 52 : 20;
         const direction = this.options.direction;
         const rotate = edges.length === 0 ? direction === 'vertical' : direction !== 'vertical';
         if (rotate) {
