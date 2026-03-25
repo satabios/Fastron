@@ -1078,7 +1078,7 @@ grapher.Node.Header = class {
             const r2 = i === this._entries.length - 1 && this.first;
             const r3 = i === this._entries.length - 1 && this.last;
             const r4 = i === 0 && this.last;
-            entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, entry.height, r1, r2, r3, r4));
+            entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, this.height, r1, r2, r3, r4));
             entry.text.setAttribute('x', 6);
             entry.text.setAttribute('y', entry.ty);
         }
