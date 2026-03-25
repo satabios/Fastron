@@ -467,6 +467,7 @@ grapher.Graph = class {
                     // into empty space until the async build completes.
                     if (node._simplified && node.element) {
                         this._showNode(node);
+                        node.element.style.removeProperty('opacity');
                     }
                     newNodeIds.push(nodeId);
                 }
@@ -634,7 +635,7 @@ grapher.Graph = class {
             element.setAttribute('refY', 5);
             element.setAttribute('markerUnits', 'strokeWidth');
             element.setAttribute('markerWidth', 8);
-            element.setAttribute('markerHeight', 8);
+            element.setAttribute('markerHeight', 6);
             element.setAttribute('orient', 'auto');
             const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 4 5 z');
@@ -698,10 +699,10 @@ grapher.Graph = class {
                 // cluster
                 node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                 if (node.rx) {
-                    node.rectangle.setAttribute('rx', entry.rx);
+                    node.rectangle.setAttribute('rx', node.rx);
                 }
                 if (node.ry) {
-                    node.rectangle.setAttribute('ry', entry.ry);
+                    node.rectangle.setAttribute('ry', node.ry);
                 }
                 node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 node.element.setAttribute('class', 'cluster');
@@ -719,7 +720,9 @@ grapher.Graph = class {
         for (const edge of this.edges.values()) {
             if (!deferEdgeBuild) {
                 edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
-                this._focusable.set(edge.label.hitTest, edge.label);
+                if (edge.label.hitTest) {
+                    this._focusable.set(edge.label.hitTest, edge.label);
+                }
                 this._renderedEdges.add(`${edge.v}:${edge.w}`);
             }
         }
@@ -946,11 +949,11 @@ grapher.Graph = class {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
             if (!source || !target) {
-                edge.points = [];
                 continue;
             }
             edge.points = [
                 { x: source.x, y: source.y },
+                { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 },
                 { x: target.x, y: target.y }
             ];
             if (edge.width || edge.height) {
@@ -1412,7 +1415,7 @@ grapher.Node.Header = class {
             const r3 = i === this._entries.length - 1 && this.last;
             const r4 = i === 0 && this.last;
             entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, this.height, r1, r2, r3, r4));
-            entry.text.setAttribute('x', entry.tx);
+            entry.text.setAttribute('x', entry.tx || 7);
             entry.text.setAttribute('y', entry.ty);
         }
         for (let i = 1; i < this._entries.length; i++) {
@@ -1768,6 +1771,12 @@ grapher.Node.Canvas = class {
     build(/* document, parent */) {
     }
 
+    measure() {
+    }
+
+    layout() {
+    }
+
     update(/* parent, top, width , first, last */) {
     }
 };
@@ -1841,15 +1850,15 @@ grapher.Edge = class {
             let labelY = this.y;
             if (Number.isFinite(labelX) && Number.isFinite(labelY) && Number.isFinite(this.width) && Number.isFinite(this.height)) {
                 const padding = 12;
-                const labelLeft = labelX - (this.width / 2);
-                const labelRight = labelX + (this.width / 2);
-                const labelTop = labelY - (this.height / 2);
-                const labelBottom = labelY + (this.height / 2);
                 const pushOutsideNode = (node) => {
                     if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y) ||
                         !Number.isFinite(node.width) || !Number.isFinite(node.height)) {
                         return;
                     }
+                    const labelLeft = labelX - (this.width / 2);
+                    const labelRight = labelX + (this.width / 2);
+                    const labelTop = labelY - (this.height / 2);
+                    const labelBottom = labelY + (this.height / 2);
                     const nodeLeft = node.x - (node.width / 2) - padding;
                     const nodeRight = node.x + (node.width / 2) + padding;
                     const nodeTop = node.y - (node.height / 2) - padding;

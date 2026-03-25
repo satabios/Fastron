@@ -167,7 +167,7 @@ view.View = class {
             }
             const sidebar = this._element('sidebar');
             if (sidebar) {
-                sidebar.addEventListener('mousewheel', (e) => {
+                sidebar.addEventListener('wheel', (e) => {
                     if (e.shiftKey || e.ctrlKey) {
                         e.preventDefault();
                     }
@@ -706,7 +706,9 @@ view.View = class {
             }
             await this._timeout(20);
             const path = [];
-            const modules = Array.isArray(model.functions) ? model.modules.concat(model.functions) : model.modules;
+            const modules = Array.isArray(model.modules)
+                ? (Array.isArray(model.functions) ? model.modules.concat(model.functions) : model.modules)
+                : (Array.isArray(model.functions) ? model.functions : []);
             let target = modules.length > 0 ? modules[0] : null;
             for (const module of modules) {
                 if (Array.isArray(module.nodes) && module.nodes.length > 0) {
@@ -1154,7 +1156,7 @@ view.View = class {
                 this._target.focus([value]);
             });
             sidebar.on('blur', () => {
-                this._target.blur(null);
+                this._target.blur([]);
             });
             sidebar.on('select', (sender, value) => {
                 this._target.scrollTo(this._target.select([value]));
@@ -2795,7 +2797,7 @@ view.Node = class extends grapher.Node {
         const options = this.context.options;
         const header =  this.header();
         const category = node.type && node.type.category ? node.type.category : '';
-        if (node.type && typeof node.type.name !== 'string' || !node.type.name.split) { // #416
+        if (!node.type || typeof node.type.name !== 'string' || !node.type.name.split) { // #416
             const error = new view.Error(`Unsupported node type '${JSON.stringify(node.type.name)}'.`);
             if (this.context.model && this.context.model.identifier) {
                 error.context = this.context.model.identifier;
@@ -4955,7 +4957,7 @@ view.FindSidebar = class extends view.Control {
                 this._node(node);
             }
             if (this._state.connection) {
-                const outputs = this._signature ? this._signature.outputs : this._target.inputs;
+                const outputs = this._signature ? this._signature.outputs : this._target.outputs;
                 for (const output of outputs) {
                     if (!output.type || output.type.endsWith('*')) {
                         for (const value of output.value) {
@@ -5257,11 +5259,12 @@ view.Documentation = class {
                 });
             }
             if (Array.isArray(source.references)) {
-                target.references = source.references.map((source) => {
-                    if (source) {
-                        target.description = generator.html(source.description);
+                target.references = source.references.map((ref) => {
+                    const item = {};
+                    if (ref) {
+                        item.description = generator.html(ref.description);
                     }
-                    return target;
+                    return item;
                 });
             }
             if (source.version !== undefined) {
@@ -6009,7 +6012,7 @@ markdown.Generator = class {
                 }
                 case 'heading': {
                     const level = token.depth;
-                    html += `<h${level}">${this._renderInline(token.tokens)}</h${level}>\n`;
+                    html += `<h${level}>${this._renderInline(token.tokens)}</h${level}>\n`;
                     continue;
                 }
                 case 'code': {
