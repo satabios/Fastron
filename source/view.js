@@ -2078,7 +2078,7 @@ view.Graph = class extends grapher.Graph {
         // then restore the original style afterward.
         const target = this._containerElement;
         let forceShown = false;
-        if (target) {
+        if (target && typeof window.getComputedStyle === 'function') {
             const style = window.getComputedStyle(target);
             if (style.display === 'none') {
                 forceShown = true;
