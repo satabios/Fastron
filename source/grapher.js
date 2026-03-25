@@ -289,10 +289,11 @@ grapher.Graph = class {
                 const node = this.node(nodeId).label;
                 if (node.element) {
                     this._showNode(node);
-                    if (node._needsUpdate) {
-                        node.measure();
-                        node.layout();
-                    }
+                    // Always measure and layout after building: the node was either
+                    // simplified (estimated sizes, no block measurements) or newly
+                    // built, so block positions and entry.ty are not yet valid.
+                    node.measure();
+                    node.layout();
                     node.update();
                     node._needsUpdate = false;
                     builtNodeIds.add(nodeId);
