@@ -1,4 +1,5 @@
 .node path { stroke: #333; fill: none; stroke-width: 1px; }
+.node rect.node-border { stroke: #333; fill: none; stroke-width: 1px; }
 .node line { stroke: #333; fill: none; stroke-width: 1px; }
 
 .node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
@@ -88,6 +89,7 @@
     .edge-path { stroke: #888; }
 
     .node path { stroke: #1d1d1d; }
+    .node rect.node-border { stroke: #1d1d1d; fill: none; stroke-width: 1px; }
     .node line { stroke: #1d1d1d; }
 
     .select > .node.node-border { stroke: rgba(192, 0, 0, 0.8); }
