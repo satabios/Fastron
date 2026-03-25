@@ -339,8 +339,18 @@ grapher.Graph = class {
                     continue;
                 }
                 const label = edgeEntry.label;
+                const wasBuilt = !!label.element;
                 if (!label.element && this._deferredEdgeBuild) {
                     this._ensureEdgeElement(edgeEntry, document);
+                }
+                // If the edge was just built and has a label element but no position
+                // (because label dimensions were 0 at layout time, so dagre didn't
+                // compute a label position), fall back to the midpoint of the edge path.
+                if (!wasBuilt && label.labelElement && (label.x === undefined || label.y === undefined) &&
+                    Array.isArray(label.points) && label.points.length > 0) {
+                    const midIndex = Math.floor((label.points.length - 1) / 2);
+                    label.x = label.points[midIndex].x;
+                    label.y = label.points[midIndex].y;
                 }
                 this._showEdge(label);
                 if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
@@ -368,6 +378,19 @@ grapher.Graph = class {
         }
 
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
+
+        // Ensure endpoint nodes of visible edges are also included in the visible set.
+        // TileManager can return an edge whose path crosses visible tiles even when one
+        // or both endpoint nodes are outside the tile buffer.  With _detachInvisible=true
+        // those endpoint nodes would be detached from the DOM, making the edge appear to
+        // terminate in empty space ("floating node" / dangling connector).
+        for (const edgeKey of visibleEdges) {
+            const edgeEntry = this._edges.get(edgeKey);
+            if (edgeEntry) {
+                visibleNodes.add(edgeEntry.v);
+                visibleNodes.add(edgeEntry.w);
+            }
+        }
 
         const previousNodes = this._visibleNodes || new Set();
         const previousEdges = this._visibleEdges || new Set();
@@ -439,12 +462,19 @@ grapher.Graph = class {
                 const node = entry.label;
                 if (node.element && !node._simplified) {
                     this._showNode(node);
-                    if (this._skipHiddenUpdate && node._needsUpdate !== false) {
+                    if (this._isLeafNode(nodeId) && this._skipHiddenUpdate && node._needsUpdate !== false) {
                         node.update();
                         node._needsUpdate = false;
                     }
                     this._renderedNodes.add(nodeId);
                 } else if (this._isLeafNode(nodeId)) {
+                    // Show the simplified placeholder immediately so that any already-visible
+                    // edge connecting to this node has a DOM target while the full node is
+                    // being built asynchronously.  Without this, the edge connector points
+                    // into empty space until the async build completes.
+                    if (node._simplified && node.element) {
+                        this._showNode(node);
+                    }
                     newNodeIds.push(nodeId);
                 }
             }
@@ -478,7 +508,7 @@ grapher.Graph = class {
             if (node.element && !node._simplified) {
                 if (isVisible) {
                     this._showNode(node);
-                    if (this._skipHiddenUpdate && node._needsUpdate !== false) {
+                    if (this._isLeafNode(nodeId) && this._skipHiddenUpdate && node._needsUpdate !== false) {
                         node.update();
                         node._needsUpdate = false;
                     }
@@ -487,6 +517,12 @@ grapher.Graph = class {
                     this._hideNode(node);
                 }
             } else if (isVisible && this._isLeafNode(nodeId)) {
+                // Show the simplified placeholder immediately so that any already-visible
+                // edge connecting to this node has a DOM target while the full node is
+                // being built asynchronously.
+                if (node._simplified && node.element) {
+                    this._showNode(node);
+                }
                 newNodeIds.push(nodeId);
             } else if (node._simplified) {
                 this._hideNode(node);
