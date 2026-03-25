@@ -719,9 +719,12 @@ grapher.Graph = class {
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
         origin.appendChild(edgePathHitTestGroup);
-        origin.appendChild(nodeGroup);
-        // Render edge labels above nodes so long tensor/shape labels remain legible.
+        // Edge labels sit above edge paths but below nodes so that nodes remain
+        // clearly visible and unobstructed.  The pushOutsideNode() logic in
+        // grapher.Edge.update() already nudges labels away from their endpoint
+        // nodes, so labels are legible in the spaces between nodes.
         origin.appendChild(edgeLabelGroup);
+        origin.appendChild(nodeGroup);
         for (const edge of this.edges.values()) {
             if (edge.label.labelElement) {
                 const label = edge.label;
