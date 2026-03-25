@@ -1009,7 +1009,9 @@ grapher.Graph = class {
         for (const edge of edges) {
             const a = nodeMap.get(edge.v);
             const b = nodeMap.get(edge.w);
-            if (!a || !b) { continue; }
+            if (!a || !b) {
+                continue;
+            }
             const aw = (a.width  || 100) / 2;
             const bw = (b.width  || 100) / 2;
             const ah = (a.height ||  40) / 2;
@@ -1023,7 +1025,9 @@ grapher.Graph = class {
         for (let iter = 0; iter < ITERATIONS; iter++) {
 
             // --- Reset per-step forces ---
-            for (const node of nodes) { node.fx = 0; node.fy = 0; }
+            for (const node of nodes) {
+                node.fx = 0; node.fy = 0;
+            }
 
             // --- Coulomb repulsion between every pair of nodes ---
             for (let i = 0; i < nodes.length; i++) {
@@ -1046,7 +1050,9 @@ grapher.Graph = class {
             for (const edge of edges) {
                 const a = nodeMap.get(edge.v);
                 const b = nodeMap.get(edge.w);
-                if (!a || !b) { continue; }
+                if (!a || !b) {
+                    continue;
+                }
                 const dx   = b.x - a.x;
                 const dy   = b.y - a.y;
                 const d    = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -1061,7 +1067,9 @@ grapher.Graph = class {
             // --- Weak gravity toward centroid to prevent unbounded drift ---
             let cx = 0;
             let cy = 0;
-            for (const node of nodes) { cx += node.x; cy += node.y; }
+            for (const node of nodes) {
+                cx += node.x; cy += node.y;
+            }
             cx /= nodes.length || 1;
             cy /= nodes.length || 1;
             for (const node of nodes) {
@@ -1094,12 +1102,18 @@ grapher.Graph = class {
                         if (ox > 0 && oy > 0) {
                             if (ox < oy) {
                                 const push = ox / 2 + 0.5;
-                                if (dx >= 0) { a.x -= push; b.x += push; }
-                                else         { a.x += push; b.x -= push; }
+                                if (dx >= 0) {
+                                    a.x -= push; b.x += push;
+                                } else         {
+                                    a.x += push; b.x -= push;
+                                }
                             } else {
                                 const push = oy / 2 + 0.5;
-                                if (dy >= 0) { a.y -= push; b.y += push; }
-                                else         { a.y += push; b.y -= push; }
+                                if (dy >= 0) {
+                                    a.y -= push; b.y += push;
+                                } else         {
+                                    a.y += push; b.y -= push;
+                                }
                             }
                         }
                     }
@@ -1130,12 +1144,18 @@ grapher.Graph = class {
                         dirty = true;
                         if (ox < oy) {
                             const push = ox / 2 + 1;
-                            if (dx >= 0) { a.x -= push; b.x += push; }
-                            else         { a.x += push; b.x -= push; }
+                            if (dx >= 0) {
+                                a.x -= push; b.x += push;
+                            } else         {
+                                a.x += push; b.x -= push;
+                            }
                         } else {
                             const push = oy / 2 + 1;
-                            if (dy >= 0) { a.y -= push; b.y += push; }
-                            else         { a.y += push; b.y -= push; }
+                            if (dy >= 0) {
+                                a.y -= push; b.y += push;
+                            } else         {
+                                a.y += push; b.y -= push;
+                            }
                         }
                     }
                 }
@@ -1159,7 +1179,9 @@ grapher.Graph = class {
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
-            if (!src || !tgt) { edge.points = []; continue; }
+            if (!src || !tgt) {
+                edge.points = []; continue;
+            }
             edge.points = [
                 { x: src.x, y: src.y },
                 { x: (src.x + tgt.x) / 2, y: (src.y + tgt.y) / 2 },
