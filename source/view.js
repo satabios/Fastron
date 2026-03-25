@@ -897,8 +897,8 @@ view.View = class {
                     skipHiddenUpdate: true,
                     detachInvisible: true,
                     estimatedNodeSizeThreshold: 5000,
-                    estimatedNodeWidth: 170,
-                    estimatedNodeHeight: 75
+                    estimatedNodeWidth: 150,
+                    estimatedNodeHeight: 65
                 });
             }
 
