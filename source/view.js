@@ -2090,9 +2090,9 @@ view.Graph = class extends grapher.Graph {
         // Ensure the browser has committed pending style/layout before
         // measuring.  Two rAF calls guarantee styles are applied; a
         // forced reflow via getBBox() flushes remaining recalculations.
-        for (let i = 0; i < 2; i++) {
-            await new Promise((resolve) => window.requestAnimationFrame(resolve));
-        }
+        const raf = () => new Promise((resolve) => { window.requestAnimationFrame(resolve); });
+        await raf();
+        await raf();
         if (this._canvasElement) {
             this._canvasElement.getBBox();
         }
