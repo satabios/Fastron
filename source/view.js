@@ -898,7 +898,7 @@ view.View = class {
                     detachInvisible: true,
                     estimatedNodeSizeThreshold: 5000,
                     estimatedNodeWidth: 150,
-                    estimatedNodeHeight: 40
+                    estimatedNodeHeight: 65
                 });
             }
 

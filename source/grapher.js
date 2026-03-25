@@ -23,7 +23,7 @@ grapher.Graph = class {
         this._skipHiddenUpdate = false;
         this._estimatedNodeSizeThreshold = 500;
         this._estimatedNodeWidth = 150;
-        this._estimatedNodeHeight = 40;
+        this._estimatedNodeHeight = 65;
         this._detachInvisible = false;
         this._visibilityVersion = 0;
         this._mainThreadLayoutThreshold = 2000;
@@ -627,7 +627,7 @@ grapher.Graph = class {
             element.setAttribute('refY', 5);
             element.setAttribute('markerUnits', 'strokeWidth');
             element.setAttribute('markerWidth', 8);
-            element.setAttribute('markerHeight', 6);
+            element.setAttribute('markerHeight', 8);
             element.setAttribute('orient', 'auto');
             const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 4 5 z');
@@ -1485,7 +1485,7 @@ grapher.Node.Header.Entry = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 4;
+        const yPadding = 6;
         const xPadding = 7;
         const boundingBox = this.text.getBBox();
         this.width = boundingBox.width + xPadding + xPadding;
