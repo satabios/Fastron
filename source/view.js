@@ -2075,6 +2075,12 @@ view.Graph = class extends grapher.Graph {
                 });
             });
         });
+        // Force synchronous reflow so that getBBox() on SVG text elements
+        // returns real dimensions even on the very first page load before
+        // the browser has had a chance to shape the text.
+        if (this._canvasElement) {
+            this._canvasElement.getBBox();
+        }
         await super.measure();
     }
 
