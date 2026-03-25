@@ -3,7 +3,7 @@
 .node line { stroke: #333; fill: none; stroke-width: 1px; }
 
 .node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
-.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 12px; text-rendering: geometricPrecision; user-select: none; }
+.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; text-rendering: geometricPrecision; user-select: none; }
 
 .node-item-function path { fill: #fff; }
 .node-item-function text { fill: #000; }
@@ -53,7 +53,7 @@
 .node-argument-list > path { fill: #fff; stroke-width: 0; stroke: #000; }
 .node-argument-list:hover { cursor: pointer; }
 .node-argument-list:hover > path { fill: #f6f6f6; }
-.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 10px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
+.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 9px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
 .node-argument > rect { fill: transparent; }
 
 .graph-item-input path { fill: #eee; }
