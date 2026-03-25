@@ -339,7 +339,7 @@ grapher.Graph = class {
                     continue;
                 }
                 const label = edgeEntry.label;
-                const wasBuilt = !!label.element;
+                const wasBuilt = Boolean(label.element);
                 if (!label.element && this._deferredEdgeBuild) {
                     this._ensureEdgeElement(edgeEntry, document);
                 }
