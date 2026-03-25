@@ -1590,7 +1590,40 @@ grapher.Edge = class {
         this.element.setAttribute('d', edgePath);
         this.hitTest.setAttribute('d', edgePath);
         if (this.labelElement) {
-            this.labelElement.setAttribute('transform', `translate(${this.x - (this.width / 2)},${this.y - (this.height / 2)})`);
+            let labelX = this.x;
+            let labelY = this.y;
+            if (Number.isFinite(labelX) && Number.isFinite(labelY) && Number.isFinite(this.width) && Number.isFinite(this.height)) {
+                const padding = 12;
+                const labelLeft = labelX - (this.width / 2);
+                const labelRight = labelX + (this.width / 2);
+                const labelTop = labelY - (this.height / 2);
+                const labelBottom = labelY + (this.height / 2);
+                const pushOutsideNode = (node) => {
+                    if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y) ||
+                        !Number.isFinite(node.width) || !Number.isFinite(node.height)) {
+                        return;
+                    }
+                    const nodeLeft = node.x - (node.width / 2) - padding;
+                    const nodeRight = node.x + (node.width / 2) + padding;
+                    const nodeTop = node.y - (node.height / 2) - padding;
+                    const nodeBottom = node.y + (node.height / 2) + padding;
+                    const overlapsHorizontally = labelRight > nodeLeft && labelLeft < nodeRight;
+                    const overlapsVertically = labelBottom > nodeTop && labelTop < nodeBottom;
+                    if (!overlapsHorizontally || !overlapsVertically) {
+                        return;
+                    }
+                    const dx = labelX - node.x;
+                    const dy = labelY - node.y;
+                    if (Math.abs(dx) >= Math.abs(dy)) {
+                        labelX = dx < 0 ? nodeLeft - (this.width / 2) : nodeRight + (this.width / 2);
+                    } else {
+                        labelY = dy < 0 ? nodeTop - (this.height / 2) : nodeBottom + (this.height / 2);
+                    }
+                };
+                pushOutsideNode(this.from);
+                pushOutsideNode(this.to);
+            }
+            this.labelElement.setAttribute('transform', `translate(${labelX - (this.width / 2)},${labelY - (this.height / 2)})`);
             this.labelElement.style.opacity = 1;
         }
     }
