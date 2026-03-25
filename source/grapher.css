@@ -10,7 +10,7 @@
 .node-item-function:hover { cursor: pointer; }
 .node-item-function:hover path { fill: #eee; }
 
-.node-item-type path { fill: #000; }
+.node-item-type path { fill: #333; }
 .node-item-type text { fill: #fff; }
 .node-item-type:hover { cursor: pointer; }
 .node-item-type:hover path { fill: #fff; }
@@ -82,7 +82,12 @@
 .cluster rect { stroke: #000; fill: #000; fill-opacity: 0.02; stroke-opacity: 0.06; stroke-width: 1px; }
 
 /* Used by JavaScript for animated selection highlight; duration/iteration set at call site. */
-@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; }  }
+
+/* Model comparison diff highlights */
+.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
+.node-diff-added .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
+.node-diff-removed .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }
 
 @media (prefers-color-scheme: dark) {
 
@@ -162,8 +167,3 @@
     .node-diff-added    .node-border { stroke: #3dcc7a !important; }
     .node-diff-removed  .node-border { stroke: #f06060 !important; }
 }
-
-/* Model comparison diff highlights */
-.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
-.node-diff-added .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
-.node-diff-removed .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }
