@@ -22,8 +22,8 @@ grapher.Graph = class {
         this._deferredEdgeBuild = false;
         this._skipHiddenUpdate = false;
         this._estimatedNodeSizeThreshold = 500;
-        this._estimatedNodeWidth = 150;
-        this._estimatedNodeHeight = 65;
+        this._estimatedNodeWidth = 170;
+        this._estimatedNodeHeight = 75;
         this._detachInvisible = false;
         this._visibilityVersion = 0;
         this._mainThreadLayoutThreshold = 2000;
@@ -776,8 +776,8 @@ grapher.Graph = class {
         }
         const layout = {};
         const hasEdgeLabels = edges.some((edge) => (edge.width || 0) > 0 && (edge.height || 0) > 0);
-        layout.nodesep = hasEdgeLabels ? 34 : 20;
-        layout.ranksep = hasEdgeLabels ? 52 : 20;
+        layout.nodesep = hasEdgeLabels ? 50 : 40;
+        layout.ranksep = hasEdgeLabels ? 68 : 40;
         const direction = this.options.direction;
         const rotate = edges.length === 0 ? direction === 'vertical' : direction !== 'vertical';
         if (rotate) {
@@ -971,7 +971,7 @@ grapher.Graph = class {
     // values, so the layout is always based on the true rendered sizes.
     // -------------------------------------------------------------------------
     _forceLayout(nodes, edges) {
-        const NODE_PADDING  = 20;   // minimum gap between node bounding boxes (px)
+        const NODE_PADDING  = 30;   // minimum gap between node bounding boxes (px)
         const ITERATIONS    = 400;  // simulation steps
         const INITIAL_TEMP  = 200;  // initial max displacement per step (px)
         const COOLING       = 0.972; // temperature multiplier per iteration
@@ -1406,7 +1406,7 @@ grapher.Node.Header = class {
             const r3 = i === this._entries.length - 1 && this.last;
             const r4 = i === 0 && this.last;
             entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, this.height, r1, r2, r3, r4));
-            entry.text.setAttribute('x', 6);
+            entry.text.setAttribute('x', entry.tx);
             entry.text.setAttribute('y', entry.ty);
         }
         for (let i = 1; i < this._entries.length; i++) {
@@ -1485,8 +1485,8 @@ grapher.Node.Header.Entry = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 6;
-        const xPadding = 7;
+        const yPadding = 8;
+        const xPadding = 10;
         const boundingBox = this.text.getBBox();
         this.width = boundingBox.width + xPadding + xPadding;
         this.height = boundingBox.height + yPadding + yPadding;
@@ -1551,7 +1551,7 @@ grapher.ArgumentList = class {
 
     measure() {
         this.width = 75;
-        this.height = 3;
+        this.height = 6;
         for (let i = 0; i < this._items.length; i++) {
             const item = this._items[i];
             item.measure();
@@ -1559,18 +1559,18 @@ grapher.ArgumentList = class {
             this.width = Math.max(this.width, item.width);
             if (item.type === 'node' || item.type === 'node[]') {
                 if (i === this._items.length - 1) {
-                    this.height += 3;
+                    this.height += 4;
                 }
             }
         }
         for (const item of this._items) {
             item.width = this.width;
         }
-        this.height += 3;
+        this.height += 6;
     }
 
     layout() {
-        let y = 3;
+        let y = 6;
         for (const item of this._items) {
             item.x = this.x;
             item.y = y;
@@ -1676,8 +1676,8 @@ grapher.Argument = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 4;
+        const xPadding = 8;
         const size = this.text.getBBox();
         this.width = xPadding + size.width + xPadding;
         this.bottom = yPadding + size.height + yPadding;
@@ -1686,20 +1686,20 @@ grapher.Argument = class {
         if (this.type === 'node') {
             const node = this.content;
             node.measure();
-            this.width = Math.max(150, this.width, node.width + (2 * xPadding));
+            this.width = Math.max(160, this.width, node.width + (2 * xPadding));
             this.height += node.height + yPadding + yPadding + yPadding + yPadding;
         } else if (this.type === 'node[]') {
             for (const node of this.content) {
                 node.measure();
-                this.width = Math.max(150, this.width, node.width + (2 * xPadding));
+                this.width = Math.max(160, this.width, node.width + (2 * xPadding));
                 this.height += node.height + yPadding + yPadding + yPadding + yPadding;
             }
         }
     }
 
     layout() {
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 4;
+        const xPadding = 8;
         let y = this.y + this.bottom;
         if (this.type === 'node') {
             const node = this.content;
@@ -1719,13 +1719,13 @@ grapher.Argument = class {
     }
 
     update() {
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 4;
+        const xPadding = 8;
         this.text.setAttribute('x', this.x + xPadding);
         this.text.setAttribute('y', this.y + yPadding - this.offset);
-        this.border.setAttribute('x', this.x + 3);
+        this.border.setAttribute('x', this.x + 4);
         this.border.setAttribute('y', this.y);
-        this.border.setAttribute('width', this.width - 6);
+        this.border.setAttribute('width', this.width - 8);
         this.border.setAttribute('height', this.height);
         if (this.type === 'node') {
             const node = this.content;
