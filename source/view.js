@@ -706,9 +706,10 @@ view.View = class {
             }
             await this._timeout(20);
             const path = [];
-            const modules = Array.isArray(model.modules)
-                ? (Array.isArray(model.functions) ? model.modules.concat(model.functions) : model.modules)
-                : (Array.isArray(model.functions) ? model.functions : []);
+            let modules = Array.isArray(model.modules) ? model.modules : [];
+            if (Array.isArray(model.functions)) {
+                modules = modules.concat(model.functions);
+            }
             let target = modules.length > 0 ? modules[0] : null;
             for (const module of modules) {
                 if (Array.isArray(module.nodes) && module.nodes.length > 0) {
