@@ -896,7 +896,7 @@ view.View = class {
                     deferredEdgeBuild: true,
                     skipHiddenUpdate: true,
                     detachInvisible: true,
-                    estimatedNodeSizeThreshold: 500,
+                    estimatedNodeSizeThreshold: 5000,
                     estimatedNodeWidth: 150,
                     estimatedNodeHeight: 40
                 });
