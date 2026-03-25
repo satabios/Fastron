@@ -642,10 +642,7 @@ grapher.Graph = class {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this._isLeafNode(nodeId)) {
-                if (!deferLeafNodeBuild) {
-                    node.build(document, nodeGroup);
-                    this._renderedNodes.add(nodeId);
-                } else {
+                if (deferLeafNodeBuild) {
                     // Create simplified placeholder shape for deferred nodes
                     node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                     node.element.setAttribute('class', node.class ? `node ${node.class}` : 'node');
@@ -655,6 +652,9 @@ grapher.Graph = class {
                     node.element.appendChild(rect);
                     node._simplified = true;
                     nodeGroup.appendChild(node.element);
+                    this._renderedNodes.add(nodeId);
+                } else {
+                    node.build(document, nodeGroup);
                     this._renderedNodes.add(nodeId);
                 }
             } else {
