@@ -25,6 +25,8 @@ grapher.Graph = class {
         this._estimatedNodeWidth = 150;
         this._estimatedNodeHeight = 40;
         this._detachInvisible = false;
+        this._visibilityVersion = 0;
+        this._mainThreadLayoutThreshold = 2000;
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -260,19 +262,29 @@ grapher.Graph = class {
         }
     }
 
-    _buildVisibleNodes(nodeIds, document) {
+    _buildVisibleNodes(nodeIds, document, visibilityVersion = this._visibilityVersion) {
         const CHUNK = 30;
         const process = (ids) => {
+            if (visibilityVersion !== this._visibilityVersion) {
+                return;
+            }
             const batch = ids.splice(0, CHUNK);
             for (const nodeId of batch) {
+                if (!this._visibleNodes || !this._visibleNodes.has(nodeId)) {
+                    continue;
+                }
                 this._ensureNodeElement(nodeId, document);
                 const node = this.node(nodeId).label;
                 if (node.element) {
+                    this._showNode(node);
                     node.update();
                     node._needsUpdate = false;
                 }
             }
             if (ids.length > 0) {
+                if (visibilityVersion !== this._visibilityVersion) {
+                    return;
+                }
                 if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => process(ids), 0);
                 } else {
@@ -281,6 +293,45 @@ grapher.Graph = class {
             }
         };
         process(nodeIds);
+    }
+
+    _buildVisibleEdges(edgeKeys, document, visibilityVersion = this._visibilityVersion) {
+        const CHUNK = 60;
+        const process = (keys) => {
+            if (visibilityVersion !== this._visibilityVersion) {
+                return;
+            }
+            const batch = keys.splice(0, CHUNK);
+            for (const edgeKey of batch) {
+                if (!this._visibleEdges || !this._visibleEdges.has(edgeKey)) {
+                    continue;
+                }
+                const edgeEntry = this._edges.get(edgeKey);
+                if (!edgeEntry) {
+                    continue;
+                }
+                const label = edgeEntry.label;
+                if (!label.element && this._deferredEdgeBuild) {
+                    this._ensureEdgeElement(edgeEntry, document);
+                }
+                this._showEdge(label);
+                if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
+                    label.update();
+                    label._needsUpdate = false;
+                }
+            }
+            if (keys.length > 0) {
+                if (visibilityVersion !== this._visibilityVersion) {
+                    return;
+                }
+                if (typeof requestIdleCallback === 'undefined') {
+                    setTimeout(() => process(keys), 0);
+                } else {
+                    requestIdleCallback(() => process(keys), { timeout: 300 });
+                }
+            }
+        };
+        process(edgeKeys);
     }
 
     updateViewportVisibility(viewportBounds) {
@@ -335,6 +386,8 @@ grapher.Graph = class {
             return;
         }
 
+        const visibilityVersion = ++this._visibilityVersion;
+
         // Fast path: use delta sets to only process nodes/edges that changed visibility.
         // This reduces per-scroll work from O(N) to O(delta).
         if (delta) {
@@ -368,7 +421,7 @@ grapher.Graph = class {
                 }
             }
             if (newNodeIds.length > 0) {
-                this._buildVisibleNodes(newNodeIds, document);
+                this._buildVisibleNodes(newNodeIds, document, visibilityVersion);
             }
 
             // Hide edges that left the viewport
@@ -380,20 +433,8 @@ grapher.Graph = class {
             }
 
             // Show or build edges that entered the viewport
-            for (const edgeKey of addedEdges) {
-                const edgeEntry = this._edges.get(edgeKey);
-                if (!edgeEntry) {
-                    continue;
-                }
-                const label = edgeEntry.label;
-                if (!label.element && this._deferredEdgeBuild) {
-                    this._ensureEdgeElement(edgeEntry, document);
-                }
-                this._showEdge(label);
-                if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
-                    label.update();
-                    label._needsUpdate = false;
-                }
+            if (addedEdges.size > 0) {
+                this._buildVisibleEdges(Array.from(addedEdges), document, visibilityVersion);
             }
             return;
         }
@@ -424,8 +465,10 @@ grapher.Graph = class {
 
         // Build newly visible nodes in idle-time chunks to avoid jank
         if (newNodeIds.length > 0) {
-            this._buildVisibleNodes(newNodeIds, document);
+            this._buildVisibleNodes(newNodeIds, document, visibilityVersion);
         }
+
+        const newEdgeKeys = [];
 
         for (const edge of this.edges.values()) {
             const edgeKey = `${edge.v}:${edge.w}`;
@@ -433,7 +476,8 @@ grapher.Graph = class {
             const label = edge.label;
 
             if (isVisible && !label.element && this._deferredEdgeBuild) {
-                this._ensureEdgeElement(edge, document);
+                newEdgeKeys.push(edgeKey);
+                continue;
             }
             if (isVisible) {
                 this._showEdge(label);
@@ -444,6 +488,10 @@ grapher.Graph = class {
             } else {
                 this._hideEdge(label);
             }
+        }
+
+        if (newEdgeKeys.length > 0) {
+            this._buildVisibleEdges(newEdgeKeys, document, visibilityVersion);
         }
     }
 
@@ -679,13 +727,21 @@ grapher.Graph = class {
                 edges = message.edges;
                 state.log = message.state.log;
             } catch {
-                // Fall back to single-threaded layout when worker creation/execution fails.
+                // Avoid long main-thread stalls for very large graphs.
+                if (nodes.length > this._mainThreadLayoutThreshold) {
+                    this._fastLayout(nodes, edges, rotate, layout);
+                } else {
+                    const dagre = await import('./dagre.js');
+                    dagre.layout(nodes, edges, layout, state);
+                }
+            }
+        } else {
+            if (nodes.length > this._mainThreadLayoutThreshold) {
+                this._fastLayout(nodes, edges, rotate, layout);
+            } else {
                 const dagre = await import('./dagre.js');
                 dagre.layout(nodes, edges, layout, state);
             }
-        } else {
-            const dagre = await import('./dagre.js');
-            dagre.layout(nodes, edges, layout, state);
         }
         if (state.log) {
             const fs = await import('fs');
@@ -716,6 +772,111 @@ grapher.Graph = class {
             }
         }
         return '';
+    }
+
+    _fastLayout(nodes, edges, rotate, layout) {
+        const nodeMap = new Map();
+        const outgoing = new Map();
+        const indegree = new Map();
+        for (const node of nodes) {
+            nodeMap.set(node.v, node);
+            outgoing.set(node.v, []);
+            indegree.set(node.v, 0);
+        }
+        for (const edge of edges) {
+            if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
+                continue;
+            }
+            outgoing.get(edge.v).push(edge.w);
+            indegree.set(edge.w, indegree.get(edge.w) + 1);
+        }
+
+        const queue = [];
+        const level = new Map();
+        for (const [nodeId, degree] of indegree.entries()) {
+            if (degree === 0) {
+                queue.push(nodeId);
+                level.set(nodeId, 0);
+            }
+        }
+        while (queue.length > 0) {
+            const nodeId = queue.shift();
+            const base = level.get(nodeId) || 0;
+            const children = outgoing.get(nodeId) || [];
+            for (const childId of children) {
+                const next = base + 1;
+                const current = level.has(childId) ? level.get(childId) : -1;
+                if (next > current) {
+                    level.set(childId, next);
+                }
+                const nextDegree = indegree.get(childId) - 1;
+                indegree.set(childId, nextDegree);
+                if (nextDegree === 0) {
+                    queue.push(childId);
+                }
+            }
+        }
+        for (const node of nodes) {
+            if (!level.has(node.v)) {
+                level.set(node.v, 0);
+            }
+        }
+
+        const ranks = new Map();
+        for (const node of nodes) {
+            const rank = level.get(node.v) || 0;
+            if (!ranks.has(rank)) {
+                ranks.set(rank, []);
+            }
+            ranks.get(rank).push(node);
+        }
+        const rankKeys = Array.from(ranks.keys()).sort((a, b) => a - b);
+        for (const rank of rankKeys) {
+            ranks.get(rank).sort((a, b) => String(a.v).localeCompare(String(b.v)));
+        }
+
+        const nodeSep = Number.isFinite(layout.nodesep) ? layout.nodesep : 20;
+        const rankSep = Number.isFinite(layout.ranksep) ? layout.ranksep : 20;
+        let primary = 0;
+
+        for (const rank of rankKeys) {
+            const rankNodes = ranks.get(rank);
+            let secondary = 0;
+            let maxSpan = 0;
+            for (const node of rankNodes) {
+                const width = Math.max(1, node.width || 0);
+                const height = Math.max(1, node.height || 0);
+                if (rotate) {
+                    node.x = primary + (width / 2);
+                    node.y = secondary + (height / 2);
+                    secondary += height + nodeSep;
+                    maxSpan = Math.max(maxSpan, width);
+                } else {
+                    node.x = secondary + (width / 2);
+                    node.y = primary + (height / 2);
+                    secondary += width + nodeSep;
+                    maxSpan = Math.max(maxSpan, height);
+                }
+            }
+            primary += maxSpan + rankSep;
+        }
+
+        for (const edge of edges) {
+            const source = nodeMap.get(edge.v);
+            const target = nodeMap.get(edge.w);
+            if (!source || !target) {
+                edge.points = [];
+                continue;
+            }
+            edge.points = [
+                { x: source.x, y: source.y },
+                { x: target.x, y: target.y }
+            ];
+            if (edge.width || edge.height) {
+                edge.x = (source.x + target.x) / 2;
+                edge.y = (source.y + target.y) / 2;
+            }
+        }
     }
 
     update() {
