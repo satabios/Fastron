@@ -68,8 +68,19 @@ grapher.Graph = class {
             return null;
         }
         const node = entry.label;
-        if (node.element || !this._isLeafNode(nodeId) || !this._nodeGroupElement) {
+        if (!this._isLeafNode(nodeId) || !this._nodeGroupElement) {
             return node;
+        }
+        if (node.element && !node._simplified) {
+            return node; // already fully built
+        }
+        // Remove simplified placeholder shape if present
+        if (node._simplified && node.element) {
+            if (node.element.parentNode) {
+                node.element.parentNode.removeChild(node.element);
+            }
+            node.element = null;
+            node._simplified = false;
         }
         node.build(document, this._nodeGroupElement);
         this._renderedNodes.add(nodeId);
@@ -269,6 +280,7 @@ grapher.Graph = class {
                 return;
             }
             const batch = ids.splice(0, CHUNK);
+            const builtNodeIds = new Set();
             for (const nodeId of batch) {
                 if (!this._visibleNodes || !this._visibleNodes.has(nodeId)) {
                     continue;
@@ -283,6 +295,17 @@ grapher.Graph = class {
                     }
                     node.update();
                     node._needsUpdate = false;
+                    builtNodeIds.add(nodeId);
+                }
+            }
+            // Re-update edges connected to newly built nodes so that intersectRect
+            // uses the actual node sizes rather than the estimated sizes that were
+            // in effect when the edge was first rendered.
+            if (builtNodeIds.size > 0) {
+                for (const edge of this.edges.values()) {
+                    if ((builtNodeIds.has(edge.v) || builtNodeIds.has(edge.w)) && edge.label.element) {
+                        edge.label.update();
+                    }
                 }
             }
             if (ids.length > 0) {
@@ -413,7 +436,7 @@ grapher.Graph = class {
                     continue;
                 }
                 const node = entry.label;
-                if (node.element) {
+                if (node.element && !node._simplified) {
                     this._showNode(node);
                     if (this._skipHiddenUpdate && node._needsUpdate !== false) {
                         node.update();
@@ -451,7 +474,7 @@ grapher.Graph = class {
             const node = entry.label;
             const isVisible = this._visibleNodes.has(nodeId);
 
-            if (node.element) {
+            if (node.element && !node._simplified) {
                 if (isVisible) {
                     this._showNode(node);
                     if (this._skipHiddenUpdate && node._needsUpdate !== false) {
@@ -464,6 +487,8 @@ grapher.Graph = class {
                 }
             } else if (isVisible && this._isLeafNode(nodeId)) {
                 newNodeIds.push(nodeId);
+            } else if (node._simplified) {
+                this._hideNode(node);
             }
         }
 
@@ -610,7 +635,7 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
 
-        const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild;
+        const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
 
         for (const nodeId of nodesToRender) {
@@ -619,6 +644,17 @@ grapher.Graph = class {
             if (this._isLeafNode(nodeId)) {
                 if (!deferLeafNodeBuild) {
                     node.build(document, nodeGroup);
+                    this._renderedNodes.add(nodeId);
+                } else {
+                    // Create simplified placeholder shape for deferred nodes
+                    node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    node.element.setAttribute('class', node.class ? `node ${node.class}` : 'node');
+                    node.element.style.opacity = 0;
+                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('class', 'node node-border');
+                    node.element.appendChild(rect);
+                    node._simplified = true;
+                    nodeGroup.appendChild(node.element);
                     this._renderedNodes.add(nodeId);
                 }
             } else {
@@ -667,12 +703,11 @@ grapher.Graph = class {
 
     async measure() {
         const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
-        const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild;
         for (const key of this.nodes.keys()) {
             const entry = this.node(key);
             if (this._isLeafNode(key)) {
                 const node = entry.label;
-                if (useEstimatedNodeSizes || (deferLeafNodeBuild && !node.element)) {
+                if (useEstimatedNodeSizes) {
                     node.width = node.width || this._estimatedNodeWidth;
                     node.height = node.height || this._estimatedNodeHeight;
                     node._needsUpdate = true;
@@ -889,8 +924,20 @@ grapher.Graph = class {
                 const node = entry.label;
                 const shouldUpdate = !restrictToVisible || this._visibleNodes.has(nodeId);
                 if (node.element && shouldUpdate) {
-                    node.update();
-                    node._needsUpdate = false;
+                    if (node._simplified) {
+                        const rect = node.element.firstChild;
+                        if (rect) {
+                            rect.setAttribute('x', node.x - (node.width || 0) / 2);
+                            rect.setAttribute('y', node.y - (node.height || 0) / 2);
+                            rect.setAttribute('width', node.width || 0);
+                            rect.setAttribute('height', node.height || 0);
+                        }
+                        node.element.style.removeProperty('opacity');
+                        node._needsUpdate = false;
+                    } else {
+                        node.update();
+                        node._needsUpdate = false;
+                    }
                 } else if (!shouldUpdate) {
                     node._needsUpdate = true;
                 }
