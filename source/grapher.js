@@ -557,10 +557,17 @@ grapher.Graph = class {
     hideAllNodes() {
         for (const nodeId of this.nodes.keys()) {
             const entry = this.node(nodeId);
-            this._hideNode(entry.label);
+            const node = entry.label;
+            this._hideNode(node);
+            // Mark as needing update so that when the node becomes visible
+            // again, update() re-applies all SVG attributes.  Some browsers
+            // do not correctly re-render detached-then-reattached SVG elements
+            // without a fresh attribute write.
+            node._needsUpdate = true;
         }
         for (const edge of this.edges.values()) {
             this._hideEdge(edge.label);
+            edge.label._needsUpdate = true;
         }
     }
 
