@@ -1293,7 +1293,7 @@ grapher.Node = class {
             block.measure();
             this.height += block.height;
         }
-        this.width = Math.max(...this._blocks.map((block) => block.width));
+        this.width = Math.max(160, ...this._blocks.map((block) => block.width));
         for (const block of this._blocks) {
             block.width = this.width;
         }
@@ -1381,6 +1381,7 @@ grapher.Node.Header = class {
             this.height = Math.max(this.height, entry.height);
             this.width += entry.width;
         }
+        this.height = Math.max(this.height, 28);
     }
 
     layout() {
@@ -1488,8 +1489,8 @@ grapher.Node.Header.Entry = class {
         const yPadding = 8;
         const xPadding = 10;
         const boundingBox = this.text.getBBox();
-        this.width = boundingBox.width + xPadding + xPadding;
-        this.height = boundingBox.height + yPadding + yPadding;
+        this.width = Math.max(boundingBox.width + xPadding + xPadding, 64);
+        this.height = Math.max(boundingBox.height + yPadding + yPadding, 28);
         this.tx = xPadding;
         this.ty = yPadding - boundingBox.y;
     }
