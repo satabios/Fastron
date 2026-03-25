@@ -735,13 +735,11 @@ grapher.Graph = class {
                     dagre.layout(nodes, edges, layout, state);
                 }
             }
+        } else if (nodes.length > this._mainThreadLayoutThreshold) {
+            this._fastLayout(nodes, edges, rotate, layout);
         } else {
-            if (nodes.length > this._mainThreadLayoutThreshold) {
-                this._fastLayout(nodes, edges, rotate, layout);
-            } else {
-                const dagre = await import('./dagre.js');
-                dagre.layout(nodes, edges, layout, state);
-            }
+            const dagre = await import('./dagre.js');
+            dagre.layout(nodes, edges, layout, state);
         }
         if (state.log) {
             const fs = await import('fs');
