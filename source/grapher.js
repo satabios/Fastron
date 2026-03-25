@@ -277,6 +277,10 @@ grapher.Graph = class {
                 const node = this.node(nodeId).label;
                 if (node.element) {
                     this._showNode(node);
+                    if (node._needsUpdate) {
+                        node.measure();
+                        node.layout();
+                    }
                     node.update();
                     node._needsUpdate = false;
                 }
