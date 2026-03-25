@@ -273,15 +273,17 @@ grapher.Graph = class {
         }
     }
 
-    _buildVisibleNodes(nodeIds, document, visibilityVersion = this._visibilityVersion) {
+    _buildVisibleNodes(nodeIds, document) {
         const CHUNK = 30;
         const process = (ids) => {
-            if (visibilityVersion !== this._visibilityVersion) {
-                return;
-            }
             const batch = ids.splice(0, CHUNK);
             const builtNodeIds = new Set();
             for (const nodeId of batch) {
+                // Skip nodes that are no longer in the current visible set.
+                // This handles the case where the viewport moved while the async
+                // build was queued, without aborting the entire queue (which would
+                // leave simplified placeholder rectangles permanently visible for
+                // nodes that are still in the viewport).
                 if (!this._visibleNodes || !this._visibleNodes.has(nodeId)) {
                     continue;
                 }
@@ -310,9 +312,6 @@ grapher.Graph = class {
                 }
             }
             if (ids.length > 0) {
-                if (visibilityVersion !== this._visibilityVersion) {
-                    return;
-                }
                 if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => process(ids), 0);
                 } else {
@@ -323,12 +322,9 @@ grapher.Graph = class {
         process(nodeIds);
     }
 
-    _buildVisibleEdges(edgeKeys, document, visibilityVersion = this._visibilityVersion) {
+    _buildVisibleEdges(edgeKeys, document) {
         const CHUNK = 60;
         const process = (keys) => {
-            if (visibilityVersion !== this._visibilityVersion) {
-                return;
-            }
             const batch = keys.splice(0, CHUNK);
             for (const edgeKey of batch) {
                 if (!this._visibleEdges || !this._visibleEdges.has(edgeKey)) {
@@ -359,9 +355,6 @@ grapher.Graph = class {
                 }
             }
             if (keys.length > 0) {
-                if (visibilityVersion !== this._visibilityVersion) {
-                    return;
-                }
                 if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => process(keys), 0);
                 } else {
@@ -437,7 +430,7 @@ grapher.Graph = class {
             return;
         }
 
-        const visibilityVersion = ++this._visibilityVersion;
+        this._visibilityVersion += 1;
 
         // Fast path: use delta sets to only process nodes/edges that changed visibility.
         // This reduces per-scroll work from O(N) to O(delta).
@@ -479,7 +472,7 @@ grapher.Graph = class {
                 }
             }
             if (newNodeIds.length > 0) {
-                this._buildVisibleNodes(newNodeIds, document, visibilityVersion);
+                this._buildVisibleNodes(newNodeIds, document);
             }
 
             // Hide edges that left the viewport
@@ -492,7 +485,7 @@ grapher.Graph = class {
 
             // Show or build edges that entered the viewport
             if (addedEdges.size > 0) {
-                this._buildVisibleEdges(Array.from(addedEdges), document, visibilityVersion);
+                this._buildVisibleEdges(Array.from(addedEdges), document);
             }
             return;
         }
@@ -531,7 +524,7 @@ grapher.Graph = class {
 
         // Build newly visible nodes in idle-time chunks to avoid jank
         if (newNodeIds.length > 0) {
-            this._buildVisibleNodes(newNodeIds, document, visibilityVersion);
+            this._buildVisibleNodes(newNodeIds, document);
         }
 
         const newEdgeKeys = [];
@@ -557,7 +550,7 @@ grapher.Graph = class {
         }
 
         if (newEdgeKeys.length > 0) {
-            this._buildVisibleEdges(newEdgeKeys, document, visibilityVersion);
+            this._buildVisibleEdges(newEdgeKeys, document);
         }
     }
 
