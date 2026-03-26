@@ -998,7 +998,7 @@ view.View = class {
                     deferredEdgeBuild: true,
                     skipHiddenUpdate: true,
                     detachInvisible: true,
-                    estimatedNodeSizeThreshold: 5000,
+                    estimatedNodeSizeThreshold: 500,
                     estimatedNodeWidth: 150,
                     estimatedNodeHeight: 65
                 });
@@ -7800,8 +7800,12 @@ view.ModelFactoryService = class {
                 'onnx-metadata.json', 'pytorch-metadata.json', 'tflite-metadata.json'
             ];
             await Promise.all(files.map((file) => {
-                const load = file.startsWith('./') ? this._host.require(file) :
-                    file.endsWith('.json') ? this._host.request(file, 'utf-8', null) : null;
+                let load = null;
+                if (file.startsWith('./')) {
+                    load = this._host.require(file);
+                } else if (file.endsWith('.json')) {
+                    load = this._host.request(file, 'utf-8', null);
+                }
                 return load ? load.catch(() => {}) : Promise.resolve();
             }));
         }

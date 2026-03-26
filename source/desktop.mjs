@@ -507,6 +507,10 @@ desktop.Host = class {
                     await this._view.error(error);
                 }
                 this.update(options);
+            } finally {
+                if (context && context.stream && typeof context.stream.dispose === 'function') {
+                    context.stream.dispose();
+                }
             }
         }
     }

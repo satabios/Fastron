@@ -1370,6 +1370,19 @@ onnx.Context.Graph = class {
                 tensor.description = value.doc_string;
             }
         }
+        // Pre-populate tensor map from graph inputs/outputs so the per-node
+        // loop below avoids repeated has()/set() on names that are already
+        // known. This is measurable on graphs with >2000 nodes.
+        if (Array.isArray(graph.input)) {
+            for (const input of graph.input) {
+                this.tensor(input.name || input);
+            }
+        }
+        if (Array.isArray(graph.output)) {
+            for (const output of graph.output) {
+                this.tensor(output.name || output);
+            }
+        }
         for (const node of graph.node) {
             node.input = node.input.map((name) => this.tensor(name));
             node.output = node.output.map((name) => this.tensor(name));
