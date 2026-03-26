@@ -17,6 +17,18 @@ protobuf.BinaryReader = class {
         return new protobuf.StreamReader(data, offset);
     }
 
+    // Open a reader that always uses StreamReader, regardless of data size.
+    // Use this when the caller wants to skip large fields without reading them
+    // (e.g. ONNX weight tensors on network drives).  Unlike open(), this never
+    // calls data.peek() so no bytes are transferred until explicitly read.
+    static stream(data, offset) {
+        offset = offset || 0;
+        if (data instanceof Uint8Array) {
+            return new protobuf.BufferReader(data, offset);
+        }
+        return new protobuf.StreamReader(data, offset);
+    }
+
     constructor() {
         this._utf8Decoder = new TextDecoder('utf-8');
     }

@@ -360,17 +360,26 @@ desktop.Host = class {
                     reject(err);
                 } else if (!stat.isFile()) {
                     reject(new Error(`The path '${file}' is not a file.`));
-                } else if (stat && stat.size < 0x40000000) {
+                } else if (encoding) {
+                    // Text/JSON files are always small; readFile is fine.
+                    if (stat.size >= 0x40000000) {
+                        reject(new Error(`The file '${file}' size (${stat.size.toString()}) for encoding '${encoding}' is greater than 2 GB.`));
+                        return;
+                    }
                     fs.readFile(pathname, encoding, (err, data) => {
                         if (err) {
                             reject(err);
                         } else {
-                            resolve(encoding ? data : new base.BinaryStream(data));
+                            resolve(data);
                         }
                     });
-                } else if (encoding) {
-                    reject(new Error(`The file '${file}' size (${stat.size.toString()}) for encoding '${encoding}' is greater than 2 GB.`));
                 } else {
+                    // Binary model files: always use FileStream regardless of size.
+                    // FileStream exposes a .file property that tells protobuf.BinaryReader
+                    // to use StreamReader, which skips weight bytes without reading them
+                    // from disk or network.  This is the key optimisation for SMB/NFS:
+                    // a 400 MB BERT model may transfer only ~20 MB of structural data
+                    // instead of the full 400 MB when skipTensorWeights is enabled.
                     const stream = new node.FileStream(pathname, 0, stat.size, stat.mtimeMs);
                     resolve(stream);
                 }
@@ -716,17 +725,26 @@ desktop.ComparatorHost = class {
                     reject(err);
                 } else if (!stat.isFile()) {
                     reject(new Error(`The path '${file}' is not a file.`));
-                } else if (stat && stat.size < 0x40000000) {
+                } else if (encoding) {
+                    // Text/JSON files are always small; readFile is fine.
+                    if (stat.size >= 0x40000000) {
+                        reject(new Error(`The file '${file}' size (${stat.size.toString()}) for encoding '${encoding}' is greater than 2 GB.`));
+                        return;
+                    }
                     fs.readFile(pathname, encoding, (err, data) => {
                         if (err) {
                             reject(err);
                         } else {
-                            resolve(encoding ? data : new base.BinaryStream(data));
+                            resolve(data);
                         }
                     });
-                } else if (encoding) {
-                    reject(new Error(`The file '${file}' size (${stat.size.toString()}) for encoding '${encoding}' is greater than 2 GB.`));
                 } else {
+                    // Binary model files: always use FileStream regardless of size.
+                    // FileStream exposes a .file property that tells protobuf.BinaryReader
+                    // to use StreamReader, which skips weight bytes without reading them
+                    // from disk or network.  This is the key optimisation for SMB/NFS:
+                    // a 400 MB BERT model may transfer only ~20 MB of structural data
+                    // instead of the full 400 MB when skipTensorWeights is enabled.
                     const stream = new node.FileStream(pathname, 0, stat.size, stat.mtimeMs);
                     resolve(stream);
                 }

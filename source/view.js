@@ -6953,6 +6953,16 @@ view.Context = class {
                 }
                 case 'protobuf.binary': {
                     const protobuf = await import('./protobuf.js');
+                    // Use stream() instead of open() when the underlying data is a
+                    // FileStream (has a .file property).  stream() always returns a
+                    // StreamReader, which skips large fields (e.g. ONNX weight tensors)
+                    // without issuing any I/O — critical for SMB/NFS network drives
+                    // where reading 400 MB of weights just to discard them can take
+                    // tens of seconds.  open() would call data.peek() for files < 512 MB,
+                    // pulling the entire file into memory before parsing begins.
+                    if (typeof this._stream.file === 'string') {
+                        return protobuf.BinaryReader.stream(this._stream);
+                    }
                     return protobuf.BinaryReader.open(this._stream);
                 }
                 case 'protobuf.text': {
