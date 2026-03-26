@@ -7,6 +7,7 @@ grapher.Graph = class {
         this._compound = compound;
         this._nodes = new Map();
         this._edges = new Map();
+        this._nodeEdges = new Map(); // nodeId -> Set of edge keys for O(1) adjacency lookup
         this._focusable = new Map();
         this._focused = null;
         this._children = new Map();
@@ -135,6 +136,15 @@ grapher.Graph = class {
         const key = `${edge.v}:${edge.w}`;
         if (!this._edges.has(key)) {
             this._edges.set(key, { v: edge.v, w: edge.w, label: edge });
+            // Maintain adjacency index for O(degree) edge lookup per node.
+            if (!this._nodeEdges.has(edge.v)) {
+                this._nodeEdges.set(edge.v, new Set());
+            }
+            this._nodeEdges.get(edge.v).add(key);
+            if (!this._nodeEdges.has(edge.w)) {
+                this._nodeEdges.set(edge.w, new Set());
+            }
+            this._nodeEdges.get(edge.w).add(key);
         }
     }
 
@@ -304,10 +314,23 @@ grapher.Graph = class {
             // Re-update edges connected to newly built nodes so that intersectRect
             // uses the actual node sizes rather than the estimated sizes that were
             // in effect when the edge was first rendered.
+            // Uses adjacency index for O(degree) lookup instead of O(E) full scan.
             if (builtNodeIds.size > 0) {
-                for (const edge of this.edges.values()) {
-                    if ((builtNodeIds.has(edge.v) || builtNodeIds.has(edge.w)) && edge.label.element) {
-                        edge.label.update();
+                const visited = new Set();
+                for (const nodeId of builtNodeIds) {
+                    const edgeKeys = this._nodeEdges.get(nodeId);
+                    if (!edgeKeys) {
+                        continue;
+                    }
+                    for (const edgeKey of edgeKeys) {
+                        if (visited.has(edgeKey)) {
+                            continue;
+                        }
+                        visited.add(edgeKey);
+                        const edge = this._edges.get(edgeKey);
+                        if (edge && edge.label.element) {
+                            edge.label.update();
+                        }
                     }
                 }
             }
@@ -803,7 +826,7 @@ grapher.Graph = class {
         if (edges.length === 0) {
             nodes.reverse(); // rankdir workaround — in-place to avoid array copy
         }
-        if (nodes.length > 3000) {
+        if (nodes.length > 1000) {
             layout.ranker = 'longest-path';
         }
         const state = { /* log: true */ };
