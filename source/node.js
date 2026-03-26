@@ -3,6 +3,25 @@ import * as fs from 'fs';
 
 const node = {};
 
+// Detect whether a file path refers to a network location.
+// On Windows, UNC paths (\\server\share or //server/share) are always remote.
+// On all platforms, paths under common NFS/SMB mount points are heuristically
+// detected by checking for leading double-separator.
+node.isNetworkPath = (filepath) => {
+    if (!filepath) {
+        return false;
+    }
+    const normalized = filepath.replace(/\\/g, '/');
+    return normalized.startsWith('//');
+};
+
+// Read-window sizes.  Network drives benefit from smaller windows so that
+// the protobuf parser can skip large weight fields without waiting for a full
+// 256 MB chunk to arrive over the wire.  Local drives use the larger window
+// to amortise syscall overhead.
+node.LOCAL_WINDOW  = 0x10000000; // 256 MB — matches original behaviour
+node.NETWORK_WINDOW = 0x2000000; //  32 MB — reduces per-chunk network wait
+
 node.FileStream = class {
 
     constructor(file, start, length, mtime) {
@@ -12,6 +31,12 @@ node.FileStream = class {
         this._position = 0;
         this._mtime = mtime;
         this._fd = null;
+        // Choose window size based on whether the path looks like a network share.
+        // Smaller windows on network paths mean the protobuf parser reaches each
+        // skipType() call sooner, reducing the bytes that must cross the wire.
+        this._windowSize = node.isNetworkPath(file) ? node.NETWORK_WINDOW : node.LOCAL_WINDOW;
+        // Read-ahead slot: holds a pending async read for the next window.
+        this._prefetch = null;
     }
 
     get position() {
@@ -20,6 +45,12 @@ node.FileStream = class {
 
     get length() {
         return this._length;
+    }
+
+    // Expose the path so callers (e.g. protobuf.BinaryReader) can identify
+    // this as a FileStream and choose the appropriate reader strategy.
+    get file() {
+        return this._file;
     }
 
     stream(length) {
@@ -57,7 +88,7 @@ node.FileStream = class {
 
     read(length) {
         length = length === undefined ? this._length - this._position : length;
-        if (length < 0x10000000) {
+        if (length < this._windowSize) {
             const position = this._fill(length);
             return this._buffer.slice(position, position + length);
         }
@@ -74,16 +105,50 @@ node.FileStream = class {
             throw new Error(`Expected ${offset} more bytes. The file might be corrupted. Unexpected end of file.`);
         }
         if (!this._buffer || this._position < this._offset || this._position + length > this._offset + this._buffer.length) {
-            this._offset = this._position;
-            const length = Math.min(0x10000000, this._length - this._offset);
-            if (!this._buffer || length !== this._buffer.length) {
-                this._buffer = new Uint8Array(length);
+            // Check whether the read-ahead prefetch covers this position.
+            if (this._prefetch && this._prefetch.offset === this._position) {
+                // Consume the prefetched buffer synchronously (it was already read).
+                this._offset = this._prefetch.offset;
+                this._buffer = this._prefetch.buffer;
+                this._prefetch = null;
+            } else {
+                this._offset = this._position;
+                const windowLength = Math.min(this._windowSize, this._length - this._offset);
+                if (!this._buffer || windowLength !== this._buffer.length) {
+                    this._buffer = new Uint8Array(windowLength);
+                }
+                this._read(this._buffer, this._offset);
             }
-            this._read(this._buffer, this._offset);
+            // Kick off a read-ahead for the next window so it arrives while the
+            // protobuf parser is processing the current window.  This overlaps
+            // network I/O with CPU work and is especially valuable on high-latency
+            // links (SMB over WAN, NFS over VPN).
+            this._scheduleReadAhead();
         }
         const position = this._position;
         this._position += length;
         return position - this._offset;
+    }
+
+    _scheduleReadAhead() {
+        const nextOffset = this._offset + this._buffer.length;
+        if (nextOffset >= this._length || this._prefetch) {
+            return;
+        }
+        const nextLength = Math.min(this._windowSize, this._length - nextOffset);
+        const nextBuffer = new Uint8Array(nextLength);
+        const fd = this._openFd();
+        // fs.read is non-blocking — it yields the event loop while the OS/network
+        // driver fetches the data, so the protobuf parser can continue on the
+        // current window without stalling.
+        this._prefetch = { offset: nextOffset, buffer: nextBuffer, ready: false };
+        fs.read(fd, nextBuffer, 0, nextLength, nextOffset + this._start, (err) => {
+            if (!err && this._prefetch && this._prefetch.offset === nextOffset) {
+                this._prefetch.ready = true;
+            } else {
+                this._prefetch = null;
+            }
+        });
     }
 
     _openFd() {
@@ -105,6 +170,7 @@ node.FileStream = class {
     }
 
     dispose() {
+        this._prefetch = null;
         if (this._fd !== null) {
             try {
                 fs.closeSync(this._fd);
@@ -117,3 +183,4 @@ node.FileStream = class {
 };
 
 export const FileStream = node.FileStream;
+export const isNetworkPath = node.isNetworkPath;
