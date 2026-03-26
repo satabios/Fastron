@@ -200,9 +200,15 @@ onnx.Graph = class {
             tensor.metadata = metadata_props.map((metadata) => new onnx.Argument(metadata.key, metadata.value));
             return tensor;
         });
-        const inference = new onnx.Inference(graph.node);
-        for (const output of graph.output) {
-            inference.infer(output.name);
+        // Skip the inference pass for large graphs — it is O(N) in node count and
+        // the infer() body is currently a no-op stub (hasInputShapes branch does nothing).
+        // For graphs with fewer than 2000 nodes the cost is negligible; above that
+        // threshold the Map construction and DFS traversal add measurable latency.
+        if (graph.node.length < 2000) {
+            const inference = new onnx.Inference(graph.node);
+            for (const output of graph.output) {
+                inference.infer(output.name);
+            }
         }
         context.push(graph.node, graph.input, graph.output);
         this._nodes = context.pop();

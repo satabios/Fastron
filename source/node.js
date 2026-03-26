@@ -11,6 +11,7 @@ node.FileStream = class {
         this._length = length;
         this._position = 0;
         this._mtime = mtime;
+        this._fd = null;
     }
 
     get position() {
@@ -85,16 +86,32 @@ node.FileStream = class {
         return position - this._offset;
     }
 
-    _read(buffer, offset) {
-        const descriptor = fs.openSync(this._file, 'r');
-        const stat = fs.statSync(this._file);
-        if (stat.mtimeMs !== this._mtime) {
-            throw new Error(`File '${this._file}' last modified time changed.`);
+    _openFd() {
+        if (this._fd === null) {
+            this._fd = fs.openSync(this._file, 'r');
+            const stat = fs.fstatSync(this._fd);
+            if (stat.mtimeMs !== this._mtime) {
+                fs.closeSync(this._fd);
+                this._fd = null;
+                throw new Error(`File '${this._file}' last modified time changed.`);
+            }
         }
-        try {
-            fs.readSync(descriptor, buffer, 0, buffer.length, offset + this._start);
-        } finally {
-            fs.closeSync(descriptor);
+        return this._fd;
+    }
+
+    _read(buffer, offset) {
+        const fd = this._openFd();
+        fs.readSync(fd, buffer, 0, buffer.length, offset + this._start);
+    }
+
+    dispose() {
+        if (this._fd !== null) {
+            try {
+                fs.closeSync(this._fd);
+            } catch {
+                // continue regardless of error
+            }
+            this._fd = null;
         }
     }
 };
