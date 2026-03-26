@@ -305,8 +305,12 @@ onnx.Node = class {
     constructor(context, node) {
         const attributes = node.attribute || [];
         const metadata_props = node.metadata_props || [];
-        const domain = node.domain || 'ai.onnx';
-        let op_type = node.op_type;
+        // Intern domain and op_type strings to reuse identical string objects
+        // across nodes (e.g. "QuantizeLinear" repeated thousands of times in
+        // FP8/quantized models).  context.intern() is a no-op when unavailable.
+        const intern = context.intern ? (s) => context.intern(s) : (s) => s;
+        const domain = intern(node.domain || 'ai.onnx');
+        let op_type = intern(node.op_type);
         let overload = node.overload || '';
         if (domain === 'pkg.torch.ops') {
             const path = op_type.split('.');
@@ -315,11 +319,20 @@ onnx.Node = class {
         }
         this.type = context.type(domain, op_type, overload);
         if (!this.type || (this.type.module !== domain && !(this.type instanceof onnx.Function))) {
-            this.type = { ...this.type };
-            this.type.name = op_type;
-            this.type.module = domain;
-            this.type.overload = overload;
-            this.type.identifier = overload ? `${op_type}.${overload}` : `${op_type}`;
+            const fixupKey = overload ? `${domain}:${op_type}:${overload}` : `${domain}:${op_type}`;
+            if (onnx.Node._fixupTypes && onnx.Node._fixupTypes.has(fixupKey)) {
+                this.type = onnx.Node._fixupTypes.get(fixupKey);
+            } else {
+                this.type = { ...this.type };
+                this.type.name = op_type;
+                this.type.module = domain;
+                this.type.overload = overload;
+                this.type.identifier = overload ? `${op_type}.${overload}` : `${op_type}`;
+                if (!onnx.Node._fixupTypes) {
+                    onnx.Node._fixupTypes = new Map();
+                }
+                onnx.Node._fixupTypes.set(fixupKey, this.type);
+            }
         }
         this.metadata = [];
         for (const metadata of metadata_props) {
@@ -361,13 +374,49 @@ onnx.Node = class {
         this.description = node.doc_string || '';
         this.inputs = inputs || [];
         this.outputs = outputs || [];
-        this.attributes = attributes.map((attr) => {
-            if (op_type === 'Int8GivenTensorFill' && attr.s && attr.s.length > 0) {
-                return new onnx.Argument(attr.name, Array.from(attr.s), 'byte[]');
-            }
-            const metadata = context.attribute(domain, op_type, overload, attr.name);
-            return context.createAttribute(attr, metadata);
-        });
+        // Lazy attribute construction: defer full attribute decode until first access.
+        // For large graphs, most nodes' attributes are never viewed (only the sidebar
+        // displays them). Pre-scan for GRAPH/GRAPHS types that _add() needs eagerly.
+        const hasGraphAttrs = attributes.some((a) =>
+            a.type === onnx.AttributeType.GRAPH || a.type === onnx.AttributeType.GRAPHS);
+        if (hasGraphAttrs || attributes.length === 0) {
+            // Must decode eagerly — graph-type attributes are needed by view.Node._add()
+            this.attributes = attributes.map((attr) => {
+                if (op_type === 'Int8GivenTensorFill' && attr.s && attr.s.length > 0) {
+                    return new onnx.Argument(attr.name, Array.from(attr.s), 'byte[]');
+                }
+                const metadata = context.attribute(domain, op_type, overload, attr.name);
+                return context.createAttribute(attr, metadata);
+            });
+        } else {
+            // Deferred: store raw protos, decode on first property access.
+            this._rawAttributes = attributes;
+            this._attrContext = { context, domain, op_type, overload };
+            Object.defineProperty(this, 'attributes', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    const ctx = this._attrContext;
+                    const decoded = this._rawAttributes.map((attr) => {
+                        if (ctx.op_type === 'Int8GivenTensorFill' && attr.s && attr.s.length > 0) {
+                            return new onnx.Argument(attr.name, Array.from(attr.s), 'byte[]');
+                        }
+                        const metadata = ctx.context.attribute(ctx.domain, ctx.op_type, ctx.overload, attr.name);
+                        return ctx.context.createAttribute(attr, metadata);
+                    });
+                    // Replace getter with plain property (one-time materialization).
+                    Object.defineProperty(this, 'attributes', {
+                        configurable: true,
+                        enumerable: true,
+                        writable: true,
+                        value: decoded,
+                    });
+                    delete this._rawAttributes;
+                    delete this._attrContext;
+                    return decoded;
+                },
+            });
+        }
         this.chain = [];
         const identifier = domain ? `${domain}.${op_type}` : op_type;
         if (identifier === 'com.microsoft.FusedConv') {
@@ -867,6 +916,7 @@ onnx.Context.Model = class {
         this._imports = imports;
         this._types = new Map();
         this._attributes = new Map();
+        this._processedOpTypes = new Set();
         this._graph = null;
         this._graphs = new Map();
         this._functions = new Map();
@@ -999,8 +1049,12 @@ onnx.Context.Model = class {
 
     type(domain, name, overload) {
         const key = overload ? `${domain}:${name}:${overload}` : `${domain}:${name}`;
+        let value = this._types.get(key);
+        if (value !== undefined) {
+            return value;
+        }
         if (!this._types.has(key)) {
-            let value = null;
+            value = null;
             if (this._functions.has(key)) {
                 value = this._functions.get(key);
                 if (value && value instanceof onnx.Function === false) {
@@ -1013,23 +1067,40 @@ onnx.Context.Model = class {
             }
             this._types.set(key, value);
         }
-        return this._types.get(key);
+        return value || null;
     }
 
     attribute(domain, type, overload, name) {
         const key = overload ? `${domain}:${type}:${overload}::${name}` : `${domain}:${type}::${name}`;
-        if (!this._attributes.has(key)) {
+        const cached = this._attributes.get(key);
+        if (cached !== undefined) {
+            return cached;
+        }
+        // 0.5: skip type() lookup if we've already processed this op type's metadata.
+        const typeKey = overload ? `${domain}:${type}:${overload}` : `${domain}:${type}`;
+        if (this._processedOpTypes.has(typeKey)) {
             this._attributes.set(key, null);
-            const metadata = this.type(domain, type);
-            if (metadata && Array.isArray(metadata.attributes) && metadata.attributes.length > 0) {
-                for (const attribute of metadata.attributes) {
-                    const name = attribute.name;
-                    const key = overload ? `${domain}:${type}:${overload}::${name}` : `${domain}:${type}::${name}`;
-                    this._attributes.set(key, attribute);
+            return null;
+        }
+        this._attributes.set(key, null);
+        this._processedOpTypes.add(typeKey);
+        const metadata = this.type(domain, type);
+        // 0.1: track result inline to avoid a second Map.get() at the end.
+        let result = null;
+        if (metadata && Array.isArray(metadata.attributes) && metadata.attributes.length > 0) {
+            for (const attribute of metadata.attributes) {
+                const attrName = attribute.name;
+                const attrKey = overload ? `${domain}:${type}:${overload}::${attrName}` : `${domain}:${type}::${attrName}`;
+                this._attributes.set(attrKey, attribute);
+                if (attrName === name) {
+                    result = attribute;
                 }
             }
+            if (result !== null) {
+                this._attributes.set(key, result);
+            }
         }
-        return this._attributes.get(key);
+        return result;
     }
 
     decodeText(value) {
@@ -1351,6 +1422,11 @@ onnx.Context.Graph = class {
         this._values = new Map();
         this._groups = new Map();
         this._nodes = [];
+        // String intern cache: reuse identical op_type/domain strings across nodes.
+        // FP8/quantized models repeat "QuantizeLinear"/"DequantizeLinear" thousands
+        // of times; interning avoids redundant string allocations and speeds up
+        // Map key lookups that use string identity.
+        this._stringCache = new Map();
         if (Array.isArray(graph.initializer)) {
             for (const initializer of graph.initializer) {
                 const tensor = new onnx.Tensor(this, initializer, 'Initializer');
@@ -1428,6 +1504,20 @@ onnx.Context.Graph = class {
         }
     }
 
+    intern(str) {
+        // Return a cached reference to the string to avoid redundant allocations
+        // for repeated values (e.g. "QuantizeLinear" across thousands of nodes).
+        if (!str) {
+            return str;
+        }
+        const cached = this._stringCache.get(str);
+        if (cached !== undefined) {
+            return cached;
+        }
+        this._stringCache.set(str, str);
+        return str;
+    }
+
     type(domain, name, overload) {
         return this._context.type(domain, name, overload);
     }
@@ -1437,17 +1527,20 @@ onnx.Context.Graph = class {
     }
 
     initializer(name) {
-        if (this._initializers.has(name)) {
-            return this._initializers.get(name);
+        const entry = this._initializers.get(name);
+        if (entry !== undefined) {
+            return entry;
         }
         return this._context.initializer(name);
     }
 
     tensor(name) {
-        if (!this._tensors.has(name)) {
-            this._tensors.set(name, { name, initializer: this.initializer(name) });
+        let entry = this._tensors.get(name);
+        if (entry === undefined) {
+            entry = { name, initializer: this.initializer(name) };
+            this._tensors.set(name, entry);
         }
-        return this._tensors.get(name);
+        return entry;
     }
 
     location(name) {
@@ -1467,12 +1560,14 @@ onnx.Context.Graph = class {
     }
 
     value(name) {
-        if (!this._values.has(name)) {
+        let entry = this._values.get(name);
+        if (entry === undefined) {
             const tensor = this.tensor(name);
             const type = tensor.initializer ? tensor.initializer.type : tensor.type || null;
-            this._values.set(name, new onnx.Value(name, type, tensor.initializer, tensor.annotation, tensor.description));
+            entry = new onnx.Value(name, type, tensor.initializer, tensor.annotation, tensor.description);
+            this._values.set(name, entry);
         }
-        return this._values.get(name);
+        return entry;
     }
 
     createType(type) {
@@ -1530,6 +1625,34 @@ onnx.Context.Graph = class {
             }
             return true;
         });
+        // Fold Identity nodes: redirect output tensor entries to input tensor entries.
+        // Build a redirect map and resolve transitive chains (Identity -> Identity).
+        const identityRedirect = new Map();
+        for (const node of nodes) {
+            if (node.op_type === 'Identity' && node.input.length === 1 && node.output.length === 1 && node.input[0] && node.output[0]) {
+                identityRedirect.set(node.output[0], node.input[0]);
+            }
+        }
+        if (identityRedirect.size > 0) {
+            for (const [from, to] of identityRedirect) {
+                let target = to;
+                const visited = new Set([from]);
+                while (identityRedirect.has(target) && !visited.has(target)) {
+                    visited.add(target);
+                    target = identityRedirect.get(target);
+                }
+                identityRedirect.set(from, target);
+            }
+            for (const node of nodes) {
+                node.input = node.input.map((t) => identityRedirect.get(t) || t);
+            }
+            nodes = nodes.filter((node) => {
+                if (node.op_type === 'Identity' && node.input.length === 1 && node.output.length === 1 && identityRedirect.has(node.output[0])) {
+                    return false;
+                }
+                return true;
+            });
+        }
         for (let node of nodes) {
             node = new onnx.Node(this, node);
             this._nodes.push(node);
