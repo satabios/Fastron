@@ -23,7 +23,13 @@ if (typeof window !== 'undefined') {
         maxLayoutWorkers: Math.max(1, Math.min(4, hardwareConcurrency - 1)),
         gpuAcceleration: true,            // Enable GPU compositing hints for rendering
         gpuAvailable: false,              // Runtime-detected GPU availability
-        gpuBackend: 'cpu'                 // Runtime backend: webgpu|webgl2|webgl|cpu
+        gpuBackend: 'cpu',                // Runtime backend: webgpu|webgl2|webgl|cpu
+        gpuVendor: 'none',                // Detected vendor: nvidia|qualcomm|apple|amd|intel|arm|unknown|none
+        gpuDevice: '',                    // GPU device/renderer string
+        gpuArchitecture: '',              // GPU architecture (WebGPU only)
+        gpuLabel: '',                     // Human-readable label for About panel
+        cudaAvailable: false,             // NVIDIA GPU detected (CUDA via WebGPU/WebGL)
+        adrenoAvailable: false            // Qualcomm Adreno GPU detected
     };
     window.NETRON_CONFIG = { ...defaults, ...(window.NETRON_CONFIG || {}) };
 }
@@ -56,42 +62,135 @@ view.View = class {
         this._worker = this._host.environment('serial') ? null : new view.Worker(this._host);
     }
 
-    static async detectGPUBackend() {
-        if (typeof window === 'undefined') {
-            return 'cpu';
+    static _classifyGPUVendor(renderer, vendor) {
+        const str = `${renderer || ''} ${vendor || ''}`.toLowerCase();
+        if (/nvidia|geforce|quadro|tesla|rtx|gtx/.test(str)) {
+            return { vendor: 'nvidia', cudaAvailable: true, adrenoAvailable: false };
         }
+        if (/qualcomm|adreno/.test(str)) {
+            return { vendor: 'qualcomm', cudaAvailable: false, adrenoAvailable: true };
+        }
+        if (/apple/.test(str)) {
+            return { vendor: 'apple', cudaAvailable: false, adrenoAvailable: false };
+        }
+        if (/amd|radeon|ati/.test(str)) {
+            return { vendor: 'amd', cudaAvailable: false, adrenoAvailable: false };
+        }
+        if (/intel/.test(str)) {
+            return { vendor: 'intel', cudaAvailable: false, adrenoAvailable: false };
+        }
+        if (/arm|mali/.test(str)) {
+            return { vendor: 'arm', cudaAvailable: false, adrenoAvailable: false };
+        }
+        return { vendor: 'unknown', cudaAvailable: false, adrenoAvailable: false };
+    }
+
+    static async detectGPU() {
+        if (typeof window === 'undefined') {
+            return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU)', cudaAvailable: false, adrenoAvailable: false };
+        }
+
+        // Try WebGPU first — richest adapter info, works on CUDA (via Vulkan/D3D12) and Adreno
         if (navigator && navigator.gpu) {
             try {
-                const adapter = await navigator.gpu.requestAdapter();
+                // Request high-performance adapter to prefer discrete/Adreno GPU over integrated
+                const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
                 if (adapter) {
-                    return 'webgpu';
+                    let adapterVendor = '';
+                    let adapterDevice = '';
+                    let adapterArchitecture = '';
+                    let adapterDescription = '';
+                    try {
+                        const info = await adapter.requestAdapterInfo();
+                        adapterVendor = info.vendor || '';
+                        adapterDevice = info.device || '';
+                        adapterArchitecture = info.architecture || '';
+                        adapterDescription = info.description || '';
+                    } catch {
+                        // requestAdapterInfo may not be available in all browsers
+                    }
+                    const classified = view.View._classifyGPUVendor(adapterDevice || adapterDescription, adapterVendor);
+                    const label = view.View._buildGPULabel('webgpu', adapterVendor, adapterDevice || adapterDescription, adapterArchitecture, classified);
+                    return { backend: 'webgpu', vendor: classified.vendor, device: adapterDevice || adapterDescription, architecture: adapterArchitecture, label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
                 }
             } catch {
                 // fall through to WebGL detection
             }
         }
+
+        // Fall back to WebGL — RENDERER string reliably identifies NVIDIA/Adreno/etc.
         try {
             const canvas = document.createElement('canvas');
-            if (canvas.getContext('webgl2')) {
-                return 'webgl2';
-            }
-            if (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')) {
-                return 'webgl';
+            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (gl) {
+                const backend = canvas.getContext('webgl2') ? 'webgl2' : 'webgl';
+                let renderer = '';
+                let glVendor = '';
+                try {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '';
+                        glVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || '';
+                    } else {
+                        renderer = gl.getParameter(gl.RENDERER) || '';
+                        glVendor = gl.getParameter(gl.VENDOR) || '';
+                    }
+                } catch {
+                    // continue with empty strings
+                }
+                const classified = view.View._classifyGPUVendor(renderer, glVendor);
+                const label = view.View._buildGPULabel(backend, glVendor, renderer, '', classified);
+                return { backend, vendor: classified.vendor, device: renderer, architecture: '', label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
             }
         } catch {
             // continue with cpu
         }
-        return 'cpu';
+
+        return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU acceleration)', cudaAvailable: false, adrenoAvailable: false };
+    }
+
+    static _buildGPULabel(backend, vendor, device, architecture, classified) {
+        const backendLabel = { webgpu: 'WebGPU', webgl2: 'WebGL2', webgl: 'WebGL', cpu: 'CPU' }[backend] || backend;
+        const vendorLabel = {
+            nvidia: 'NVIDIA (CUDA)',
+            qualcomm: 'Qualcomm (Adreno)',
+            apple: 'Apple GPU',
+            amd: 'AMD',
+            intel: 'Intel',
+            arm: 'ARM (Mali)',
+            unknown: ''
+        }[classified.vendor] || '';
+        const parts = [backendLabel];
+        if (vendorLabel) {
+            parts.push('—', vendorLabel);
+        }
+        if (device && device.length > 0 && device.length < 80) {
+            parts.push(`(${device})`);
+        } else if (architecture) {
+            parts.push(`(${architecture})`);
+        }
+        return parts.join(' ');
+    }
+
+    static async detectGPUBackend() {
+        const info = await view.View.detectGPU();
+        return info.backend;
     }
 
     async _initializePerformanceBackend() {
         if (typeof window === 'undefined' || !window.NETRON_CONFIG) {
             return;
         }
-        const backend = await view.View.detectGPUBackend();
+        const gpuInfo = await view.View.detectGPU();
         const netronConfig = window.NETRON_CONFIG;
-        netronConfig.gpuBackend = backend;
-        netronConfig.gpuAvailable = backend !== 'cpu';
+        netronConfig.gpuBackend = gpuInfo.backend;
+        netronConfig.gpuAvailable = gpuInfo.backend !== 'cpu';
+        netronConfig.gpuVendor = gpuInfo.vendor;
+        netronConfig.gpuDevice = gpuInfo.device;
+        netronConfig.gpuArchitecture = gpuInfo.architecture;
+        netronConfig.gpuLabel = gpuInfo.label;
+        netronConfig.cudaAvailable = gpuInfo.cudaAvailable;
+        netronConfig.adrenoAvailable = gpuInfo.adrenoAvailable;
     }
 
     async start() {
@@ -1196,6 +1295,18 @@ view.View = class {
 
     about() {
         this._host.document.getElementById('version').innerText = this._host.version;
+        // Show GPU info in the about panel
+        const gpuElement = this._host.document.getElementById('gpu-info');
+        const gpuRow = this._host.document.getElementById('gpu-info-row');
+        if (gpuElement && gpuRow) {
+            const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+            if (config && config.gpuLabel) {
+                gpuElement.innerText = config.gpuLabel;
+                gpuRow.style.display = '';
+            } else {
+                gpuRow.style.display = 'none';
+            }
+        }
         const handler = () => {
             this._host.window.removeEventListener('keydown', handler);
             this._host.document.body.removeEventListener('click', handler);
@@ -2026,6 +2137,7 @@ view.Graph = class extends grapher.Graph {
         canvas.setAttribute('height', '100%');
 
         // Hint GPU compositing when available to improve pan/zoom responsiveness.
+        // Apply vendor-specific hints for CUDA (NVIDIA), Adreno (Qualcomm), and other GPUs.
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
         if (config && config.gpuAcceleration && config.gpuAvailable) {
             element.style.willChange = 'scroll-position, transform';
@@ -2033,6 +2145,28 @@ view.Graph = class extends grapher.Graph {
             canvas.style.transform = 'translateZ(0)';
             canvas.style.transformOrigin = '0 0';
             canvas.style.backfaceVisibility = 'hidden';
+
+            // WebGPU path: promote to its own compositor layer for maximum throughput
+            if (config.gpuBackend === 'webgpu') {
+                element.style.isolation = 'isolate';
+                canvas.style.contain = 'strict';
+            }
+
+            // Qualcomm Adreno: tile-based deferred renderer — avoid overdraw and large repaints.
+            // Contain the SVG canvas to its own stacking context so the TBDR only repaints
+            // the changed tile rather than the full viewport.
+            if (config.adrenoAvailable) {
+                canvas.style.contain = 'strict';
+                canvas.style.contentVisibility = 'auto';
+                element.style.isolation = 'isolate';
+            }
+
+            // NVIDIA CUDA path (via WebGPU/WebGL): enable sub-pixel rendering hint and
+            // aggressive layer promotion for smooth 60fps pan/zoom on large graphs.
+            if (config.cudaAvailable) {
+                canvas.style.imageRendering = 'auto';
+                element.style.willChange = 'scroll-position, transform, contents';
+            }
         }
 
         element.appendChild(canvas);
@@ -7422,11 +7556,17 @@ view.ModelFactoryService = class {
     }
 
     async _require(id) {
+        this._factoryCache = this._factoryCache || new Map();
+        if (this._factoryCache.has(id)) {
+            return this._factoryCache.get(id);
+        }
         const module = await this._host.require(id);
         if (!module || !module.ModelFactory) {
             throw new view.Error(`Failed to load module '${id}'.`);
         }
-        return new module.ModelFactory();
+        const factory = new module.ModelFactory();
+        this._factoryCache.set(id, factory);
+        return factory;
     }
 
     async _openContext(context) {
@@ -7659,19 +7799,11 @@ view.ModelFactoryService = class {
                 './onnx-proto', './onnx-schema', './tflite-schema',
                 'onnx-metadata.json', 'pytorch-metadata.json', 'tflite-metadata.json'
             ];
-            for (const file of files) {
-                /* eslint-disable no-await-in-loop */
-                try {
-                    if (file.startsWith('./')) {
-                        await this._host.require(file);
-                    } else if (file.endsWith('.json')) {
-                        await this._host.request(file, 'utf-8', null);
-                    }
-                } catch {
-                    // continue regardless of error
-                }
-                /* eslint-enable no-await-in-loop */
-            }
+            await Promise.all(files.map((file) => {
+                const load = file.startsWith('./') ? this._host.require(file) :
+                    file.endsWith('.json') ? this._host.request(file, 'utf-8', null) : null;
+                return load ? load.catch(() => {}) : Promise.resolve();
+            }));
         }
     }
 };

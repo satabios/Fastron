@@ -31,7 +31,13 @@ window.NETRON_CONFIG = {
     maxLayoutWorkers: 4,               // Worker budget for graph/layout tasks
     gpuAcceleration: true,             // Enable GPU compositing hints when available
     gpuAvailable: false,               // Runtime-detected availability
-    gpuBackend: 'cpu'                  // Runtime-selected backend
+    gpuBackend: 'cpu',                 // Runtime-selected backend: webgpu|webgl2|webgl|cpu
+    gpuVendor: 'none',                 // Detected GPU vendor: nvidia|qualcomm|apple|amd|intel|arm|unknown|none
+    gpuDevice: '',                     // GPU device/renderer string
+    gpuArchitecture: '',               // GPU architecture (WebGPU only)
+    gpuLabel: '',                      // Human-readable GPU label shown in About panel
+    cudaAvailable: false,              // NVIDIA GPU detected (CUDA via WebGPU/WebGL)
+    adrenoAvailable: false             // Qualcomm Adreno GPU detected
 };
 console.log('[Fastron] Tensor weight loading:', window.NETRON_CONFIG.skipTensorWeights ? 'DISABLED (saves memory)' : 'ENABLED (full data)');
 </script>
@@ -52,7 +58,9 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .toolbar { display: flex; align-items: center; position: fixed; bottom: 10px; left: 10px; padding: 0; margin: 0; user-select: none; -webkit-user-select: none; -moz-user-select: none; -webkit-app-region: no-drag; }
 .toolbar button:focus { outline: 0; }
 .toolbar-button { background: none; border-radius: 6px; border: 0; margin: 0; margin-right: 1px; padding: 0; cursor: pointer; width: 32px; height: 32px; user-select: none; -webkit-app-region: no-drag; }
-.toolbar-button.active { background: rgba(119, 119, 119, 0.2); stroke: #000; }
+.toolbar-button.active { background: rgba(119, 119, 119, 0.2); }
+.toolbar-button.active .stroke { stroke: #000000; }
+.toolbar-button.active .fill { fill: #000000; }
 .toolbar-icon { pointer-events: none !important; }
 .toolbar-icon * { pointer-events: none !important; }
 #lazy-render-button { display: none; }
@@ -335,7 +343,9 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
     .sidebar-item-value-button { color: #888; }
     .sidebar-item-value-button svg use { fill: #888; stroke: #888; }
     .sidebar-item-value-button:hover svg use { fill: #e5e5e5; stroke: #e5e5e5; }
-    .toolbar-button.active { background: rgba(255, 255, 255, 0.2); stroke: #fff; }
+    .toolbar-button.active { background: rgba(255, 255, 255, 0.2); }
+    .toolbar-button.active .stroke { stroke: #dfdfdf; }
+    .toolbar-button.active .fill { fill: #dfdfdf; }
 }
 @media screen and (prefers-reduced-motion: reduce) {
 .menu { transition: none; }
@@ -544,6 +554,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
     <div class="center logo-message">
         <div style="height: 30px; text-align: center;">Version <span id="version" class="select">{version}</span></div>
         <div style="height: 30px; text-align: center;">Copyright &copy; <a href="https://www.satabios.com" target="_blank">satabios</a></div>
+        <div id="gpu-info-row" style="height: 30px; text-align: center; display: none;">GPU: <span id="gpu-info" class="select"></span></div>
     </div>
     <a id="logo-github" class="center logo-github" href="https://github.com/satabios/fastron" target="_blank">
         <svg viewBox="0 0 438.549 438.549">

@@ -801,7 +801,7 @@ grapher.Graph = class {
             layout.rankdir = 'LR';
         }
         if (edges.length === 0) {
-            nodes = nodes.reverse(); // rankdir workaround
+            nodes.reverse(); // rankdir workaround — in-place to avoid array copy
         }
         if (nodes.length > 3000) {
             layout.ranker = 'longest-path';
@@ -2044,9 +2044,13 @@ grapher.TileManager = class {
 
     constructor(tileSize = 300) {
         this._tileSize = tileSize;
-        this._tiles = new Map(); // "x,y" -> { nodes: Set, edges: Set }
-        this._nodeTiles = new Map(); // nodeKey -> Set of tile keys
-        this._edgeTiles = new Map(); // edgeKey -> Set of tile keys
+        // Integer-keyed tile map: key = (tileX + 0x8000) | ((tileY + 0x8000) << 16)
+        // Avoids string allocation on every addNode/addEdge/queryViewport call.
+        // Supports tile coordinates in the range [-32768, 32767] which covers
+        // graphs up to ~9.8 million pixels wide/tall at the default 300px tile size.
+        this._tiles = new Map(); // intKey -> { nodes: Set, edges: Set }
+        this._nodeTiles = new Map(); // nodeKey -> Set of int tile keys
+        this._edgeTiles = new Map(); // edgeKey -> Set of int tile keys
         this._bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
@@ -2058,7 +2062,9 @@ grapher.TileManager = class {
     }
 
     _getTileKey(tileX, tileY) {
-        return `${tileX},${tileY}`;
+        // Pack two signed 16-bit integers into one 32-bit integer key.
+        // Bias by 0x8000 so negative coordinates map to positive integers.
+        return ((tileX + 0x8000) & 0xFFFF) | (((tileY + 0x8000) & 0xFFFF) << 16);
     }
 
     _getTileCoords(x, y) {
