@@ -698,9 +698,6 @@ grapher.Graph = class {
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
-        // Batch all deferred placeholder insertions into a single DOM reflow
-        // instead of N individual appendChild() calls (saves ~O(N) style recalcs).
-        const deferredFragment = deferLeafNodeBuild ? document.createDocumentFragment() : null;
 
         for (const nodeId of nodesToRender) {
             const entry = this.node(nodeId);
@@ -715,7 +712,7 @@ grapher.Graph = class {
                     rect.setAttribute('class', 'node node-border');
                     node.element.appendChild(rect);
                     node._simplified = true;
-                    deferredFragment.appendChild(node.element);
+                    nodeGroup.appendChild(node.element);
                     this._renderedNodes.add(nodeId);
                 } else {
                     node.build(document, nodeGroup);
@@ -736,11 +733,6 @@ grapher.Graph = class {
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
             }
-        }
-
-        // Flush all deferred placeholder nodes in a single DOM operation.
-        if (deferredFragment) {
-            nodeGroup.appendChild(deferredFragment);
         }
 
         this._focusable.clear();
@@ -839,13 +831,8 @@ grapher.Graph = class {
         }
         const state = { /* log: true */ };
         const useForce = this.options && this.options.layout === 'force';
-        // For very large graphs skip Dagre entirely and use the O(N) fast layout.
-        // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
-        const FAST_LAYOUT_THRESHOLD = 3000;
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
-        } else if (!useForce && nodes.length > FAST_LAYOUT_THRESHOLD) {
-            this._fastLayout(nodes, edges, rotate, layout);
         } else if (worker) {
             try {
                 const timeoutMs = Math.max(30000, nodes.length * 20);

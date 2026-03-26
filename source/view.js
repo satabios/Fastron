@@ -888,6 +888,17 @@ view.View = class {
             this._activeTarget = null;
         }
         this.show(null);
+        // Re-apply zoom after the container becomes visible to ensure correct scaling.
+        // restore() may have computed zoom/centering while the container was still hidden
+        // (opacity:0), so clientHeight/clientWidth could be zero or stale at that point.
+        if (this._target) {
+            const target = this._target;
+            requestAnimationFrame(() => {
+                if (target === this._target) {
+                    target._updateZoom(target._zoom);
+                }
+            });
+        }
         const path = this._element('toolbar-path');
         const back = this._element('toolbar-path-back-button');
         while (path.children.length > 1) {
@@ -1025,7 +1036,11 @@ view.View = class {
                 // waiting for a deferred observer callback.
                 viewGraph.restore(state);
                 if (viewGraph.isViewportCullingEnabled()) {
-                    viewGraph.hideAllNodes();
+                    if (viewGraph._deferredNodeBuild) {
+                        viewGraph.markAllNeedsUpdate();
+                    } else {
+                        viewGraph.hideAllNodes();
+                    }
                     const viewport = viewGraph._getViewportBounds();
                     viewGraph._onViewportChange(viewport);
                 }
@@ -2318,27 +2333,14 @@ view.Graph = class extends grapher.Graph {
             }
         }
         // When viewport culling with deferred node build is active, leaf nodes have no DOM
-        // elements yet, so canvas.getBBox() returns a zero-size box. Compute the bounding
-        // box from layout positions instead so the canvas is sized correctly.
+        // elements yet, so canvas.getBBox() returns a zero-size box. Use the bounding box
+        // computed during layout() instead so the canvas is sized correctly.
         const size = (() => {
             if (this.isViewportCullingEnabled() && this._deferredNodeBuild) {
-                let minX = Infinity;
-                let minY = Infinity;
-                let maxX = -Infinity;
-                let maxY = -Infinity;
-                for (const nodeId of this.nodes.keys()) {
-                    const entry = this.node(nodeId);
-                    const node = entry.label;
-                    if (typeof node.x === 'number' && typeof node.y === 'number') {
-                        const hw = (node.width || 0) / 2;
-                        const hh = (node.height || 0) / 2;
-                        minX = Math.min(minX, node.x - hw);
-                        minY = Math.min(minY, node.y - hh);
-                        maxX = Math.max(maxX, node.x + hw);
-                        maxY = Math.max(maxY, node.y + hh);
-                    }
+                if (this._layoutBounds) {
+                    return this._layoutBounds;
                 }
-                return isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : canvas.getBBox();
+                return canvas.getBBox();
             }
             return canvas.getBBox();
         })();
@@ -3046,8 +3048,7 @@ view.Node = class extends grapher.Node {
             }
         }
         if (Array.isArray(node.attributes)) {
-            const attributes = node.attributes.slice();
-            attributes.sort((a, b) => a.name.toUpperCase().localeCompare(b.name.toUpperCase()));
+            const attributes = node.attributes.length > 1 ? node.attributes.slice().sort((a, b) => a.name.toUpperCase().localeCompare(b.name.toUpperCase())) : node.attributes;
             for (const argument of attributes) {
                 const type = argument.type;
                 if (argument.visible !== false &&
