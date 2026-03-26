@@ -81,8 +81,8 @@ grapher.Graph = class {
                 node.element.parentNode.removeChild(node.element);
             }
             node.element = null;
-            node._simplified = false;
         }
+        node._simplified = false;
         node.build(document, this._nodeGroupElement);
         this._renderedNodes.add(nodeId);
         return node;
@@ -102,6 +102,20 @@ grapher.Graph = class {
             const box = label.labelElement.getBBox();
             label.width = box.width;
             label.height = box.height;
+        }
+        this._renderedEdges.add(edgeKey);
+        return label;
+    }
+
+    _ensureEdgeElementBuildOnly(edge, document) {
+        const label = edge.label;
+        const edgeKey = `${edge.v}:${edge.w}`;
+        if (label.element || !this._deferredEdgeBuild || !this._edgePathGroupElement || !this._edgePathHitTestGroupElement || !this._edgeLabelGroupElement) {
+            return label;
+        }
+        label.build(document, this._edgePathGroupElement, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
+        if (label.hitTest) {
+            this._focusable.set(label.hitTest, label);
         }
         this._renderedEdges.add(edgeKey);
         return label;
@@ -287,13 +301,9 @@ grapher.Graph = class {
         const CHUNK = 30;
         const process = (ids) => {
             const batch = ids.splice(0, CHUNK);
-            const builtNodeIds = new Set();
+            // Pass 1: Build/show DOM elements (writes only — no getBBox reads).
+            const builtNodes = [];
             for (const nodeId of batch) {
-                // Skip nodes that are no longer in the current visible set.
-                // This handles the case where the viewport moved while the async
-                // build was queued, without aborting the entire queue (which would
-                // leave simplified placeholder rectangles permanently visible for
-                // nodes that are still in the viewport).
                 if (!this._visibleNodes || !this._visibleNodes.has(nodeId)) {
                     continue;
                 }
@@ -301,15 +311,22 @@ grapher.Graph = class {
                 const node = this.node(nodeId).label;
                 if (node.element) {
                     this._showNode(node);
-                    // Always measure and layout after building: the node was either
-                    // simplified (estimated sizes, no block measurements) or newly
-                    // built, so block positions and entry.ty are not yet valid.
-                    node.measure();
-                    node.layout();
-                    node.update();
-                    node._needsUpdate = false;
-                    builtNodeIds.add(nodeId);
+                    builtNodes.push({ nodeId, node });
                 }
+            }
+            // Pass 2: Measure all built nodes (reads — batched getBBox calls).
+            // Because no DOM writes occur between calls, the browser can batch
+            // the layout calculation instead of reflowing per-node.
+            for (const { node } of builtNodes) {
+                node.measure();
+            }
+            // Pass 3: Layout and update (writes only).
+            const builtNodeIds = new Set();
+            for (const { nodeId, node } of builtNodes) {
+                node.layout();
+                node.update();
+                node._needsUpdate = false;
+                builtNodeIds.add(nodeId);
             }
             // Re-update edges connected to newly built nodes so that intersectRect
             // uses the actual node sizes rather than the estimated sizes that were
@@ -349,6 +366,8 @@ grapher.Graph = class {
         const CHUNK = 60;
         const process = (keys) => {
             const batch = keys.splice(0, CHUNK);
+            // Pass 1: Build edge DOM elements (writes only — no getBBox reads).
+            const builtEdges = [];
             for (const edgeKey of batch) {
                 if (!this._visibleEdges || !this._visibleEdges.has(edgeKey)) {
                     continue;
@@ -360,11 +379,20 @@ grapher.Graph = class {
                 const label = edgeEntry.label;
                 const wasBuilt = Boolean(label.element);
                 if (!label.element && this._deferredEdgeBuild) {
-                    this._ensureEdgeElement(edgeEntry, document);
+                    this._ensureEdgeElementBuildOnly(edgeEntry, document);
                 }
-                // If the edge was just built and has a label element but no position
-                // (because label dimensions were 0 at layout time, so dagre didn't
-                // compute a label position), fall back to the midpoint of the edge path.
+                builtEdges.push({ label, wasBuilt });
+            }
+            // Pass 2: Measure all newly built edge labels (batched getBBox reads).
+            for (const { label } of builtEdges) {
+                if (label.labelElement && label.width === undefined) {
+                    const box = label.labelElement.getBBox();
+                    label.width = box.width;
+                    label.height = box.height;
+                }
+            }
+            // Pass 3: Show and update (writes only).
+            for (const { label, wasBuilt } of builtEdges) {
                 if (!wasBuilt && label.labelElement && (label.x === undefined || label.y === undefined) &&
                     Array.isArray(label.points) && label.points.length > 0) {
                     const midIndex = Math.floor((label.points.length - 1) / 2);
@@ -595,6 +623,15 @@ grapher.Graph = class {
         }
     }
 
+    markAllNeedsUpdate() {
+        for (const entry of this.nodes.values()) {
+            entry.label._needsUpdate = true;
+        }
+        for (const edge of this.edges.values()) {
+            edge.label._needsUpdate = true;
+        }
+    }
+
     populateTiles() {
         if (!this._tileManager) {
             return;
@@ -698,12 +735,25 @@ grapher.Graph = class {
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
+        // For very large graphs, skip placeholder DOM creation entirely to avoid
+        // O(N) createElement calls.  Nodes get their DOM elements on first viewport
+        // visibility via _ensureNodeElement().
+        const zeroDomBuild = deferLeafNodeBuild && nodesToRender.length > 5000;
+        // Batch all deferred placeholder insertions into a single DOM reflow
+        // instead of N individual appendChild() calls (saves ~O(N) style recalcs).
+        const deferredFragment = deferLeafNodeBuild && !zeroDomBuild ? document.createDocumentFragment() : null;
 
         for (const nodeId of nodesToRender) {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this._isLeafNode(nodeId)) {
-                if (deferLeafNodeBuild) {
+                if (zeroDomBuild) {
+                    // Zero-DOM: no placeholder element, just mark as simplified.
+                    // _ensureNodeElement() will create the full DOM on demand.
+                    node.element = null;
+                    node._simplified = true;
+                    this._renderedNodes.add(nodeId);
+                } else if (deferLeafNodeBuild) {
                     // Create simplified placeholder shape for deferred nodes
                     node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                     node.element.setAttribute('class', node.class ? `node ${node.class}` : 'node');
@@ -712,7 +762,7 @@ grapher.Graph = class {
                     rect.setAttribute('class', 'node node-border');
                     node.element.appendChild(rect);
                     node._simplified = true;
-                    nodeGroup.appendChild(node.element);
+                    deferredFragment.appendChild(node.element);
                     this._renderedNodes.add(nodeId);
                 } else {
                     node.build(document, nodeGroup);
@@ -733,6 +783,11 @@ grapher.Graph = class {
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
             }
+        }
+
+        // Flush all deferred placeholder nodes in a single DOM operation.
+        if (deferredFragment) {
+            nodeGroup.appendChild(deferredFragment);
         }
 
         this._focusable.clear();
@@ -831,8 +886,13 @@ grapher.Graph = class {
         }
         const state = { /* log: true */ };
         const useForce = this.options && this.options.layout === 'force';
+        // For very large graphs skip Dagre entirely and use the O(N) fast layout.
+        // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
+        const FAST_LAYOUT_THRESHOLD = 3000;
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
+        } else if (!useForce && nodes.length > FAST_LAYOUT_THRESHOLD) {
+            this._fastLayout(nodes, edges, rotate, layout);
         } else if (worker) {
             try {
                 const timeoutMs = Math.max(30000, nodes.length * 20);
@@ -862,6 +922,10 @@ grapher.Graph = class {
             const fs = await import('fs');
             fs.writeFileSync(`dist/test/${this.identifier}.log`, state.log);
         }
+        let boundsMinX = Infinity;
+        let boundsMinY = Infinity;
+        let boundsMaxX = -Infinity;
+        let boundsMaxY = -Infinity;
         for (const node of nodes) {
             const label = this.node(node.v).label;
             label.x = node.x;
@@ -870,7 +934,14 @@ grapher.Graph = class {
                 label.width = node.width;
                 label.height = node.height;
             }
+            const hw = (label.width || 0) / 2;
+            const hh = (label.height || 0) / 2;
+            boundsMinX = Math.min(boundsMinX, node.x - hw);
+            boundsMinY = Math.min(boundsMinY, node.y - hh);
+            boundsMaxX = Math.max(boundsMaxX, node.x + hw);
+            boundsMaxY = Math.max(boundsMaxY, node.y + hh);
         }
+        this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const edge of edges) {
             const label = this.edge(edge.v, edge.w).label;
             label.points = edge.points;
@@ -946,8 +1017,49 @@ grapher.Graph = class {
             ranks.get(rank).push(node);
         }
         const rankKeys = Array.from(ranks.keys()).sort((a, b) => a - b);
+        // Initial order: sort by node id as a stable baseline.
         for (const rank of rankKeys) {
             ranks.get(rank).sort((a, b) => String(a.v).localeCompare(String(b.v)));
+        }
+        // Barycenter crossing minimization: for each rank, order nodes by the
+        // average position of their neighbors in the adjacent rank.  Forward
+        // and backward sweeps are interleaved.  This is O(N+E) per sweep.
+        const incoming = new Map();
+        for (const node of nodes) {
+            incoming.set(node.v, []);
+        }
+        for (const edge of edges) {
+            if (incoming.has(edge.w) && nodeMap.has(edge.v)) {
+                incoming.get(edge.w).push(edge.v);
+            }
+        }
+        const SWEEPS = 4;
+        for (let sweep = 0; sweep < SWEEPS; sweep++) {
+            const keys = sweep % 2 === 0 ? rankKeys : [...rankKeys].reverse();
+            for (let ri = 1; ri < keys.length; ri++) {
+                const rank = keys[ri];
+                const prevRank = keys[ri - 1];
+                const prevPositions = new Map();
+                const prevNodes = ranks.get(prevRank);
+                for (let i = 0; i < prevNodes.length; i++) {
+                    prevPositions.set(prevNodes[i].v, i);
+                }
+                const rankNodes = ranks.get(rank);
+                for (const node of rankNodes) {
+                    const neighbors = sweep % 2 === 0 ? incoming.get(node.v) : (outgoing.get(node.v) || []);
+                    const relevant = neighbors.filter((id) => prevPositions.has(id));
+                    if (relevant.length > 0) {
+                        let sum = 0;
+                        for (const id of relevant) {
+                            sum += prevPositions.get(id);
+                        }
+                        node._bary = sum / relevant.length;
+                    } else {
+                        node._bary = Infinity;
+                    }
+                }
+                rankNodes.sort((a, b) => a._bary - b._bary);
+            }
         }
 
         const nodeSep = Number.isFinite(layout.nodesep) ? layout.nodesep : 20;
