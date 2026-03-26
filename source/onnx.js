@@ -1373,14 +1373,22 @@ onnx.Context.Graph = class {
         // Pre-populate tensor map from graph inputs/outputs so the per-node
         // loop below avoids repeated has()/set() on names that are already
         // known. This is measurable on graphs with >2000 nodes.
+        // graph.input/output may be ValueInfoProto objects (with .name) for
+        // GraphProto, or plain strings for FunctionProto.
         if (Array.isArray(graph.input)) {
             for (const input of graph.input) {
-                this.tensor(input.name || input);
+                const name = typeof input === 'string' ? input : input.name;
+                if (name) {
+                    this.tensor(name);
+                }
             }
         }
         if (Array.isArray(graph.output)) {
             for (const output of graph.output) {
-                this.tensor(output.name || output);
+                const name = typeof output === 'string' ? output : output.name;
+                if (name) {
+                    this.tensor(name);
+                }
             }
         }
         for (const node of graph.node) {
