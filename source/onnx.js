@@ -305,8 +305,12 @@ onnx.Node = class {
     constructor(context, node) {
         const attributes = node.attribute || [];
         const metadata_props = node.metadata_props || [];
-        const domain = node.domain || 'ai.onnx';
-        let op_type = node.op_type;
+        // Intern domain and op_type strings to reuse identical string objects
+        // across nodes (e.g. "QuantizeLinear" repeated thousands of times in
+        // FP8/quantized models).  context.intern() is a no-op when unavailable.
+        const intern = context.intern ? (s) => context.intern(s) : (s) => s;
+        const domain = intern(node.domain || 'ai.onnx');
+        let op_type = intern(node.op_type);
         let overload = node.overload || '';
         if (domain === 'pkg.torch.ops') {
             const path = op_type.split('.');
@@ -1351,6 +1355,11 @@ onnx.Context.Graph = class {
         this._values = new Map();
         this._groups = new Map();
         this._nodes = [];
+        // String intern cache: reuse identical op_type/domain strings across nodes.
+        // FP8/quantized models repeat "QuantizeLinear"/"DequantizeLinear" thousands
+        // of times; interning avoids redundant string allocations and speeds up
+        // Map key lookups that use string identity.
+        this._stringCache = new Map();
         if (Array.isArray(graph.initializer)) {
             for (const initializer of graph.initializer) {
                 const tensor = new onnx.Tensor(this, initializer, 'Initializer');
@@ -1426,6 +1435,20 @@ onnx.Context.Graph = class {
                 }
             }
         }
+    }
+
+    intern(str) {
+        // Return a cached reference to the string to avoid redundant allocations
+        // for repeated values (e.g. "QuantizeLinear" across thousands of nodes).
+        if (!str) {
+            return str;
+        }
+        const cached = this._stringCache.get(str);
+        if (cached !== undefined) {
+            return cached;
+        }
+        this._stringCache.set(str, str);
+        return str;
     }
 
     type(domain, name, overload) {
