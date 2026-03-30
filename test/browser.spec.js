@@ -22,9 +22,12 @@ playwright.test('browser', async ({ page }) => {
     await page.waitForSelector('body.welcome', { timeout: 25000 });
     await page.waitForTimeout(1000);
 
-    const consent = await page.locator('#message-button');
-    if (await consent.isVisible({ timeout: 25000 })) {
+    const consent = page.locator('#message-button');
+    try {
+        await consent.waitFor({ state: 'visible', timeout: 5000 });
         await consent.click();
+    } catch {
+        // optional consent prompt
     }
 
     // Set up file chooser promise before clicking
@@ -37,6 +40,20 @@ playwright.test('browser', async ({ page }) => {
     // Wait for the graph to render
     await page.waitForSelector('#canvas', { state: 'attached', timeout: 10000 });
     await page.waitForSelector('body.default', { timeout: 10000 });
+
+    // Verify About panel exposes text layout diagnostics.
+    const aboutMenuButton = await page.locator('#menu-button');
+    await aboutMenuButton.click();
+    await page.waitForTimeout(200);
+    const aboutMenuItem = page.locator('button:has-text("About")').first();
+    await aboutMenuItem.click();
+    await page.waitForSelector('body.about', { timeout: 5000 });
+    const textLayoutRow = page.locator('#text-layout-info-row');
+    await playwright.expect(textLayoutRow).toBeVisible();
+    const textLayoutInfoText = ((await page.locator('#text-layout-info').textContent()) || '').toLowerCase();
+    playwright.expect(textLayoutInfoText).toContain('legacy');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('body:not(.about)', { timeout: 5000 });
 
     // Open find sidebar
     const menuButton = await page.locator('#menu-button');
@@ -56,6 +73,11 @@ playwright.test('browser', async ({ page }) => {
     // Find and activate tensor
     await search.fill('convolution1_W');
     await page.waitForSelector('.sidebar-find-content li', { state: 'attached' });
+    const firstResult = page.locator('.sidebar-find-content li').first();
+    const textEngine = await firstResult.getAttribute('data-text-engine');
+    playwright.expect(['legacy', 'shadow', 'pretext']).toContain(textEngine);
+    const textWidth = await firstResult.getAttribute('data-text-width');
+    playwright.expect(Number(textWidth)).toBeGreaterThan(0);
     const item = await page.waitForSelector('.sidebar-find-content li:has-text("convolution1_W")');
     await item.dblclick();
 
