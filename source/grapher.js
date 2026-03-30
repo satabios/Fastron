@@ -1,5 +1,19 @@
 
+import { getTextLayoutService } from './text-layout-service.js';
+
 const grapher = {};
+
+grapher._fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
+grapher._fonts = {
+    nodeItem: `11px ${grapher._fontFamily}`,
+    nodeArgument: `9px ${grapher._fontFamily}`,
+    edgeLabel: `10px ${grapher._fontFamily}`
+};
+grapher._textLayout = getTextLayoutService();
+
+grapher._measureText = (element, text, font, lineHeight) => {
+    return grapher._textLayout.measureTextElement(element, { text, font, lineHeight });
+};
 
 grapher.Graph = class {
 
@@ -99,9 +113,9 @@ grapher.Graph = class {
             this._focusable.set(label.hitTest, label);
         }
         if (label.labelElement) {
-            const box = label.labelElement.getBBox();
-            label.width = box.width;
-            label.height = box.height;
+            const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
+            label.width = metrics.width;
+            label.height = metrics.height;
         }
         this._renderedEdges.add(edgeKey);
         return label;
@@ -386,9 +400,9 @@ grapher.Graph = class {
             // Pass 2: Measure all newly built edge labels (batched getBBox reads).
             for (const { label } of builtEdges) {
                 if (label.labelElement && label.width === undefined) {
-                    const box = label.labelElement.getBBox();
-                    label.width = box.width;
-                    label.height = box.height;
+                    const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
+                    label.width = metrics.width;
+                    label.height = metrics.height;
                 }
             }
             // Pass 3: Show and update (writes only).
@@ -822,14 +836,14 @@ grapher.Graph = class {
         for (const edge of this.edges.values()) {
             const label = edge.label;
             if (label.labelElement) {
-                const box = label.labelElement.getBBox();
-                label.width = box.width;
-                label.height = box.height;
+                const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
+                label.width = metrics.width;
+                label.height = metrics.height;
             } else if (label.label && !label.width) {
-                // Deferred edges: estimate label size so dagre reserves space.
-                // Average character width at 10px font ≈ 6px; height ≈ 14px.
-                label.width = label.label.length * 6;
-                label.height = 14;
+                // Deferred edges: estimate label size without touching DOM.
+                const metrics = grapher._measureText(null, label.label, grapher._fonts.edgeLabel, 14);
+                label.width = metrics.width;
+                label.height = metrics.height;
             }
         }
         const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
@@ -1639,11 +1653,11 @@ grapher.Node.Header.Entry = class {
         }
         const yPadding = 4;
         const xPadding = 7;
-        const boundingBox = this.text.getBBox();
-        this.width = boundingBox.width + xPadding + xPadding;
-        this.height = boundingBox.height + yPadding + yPadding;
+        const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeItem, 12);
+        this.width = metrics.width + xPadding + xPadding;
+        this.height = metrics.height + yPadding + yPadding;
         this.tx = xPadding;
-        this.ty = yPadding - boundingBox.y;
+        this.ty = yPadding - metrics.y;
     }
 
     layout() {
@@ -1830,10 +1844,10 @@ grapher.Argument = class {
         }
         const yPadding = 1;
         const xPadding = 6;
-        const size = this.text.getBBox();
-        this.width = xPadding + size.width + xPadding;
-        this.bottom = yPadding + size.height + yPadding;
-        this.offset = size.y;
+        const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeArgument, 11);
+        this.width = xPadding + metrics.width + xPadding;
+        this.bottom = yPadding + metrics.height + yPadding;
+        this.offset = metrics.y;
         this.height = this.bottom;
         if (this.type === 'node') {
             const node = this.content;
