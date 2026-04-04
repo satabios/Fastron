@@ -576,6 +576,11 @@ view.View = class {
                     }
                 }
             });
+            sidebar.on('highlight', (sender, values) => {
+                if (this._target) {
+                    this._target.highlight(values);
+                }
+            });
             this._sidebar.open(sidebar, 'Find');
         }
     }
@@ -2240,6 +2245,39 @@ view.Graph = class extends grapher.Graph {
             value.build();
         }
         super.build(document, origin);
+        // Build element→value reverse map for tooltip delegation
+        this._elementMap = new WeakMap();
+        for (const [key, obj] of this._table) {
+            if (obj && obj.element) {
+                this._elementMap.set(obj.element, key);
+            }
+        }
+        // Tooltip event delegation on the SVG canvas
+        const _tooltip = view.Graph._sharedTooltip || (view.Graph._sharedTooltip = new view.Tooltip());
+        let _hoveredNode = null;
+        canvas.addEventListener('pointerover', (e) => {
+            const nodeEl = e.target && e.target.closest ? e.target.closest('.graph-node, .graph-input, .graph-output') : null;
+            if (nodeEl !== _hoveredNode) {
+                _hoveredNode = nodeEl;
+                if (nodeEl && this._elementMap && this._elementMap.has(nodeEl)) {
+                    const val = this._elementMap.get(nodeEl);
+                    if (val && val.type) {
+                        _tooltip.show(document, val, e.clientX, e.clientY);
+                    } else {
+                        _tooltip.hide();
+                    }
+                } else {
+                    _tooltip.hide();
+                }
+            }
+        });
+        canvas.addEventListener('pointermove', (e) => {
+            _tooltip.move(e.clientX, e.clientY);
+        });
+        canvas.addEventListener('pointerleave', () => {
+            _hoveredNode = null;
+            _tooltip.hide();
+        });
     }
 
     async measure() {
@@ -2353,6 +2391,30 @@ view.Graph = class extends grapher.Graph {
         }
     }
 
+    highlight(values) {
+        // Clear previous search-match highlights
+        if (this._highlighted) {
+            for (const el of this._highlighted) {
+                el.classList.remove('search-match');
+            }
+            this._highlighted.clear();
+        } else {
+            this._highlighted = new Set();
+        }
+        if (!values || values.length === 0) {
+            return;
+        }
+        for (const value of values) {
+            if (this._table.has(value)) {
+                const node = this._table.get(value);
+                if (node && node.element) {
+                    node.element.classList.add('search-match');
+                    this._highlighted.add(node.element);
+                }
+            }
+        }
+    }
+
     restore(state) {
         const canvas = this._canvasElement;
         const origin = this._originElement;
@@ -2434,6 +2496,19 @@ view.Graph = class extends grapher.Graph {
                 this._onViewportChange(viewport);
             }, 100);
         }
+
+        // Initialize minimap after layout is complete
+        if (this._minimap) {
+            this._minimap.detach();
+            this._minimap = null;
+        }
+        const minimapContainer = this._containerElement && this._containerElement.ownerDocument
+            ? this._containerElement.ownerDocument.body
+            : null;
+        if (minimapContainer) {
+            this._minimap = new view.Minimap(this);
+            this._minimap.attach(minimapContainer);
+        }
     }
 
     register() {
@@ -2511,6 +2586,10 @@ view.Graph = class extends grapher.Graph {
             this._intersectionObserver.disconnect();
             this._intersectionObserver = null;
         }
+        if (this._minimap) {
+            this._minimap.detach();
+            this._minimap = null;
+        }
     }
 
     get zoom() {
@@ -2542,6 +2621,18 @@ view.Graph = class extends grapher.Graph {
         container.scrollLeft = this._scrollLeft;
         container.scrollTop = this._scrollTop;
         this._zoom = zoom;
+
+        // Level-of-detail culling: toggle CSS classes on the SVG canvas at low zoom
+        if (this._canvasElement) {
+            this._canvasElement.classList.toggle('lod-hide-labels', zoom < 0.35);
+            this._canvasElement.classList.toggle('lod-hide-args', zoom < 0.20);
+            this._canvasElement.classList.toggle('lod-hide-edges', zoom < 0.08);
+        }
+
+        // Update minimap viewport indicator
+        if (this._minimap) {
+            this._minimap.updateViewport();
+        }
 
         // Trigger viewport observer on zoom
         if (this._viewportObserver) {
@@ -2674,6 +2765,11 @@ view.Graph = class extends grapher.Graph {
         }
         if (this._scrollTop && e.target.scrollTop !== Math.floor(this._scrollTop)) {
             delete this._scrollTop;
+        }
+
+        // Update minimap viewport on scroll
+        if (this._minimap) {
+            this._minimap.updateViewport();
         }
 
         // Trigger viewport observer
@@ -2979,6 +3075,237 @@ view.Graph = class extends grapher.Graph {
             }
             container.scrollBy(options);
         }
+    }
+};
+
+view.Minimap = class {
+
+    constructor(graph) {
+        this._graph = graph;
+        this._element = null;
+        this._canvas = null;
+        this._viewport = null;
+        this._minimapScale = undefined;
+        this._minimapOx = 0;
+        this._minimapOy = 0;
+    }
+
+    attach(container) {
+        const doc = container.ownerDocument;
+        const el = doc.createElement('div');
+        el.id = 'minimap';
+        el.setAttribute('title', 'Overview — click to navigate');
+        const canvas = doc.createElement('canvas');
+        canvas.width = 192;
+        canvas.height = 128;
+        el.appendChild(canvas);
+        const vp = doc.createElement('div');
+        vp.id = 'minimap-viewport';
+        el.appendChild(vp);
+        container.appendChild(el);
+        this._element = el;
+        this._canvas = canvas;
+        this._viewport = vp;
+        el.addEventListener('pointerdown', (e) => this._navigateTo(e));
+        setTimeout(() => {
+            this._render();
+            this.updateViewport();
+            el.classList.add('minimap-visible');
+        }, 250);
+    }
+
+    _render() {
+        const graph = this._graph;
+        const canvas = this._canvas;
+        if (!canvas || !graph._table) {
+            return;
+        }
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        const nodes = [];
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const obj of graph._table.values()) {
+            if (typeof obj.x === 'number' && typeof obj.y === 'number' && obj.width && obj.height) {
+                const x = obj.x - obj.width / 2;
+                const y = obj.y - obj.height / 2;
+                nodes.push({ x, y, w: obj.width, h: obj.height });
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + obj.width);
+                maxY = Math.max(maxY, y + obj.height);
+            }
+        }
+        if (nodes.length === 0) {
+            return;
+        }
+        const pad = 8;
+        const gw = maxX - minX + pad * 2;
+        const gh = maxY - minY + pad * 2;
+        const scale = Math.min(W / gw, H / gh);
+        const ox = (W - gw * scale) / 2 - (minX - pad) * scale;
+        const oy = (H - gh * scale) / 2 - (minY - pad) * scale;
+        this._minimapScale = scale;
+        this._minimapOx = ox;
+        this._minimapOy = oy;
+        ctx.fillStyle = 'rgba(243,244,246,0.97)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(55,65,81,0.65)';
+        for (const n of nodes) {
+            const rx = n.x * scale + ox;
+            const ry = n.y * scale + oy;
+            const rw = Math.max(2, n.w * scale);
+            const rh = Math.max(1, n.h * scale);
+            ctx.fillRect(rx, ry, rw, rh);
+        }
+    }
+
+    updateViewport() {
+        const graph = this._graph;
+        const vp = this._viewport;
+        if (!vp || this._minimapScale === undefined) {
+            return;
+        }
+        const container = graph._containerElement;
+        if (!container) {
+            return;
+        }
+        const zoom = graph._zoom;
+        const scale = this._minimapScale;
+        const ox = this._minimapOx;
+        const oy = this._minimapOy;
+        const scrollX = container.scrollLeft / zoom;
+        const scrollY = container.scrollTop / zoom;
+        const vw = container.clientWidth / zoom;
+        const vh = container.clientHeight / zoom;
+        const left = scrollX * scale + ox;
+        const top = scrollY * scale + oy;
+        const width = vw * scale;
+        const height = vh * scale;
+        const W = this._canvas ? this._canvas.width : 192;
+        const H = this._canvas ? this._canvas.height : 128;
+        vp.style.left = `${Math.max(0, left)}px`;
+        vp.style.top = `${Math.max(0, top)}px`;
+        vp.style.width = `${Math.min(width, W - Math.max(0, left))}px`;
+        vp.style.height = `${Math.min(height, H - Math.max(0, top))}px`;
+    }
+
+    _navigateTo(e) {
+        const graph = this._graph;
+        const canvas = this._canvas;
+        if (!canvas || this._minimapScale === undefined) {
+            return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const gx = (mx - this._minimapOx) / this._minimapScale;
+        const gy = (my - this._minimapOy) / this._minimapScale;
+        const container = graph._containerElement;
+        if (!container) {
+            return;
+        }
+        const zoom = graph._zoom;
+        const left = gx * zoom - container.clientWidth / 2;
+        const top = gy * zoom - container.clientHeight / 2;
+        container.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: 'smooth' });
+    }
+
+    detach() {
+        if (this._element && this._element.parentNode) {
+            this._element.parentNode.removeChild(this._element);
+        }
+        this._element = null;
+        this._canvas = null;
+        this._viewport = null;
+    }
+};
+
+view.Tooltip = class {
+
+    constructor() {
+        this._element = null;
+        this._hideTimer = null;
+    }
+
+    show(doc, node, x, y) {
+        if (!this._element) {
+            const el = doc.createElement('div');
+            el.id = 'graph-tooltip';
+            doc.body.appendChild(el);
+            this._element = el;
+        }
+        if (this._hideTimer) {
+            clearTimeout(this._hideTimer);
+            this._hideTimer = null;
+        }
+        const el = this._element;
+        const type = node.type;
+        const typeName = type ? (type.name || '') : '';
+        const category = type ? (type.category || '') : '';
+        const nodeName = node.name || node.identifier || '';
+        const inputs = Array.isArray(node.inputs) ? node.inputs.length : 0;
+        const outputs = Array.isArray(node.outputs) ? node.outputs.length : 0;
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let html = `<div class="tooltip-type">${esc(typeName)}</div>`;
+        const meta = [];
+        if (category) {
+            meta.push(esc(category));
+        }
+        if (nodeName) {
+            meta.push(esc(nodeName));
+        }
+        meta.push(`In: ${inputs} · Out: ${outputs}`);
+        html += `<div class="tooltip-meta">${meta.join(' · ')}</div>`;
+        el.innerHTML = html;
+        this._position(el, x, y);
+        el.classList.add('tooltip-visible');
+    }
+
+    move(x, y) {
+        if (this._element && this._element.classList.contains('tooltip-visible')) {
+            this._position(this._element, x, y);
+        }
+    }
+
+    hide() {
+        if (this._hideTimer) {
+            return;
+        }
+        this._hideTimer = setTimeout(() => {
+            if (this._element) {
+                this._element.classList.remove('tooltip-visible');
+            }
+            this._hideTimer = null;
+        }, 100);
+    }
+
+    _position(el, x, y) {
+        const margin = 14;
+        const vw = (typeof window !== 'undefined' ? window.innerWidth : 1200);
+        const vh = (typeof window !== 'undefined' ? window.innerHeight : 800);
+        el.style.left = '0px';
+        el.style.top = '0px';
+        const w = el.offsetWidth || 180;
+        const h = el.offsetHeight || 60;
+        let left = x + margin;
+        let top = y + margin;
+        if (left + w > vw - margin) {
+            left = x - w - margin;
+        }
+        if (top + h > vh - margin) {
+            top = y - h - margin;
+        }
+        el.style.left = `${Math.max(margin, left)}px`;
+        el.style.top = `${Math.max(margin, top)}px`;
+    }
+
+    detach() {
+        if (this._element && this._element.parentNode) {
+            this._element.parentNode.removeChild(this._element);
+        }
+        this._element = null;
     }
 };
 
@@ -5337,6 +5664,8 @@ view.FindSidebar = class extends view.Control {
                     }
                 }
             }
+            // Emit highlight event with all matched values so the graph can animate them
+            this.emit('highlight', Array.from(this._table.values()));
         } catch (error) {
             this.error(error, false);
         }
