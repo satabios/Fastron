@@ -2121,7 +2121,9 @@ grapher.Edge = class {
                 // left-to-right flow of the graph without any B-spline artefacts.
                 const tension = Math.min(dist * 0.45, 120);
                 const isVertical = Math.abs(dy) >= Math.abs(dx);
-                const sign = isVertical ? (dy >= 0 ? 1 : -1) : (dx >= 0 ? 1 : -1);
+                const signV = dy >= 0 ? 1 : -1;
+                const signH = dx >= 0 ? 1 : -1;
+                const sign = isVertical ? signV : signH;
                 const cx1 = isVertical ? p0.x : p0.x + sign * tension;
                 const cx2 = isVertical ? pN.x : pN.x - sign * tension;
                 const cy1 = isVertical ? p0.y + sign * tension : p0.y;
