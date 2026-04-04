@@ -902,6 +902,10 @@ grapher.Graph = class {
         const useForce = this.options && this.options.layout === 'force';
         // For very large graphs skip Dagre entirely and use the O(N) fast layout.
         // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
+        // Additionally, graphs that would produce an extreme number of dummy nodes
+        // during normalization must be diverted to fast layout to avoid V8's 4 GiB
+        // pointer-compression OOM.  Dagre itself guards against this via
+        // POST_NORMALIZE_LIMIT and signals abort through state._aborted.
         const FAST_LAYOUT_THRESHOLD = 3000;
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
@@ -914,9 +918,14 @@ grapher.Graph = class {
                 if (message.type === 'cancel' || message.type === 'terminate') {
                     return message.type;
                 }
-                nodes = message.nodes;
-                edges = message.edges;
-                state.log = message.state.log;
+                // If dagre aborted due to post-normalization size, fall back.
+                if (message.state && message.state._aborted) {
+                    this._fastLayout(nodes, edges, rotate, layout);
+                } else {
+                    nodes = message.nodes;
+                    edges = message.edges;
+                    state.log = message.state.log;
+                }
             } catch {
                 // Avoid long main-thread stalls for very large graphs.
                 if (nodes.length > this._mainThreadLayoutThreshold) {
@@ -924,6 +933,9 @@ grapher.Graph = class {
                 } else {
                     const dagre = await import('./dagre.js');
                     dagre.layout(nodes, edges, layout, state);
+                    if (state._aborted) {
+                        this._fastLayout(nodes, edges, rotate, layout);
+                    }
                 }
             }
         } else if (nodes.length > this._mainThreadLayoutThreshold) {
@@ -931,6 +943,9 @@ grapher.Graph = class {
         } else {
             const dagre = await import('./dagre.js');
             dagre.layout(nodes, edges, layout, state);
+            if (state._aborted) {
+                this._fastLayout(nodes, edges, rotate, layout);
+            }
         }
         if (state.log) {
             const fs = await import('fs');
@@ -1080,22 +1095,75 @@ grapher.Graph = class {
         const rankSep = Number.isFinite(layout.ranksep) ? layout.ranksep : 20;
         let primary = 0;
 
+        // --- Indentation pass ---
+        // Compute a preferred secondary-axis position for each node based on
+        // the average position of its incoming neighbors (parents).  This
+        // produces a hierarchical tree-like visual where children are centered
+        // beneath their parents rather than packed flush-left.
+        const preferredPos = new Map();
+        // First pass: assign initial secondary coord inside each rank so we
+        // have a baseline to compute parent centroids from.
+        const rankOffset = new Map(); // rank -> running secondary offset
+        for (const rank of rankKeys) {
+            let secondary = 0;
+            for (const node of ranks.get(rank)) {
+                const span = rotate ? Math.max(1, node.height || 0) : Math.max(1, node.width || 0);
+                preferredPos.set(node.v, secondary + span / 2);
+                secondary += span + nodeSep;
+            }
+            rankOffset.set(rank, secondary);
+        }
+        // Forward sweep: pull each node toward the centroid of its parents.
+        // Two passes (forward + backward) to propagate indentation both ways.
+        for (let pass = 0; pass < 2; pass++) {
+            const keys = pass === 0 ? rankKeys : [...rankKeys].reverse();
+            for (const rank of keys) {
+                const rankNodes = ranks.get(rank);
+                // Compute weighted target positions.
+                const targets = [];
+                for (const node of rankNodes) {
+                    const parents = pass === 0 ? incoming.get(node.v) : (outgoing.get(node.v) || []);
+                    const valid = parents.filter((id) => preferredPos.has(id));
+                    if (valid.length > 0) {
+                        let sum = 0;
+                        for (const id of valid) {
+                            sum += preferredPos.get(id);
+                        }
+                        targets.push({ node, target: sum / valid.length });
+                    } else {
+                        targets.push({ node, target: preferredPos.get(node.v) });
+                    }
+                }
+                // Sort by target to maintain ordering from barycenter.
+                targets.sort((a, b) => a.target - b.target);
+                // Assign positions while preventing overlaps.
+                let secondary = 0;
+                for (const { node, target } of targets) {
+                    const span = rotate ? Math.max(1, node.height || 0) : Math.max(1, node.width || 0);
+                    const pos = Math.max(secondary + span / 2, target);
+                    preferredPos.set(node.v, pos);
+                    secondary = pos + span / 2 + nodeSep;
+                }
+                // Re-establish the order in ranks to match the final positions.
+                rankNodes.sort((a, b) => preferredPos.get(a.v) - preferredPos.get(b.v));
+            }
+        }
+
+        // --- Final coordinate assignment ---
         for (const rank of rankKeys) {
             const rankNodes = ranks.get(rank);
-            let secondary = 0;
             let maxSpan = 0;
             for (const node of rankNodes) {
                 const width = Math.max(1, node.width || 0);
                 const height = Math.max(1, node.height || 0);
+                const pos = preferredPos.get(node.v);
                 if (rotate) {
                     node.x = primary + (width / 2);
-                    node.y = secondary + (height / 2);
-                    secondary += height + nodeSep;
+                    node.y = pos;
                     maxSpan = Math.max(maxSpan, width);
                 } else {
-                    node.x = secondary + (width / 2);
+                    node.x = pos;
                     node.y = primary + (height / 2);
-                    secondary += width + nodeSep;
                     maxSpan = Math.max(maxSpan, height);
                 }
             }

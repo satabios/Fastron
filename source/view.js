@@ -2785,6 +2785,49 @@ view.Graph = class extends grapher.Graph {
             };
         }
         if (element && Array.isArray(element._edges)) {
+            // For connectors, prefer using the source node's position as the
+            // primary anchor rather than the bounding box of all edge points.
+            // A connector like encoder_hidden_states may fan out to many nodes,
+            // and the centroid of all edge points lands nowhere near the visual
+            // connector.  The source (from) node is where the connector
+            // originates and is the most useful navigation target.
+            if (element.from && typeof element.from.x === 'number' && typeof element.from.y === 'number') {
+                const w = element.from.width || 0;
+                const h = element.from.height || 0;
+                return {
+                    x: element.from.x - (w / 2),
+                    y: element.from.y - (h / 2),
+                    width: w,
+                    height: h
+                };
+            }
+            // If no source node, try the first target node.
+            if (Array.isArray(element.to) && element.to.length > 0) {
+                const first = element.to[0];
+                if (first && typeof first.x === 'number' && typeof first.y === 'number') {
+                    const w = first.width || 0;
+                    const h = first.height || 0;
+                    return {
+                        x: first.x - (w / 2),
+                        y: first.y - (h / 2),
+                        width: w,
+                        height: h
+                    };
+                }
+            }
+            // Fallback: compute centroid from the first edge's midpoint rather
+            // than the bounding box of ALL edges, which can be enormous.
+            if (element._edges.length > 0) {
+                const firstEdge = element._edges[0];
+                const points = firstEdge && firstEdge.label ? firstEdge.label.points : null;
+                if (Array.isArray(points) && points.length > 0) {
+                    const mid = points[Math.floor(points.length / 2)];
+                    if (mid && typeof mid.x === 'number' && typeof mid.y === 'number') {
+                        return { x: mid.x, y: mid.y, width: 0, height: 0 };
+                    }
+                }
+            }
+            // Last resort: bounding box of all edge points.
             let left = Number.POSITIVE_INFINITY;
             let right = Number.NEGATIVE_INFINITY;
             let top = Number.POSITIVE_INFINITY;
@@ -2817,7 +2860,14 @@ view.Graph = class extends grapher.Graph {
         if (!container || !origin) {
             return;
         }
-        const translate = this._getOriginTranslate(origin);
+        // Use the same cached origin translate that _getViewportBounds uses,
+        // ensuring the coordinate transform is consistent.  Falling back to
+        // _getOriginTranslate only if the cache hasn't been populated yet.
+        if (!this._originTranslate) {
+            const t = this._getOriginTranslate(origin);
+            this._originTranslate = t;
+        }
+        const translate = this._originTranslate;
         const centerX = bounds.x + (bounds.width / 2) + translate.x;
         const centerY = bounds.y + (bounds.height / 2) + translate.y;
         const left = (centerX * this._zoom) - (container.clientWidth / 2);
