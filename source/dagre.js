@@ -702,6 +702,13 @@ dagre.layout = (nodes, edges, layout, state) => {
     //   2. Dummy nodes are added where edges have been split into segments.
     //   3. The graph is augmented with a 'dummyChains' attribute which contains
     //      the first dummy in each chain of dummy nodes produced.
+    //
+    // For very large graphs, edges spanning more than MAX_DUMMY_SPAN ranks are
+    // handled with a reduced set of dummy nodes (at source+1, label rank, and
+    // dest-1) instead of one per intermediate rank.  This prevents the dummy
+    // node count from exploding into millions and keeps memory well within V8's
+    // 4 GiB pointer-compression limit.
+    const MAX_DUMMY_SPAN = 64;
     const normalize = (g, state) => {
         state.dummyChains = [];
         for (const e of g.edges.values()) {
@@ -713,34 +720,73 @@ dagre.layout = (nodes, edges, layout, state) => {
             let vRank = g.node(v).label.rank;
             const wRank = g.node(w).label.rank;
             if (wRank !== vRank + 1) {
+                const span = wRank - vRank;
                 g.removeEdge(e);
-                let first = true;
-                vRank++;
-                while (vRank < wRank) {
+                if (span > MAX_DUMMY_SPAN) {
+                    // Long-span edge: insert only a few routing dummies to
+                    // keep the graph manageable while preserving edge routing.
                     edgeLabel.points = [];
                     delete e.key;
-                    const attrs = {
-                        width: 0, height: 0,
-                        edgeLabel,
-                        edgeObj: e,
-                        rank: vRank
-                    };
-                    const dummy = addDummyNode(g, 'edge', attrs, '_d');
-                    if (vRank === labelRank) {
-                        attrs.width = edgeLabel.width;
-                        attrs.height = edgeLabel.height;
-                        attrs.dummy = 'edge-label';
-                        attrs.labelpos = edgeLabel.labelpos;
+                    const waypoints = new Set();
+                    waypoints.add(vRank + 1);
+                    waypoints.add(wRank - 1);
+                    if (labelRank !== undefined && labelRank > vRank && labelRank < wRank) {
+                        waypoints.add(labelRank);
                     }
-                    g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
-                    if (first) {
-                        state.dummyChains.push(dummy);
-                        first = false;
+                    const sortedWaypoints = Array.from(waypoints).sort((a, b) => a - b);
+                    let first = true;
+                    for (const rank of sortedWaypoints) {
+                        const attrs = {
+                            width: 0, height: 0,
+                            edgeLabel,
+                            edgeObj: e,
+                            rank
+                        };
+                        const dummy = addDummyNode(g, 'edge', attrs, '_d');
+                        if (rank === labelRank) {
+                            attrs.width = edgeLabel.width;
+                            attrs.height = edgeLabel.height;
+                            attrs.dummy = 'edge-label';
+                            attrs.labelpos = edgeLabel.labelpos;
+                        }
+                        g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
+                        if (first) {
+                            state.dummyChains.push(dummy);
+                            first = false;
+                        }
+                        v = dummy;
                     }
-                    v = dummy;
+                    g.setEdge(v, w, { weight: edgeLabel.weight }, name);
+                } else {
+                    // Short-span edge: standard one-dummy-per-rank normalization.
+                    let first = true;
                     vRank++;
+                    while (vRank < wRank) {
+                        edgeLabel.points = [];
+                        delete e.key;
+                        const attrs = {
+                            width: 0, height: 0,
+                            edgeLabel,
+                            edgeObj: e,
+                            rank: vRank
+                        };
+                        const dummy = addDummyNode(g, 'edge', attrs, '_d');
+                        if (vRank === labelRank) {
+                            attrs.width = edgeLabel.width;
+                            attrs.height = edgeLabel.height;
+                            attrs.dummy = 'edge-label';
+                            attrs.labelpos = edgeLabel.labelpos;
+                        }
+                        g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
+                        if (first) {
+                            state.dummyChains.push(dummy);
+                            first = false;
+                        }
+                        v = dummy;
+                        vRank++;
+                    }
+                    g.setEdge(v, w, { weight: edgeLabel.weight }, name);
                 }
-                g.setEdge(v, w, { weight: edgeLabel.weight }, name);
             }
         }
     };
@@ -1326,8 +1372,6 @@ dagre.layout = (nodes, edges, layout, state) => {
         };
         assignOrder(g, layering);
         const rank = maxRank(g) || 0;
-        const downLayerGraphs = new Array(rank);
-        const upLayerGraphs = new Array(rank);
         const nodes = Array.from(g.nodes.values());
         let rankIndexes = null;
         if (!g.hasBorder) {
@@ -1343,14 +1387,40 @@ dagre.layout = (nodes, edges, layout, state) => {
                 }
             }
         }
-        for (let i = 0; i < rank; i++) {
-            downLayerGraphs[i] = buildLayerGraph(g, nodes, rankIndexes, i + 1, true);
-            upLayerGraphs[i] = buildLayerGraph(g, nodes, rankIndexes, rank - i - 1, false);
+        // For large rank counts, build layer graphs lazily during each sweep
+        // to avoid holding tens of thousands of Graph objects in memory
+        // simultaneously.  For small graphs the overhead is negligible.
+        const LAZY_LAYER_THRESHOLD = 1000;
+        let downLayerGraphs = null;
+        let upLayerGraphs = null;
+        if (rank <= LAZY_LAYER_THRESHOLD) {
+            downLayerGraphs = new Array(rank);
+            upLayerGraphs = new Array(rank);
+            for (let i = 0; i < rank; i++) {
+                downLayerGraphs[i] = buildLayerGraph(g, nodes, rankIndexes, i + 1, true);
+                upLayerGraphs[i] = buildLayerGraph(g, nodes, rankIndexes, rank - i - 1, false);
+            }
         }
+        const getLazyLayerGraphs = (isDown) => {
+            if (isDown && downLayerGraphs) {
+                return downLayerGraphs;
+            }
+            if (!isDown && upLayerGraphs) {
+                return upLayerGraphs;
+            }
+            const graphs = new Array(rank);
+            for (let i = 0; i < rank; i++) {
+                graphs[i] = buildLayerGraph(g, nodes, rankIndexes,
+                    isDown ? i + 1 : rank - i - 1,
+                    isDown);
+            }
+            return graphs;
+        };
         let bestCC = Number.POSITIVE_INFINITY;
         let best = [];
         for (let i = 0, lastBest = 0; lastBest < 4; ++i, ++lastBest) {
-            sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2);
+            const lgs = getLazyLayerGraphs(i % 2 === 1);
+            sweepLayerGraphs(lgs, i % 4 >= 2);
             layering = buildLayerMatrix(g);
             const cc = crossCount(g, layering, bestCC);
             if (cc < bestCC) {
@@ -2163,6 +2233,15 @@ dagre.layout = (nodes, edges, layout, state) => {
 
     // Run layout
     layout = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: 'tb', ...layout };
+    // Guard: after normalization, abort if the graph is still too large for
+    // dagre's O(N·R) order phase to fit within V8's 4 GiB heap.
+    const POST_NORMALIZE_LIMIT = 1500000;
+    const normalizeGuarded = (g, state) => {
+        normalize(g, state);
+        if (g.nodes.size > POST_NORMALIZE_LIMIT) {
+            state._aborted = true;
+        }
+    };
     const tasks = [
         makeSpaceForEdgeLabels,
         removeSelfEdges,
@@ -2174,7 +2253,7 @@ dagre.layout = (nodes, edges, layout, state) => {
         nestingGraph_cleanup,
         assignRankMinMax,
         removeEdgeLabelProxies,
-        normalize,
+        normalizeGuarded,
         parentDummyChains,
         addBorderSegments,
         order,
@@ -2196,24 +2275,35 @@ dagre.layout = (nodes, edges, layout, state) => {
         task(g, state, layout);
         // const duration = Date.now() - start;
         // console.log(`${task.name}: ${duration}ms`);
+        if (state._aborted) {
+            // Graph too large after normalization — caller should fall back to
+            // fast layout.  Signal via a property on the state object.
+            break;
+        }
     }
 
     // Update source graph
-    for (const node of nodes) {
-        const label = g.node(node.v).label;
-        node.x = label.x;
-        node.y = label.y;
-        if (g.hasChildren(node.v)) {
-            node.width = label.width;
-            node.height = label.height;
+    // When the pipeline was aborted (e.g., after normalize detected too many
+    // nodes), position/denormalize never ran — nodes lack x/y and original
+    // edges were replaced by dummy chains.  Skip the update entirely; the
+    // caller will detect state._aborted and fall back to fast layout.
+    if (!state._aborted) {
+        for (const node of nodes) {
+            const label = g.node(node.v).label;
+            node.x = label.x;
+            node.y = label.y;
+            if (g.hasChildren(node.v)) {
+                node.width = label.width;
+                node.height = label.height;
+            }
         }
-    }
-    for (const edge of edges) {
-        const label = g.edge(edge.v, edge.w).label;
-        edge.points = label.points;
-        if ('x' in label) {
-            edge.x = label.x;
-            edge.y = label.y;
+        for (const edge of edges) {
+            const label = g.edge(edge.v, edge.w).label;
+            edge.points = label.points;
+            if ('x' in label) {
+                edge.x = label.x;
+                edge.y = label.y;
+            }
         }
     }
     if (state.log) {
