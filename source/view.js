@@ -2623,10 +2623,11 @@ view.Graph = class extends grapher.Graph {
         this._zoom = zoom;
 
         // Level-of-detail culling: toggle CSS classes on the SVG canvas at low zoom
-        if (this._canvasElement) {
-            this._canvasElement.classList.toggle('lod-hide-labels', zoom < 0.35);
-            this._canvasElement.classList.toggle('lod-hide-args', zoom < 0.20);
-            this._canvasElement.classList.toggle('lod-hide-edges', zoom < 0.08);
+        if (this._canvasElement && this._canvasElement.classList) {
+            const cl = this._canvasElement.classList;
+            if (zoom < 0.35) { cl.add('lod-hide-labels'); } else { cl.remove('lod-hide-labels'); }
+            if (zoom < 0.20) { cl.add('lod-hide-args'); } else { cl.remove('lod-hide-args'); }
+            if (zoom < 0.08) { cl.add('lod-hide-edges'); } else { cl.remove('lod-hide-edges'); }
         }
 
         // Update minimap viewport indicator
