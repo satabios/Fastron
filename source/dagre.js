@@ -2232,7 +2232,7 @@ dagre.layout = (nodes, edges, layout, state) => {
     }
 
     // Run layout
-    layout = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: 'tb', ...layout };
+    layout = { ranksep: 36, edgesep: 10, nodesep: 36, rankdir: 'tb', ...layout };
     // Guard: after normalization, abort if the graph is still too large for
     // dagre's O(N·R) order phase to fit within V8's 4 GiB heap.
     const POST_NORMALIZE_LIMIT = 1500000;
