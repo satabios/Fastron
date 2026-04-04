@@ -5,9 +5,9 @@ const grapher = {};
 
 grapher._fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
 grapher._fonts = {
-    nodeItem: `11px ${grapher._fontFamily}`,
-    nodeArgument: `9px ${grapher._fontFamily}`,
-    edgeLabel: `10px ${grapher._fontFamily}`
+    nodeItem: `12px ${grapher._fontFamily}`,
+    nodeArgument: `10px ${grapher._fontFamily}`,
+    edgeLabel: `11px ${grapher._fontFamily}`
 };
 grapher._textLayout = getTextLayoutService();
 
@@ -712,8 +712,8 @@ grapher.Graph = class {
             element.setAttribute('markerHeight', 6);
             element.setAttribute('orient', 'auto');
             const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 4 5 z');
-            markerPath.style.setProperty('stroke-width', 1);
+            markerPath.setAttribute('d', 'M 1 1 L 9 5 L 1 9 L 3.5 5 z');
+            markerPath.style.setProperty('stroke-width', 0);
             element.appendChild(markerPath);
             return element;
         };
@@ -746,6 +746,21 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead"));
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
+
+        // Drop-shadow filter for nodes
+        const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+        filter.setAttribute('id', 'node-shadow');
+        filter.setAttribute('x', '-20%');
+        filter.setAttribute('y', '-20%');
+        filter.setAttribute('width', '140%');
+        filter.setAttribute('height', '140%');
+        const feDropShadow = document.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow');
+        feDropShadow.setAttribute('dx', '0');
+        feDropShadow.setAttribute('dy', '1');
+        feDropShadow.setAttribute('stdDeviation', '2');
+        feDropShadow.setAttribute('flood-color', 'rgba(0,0,0,0.18)');
+        filter.appendChild(feDropShadow);
+        edgePathGroupDefs.appendChild(filter);
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
@@ -886,7 +901,7 @@ grapher.Graph = class {
         }
         const layout = {};
         layout.nodesep = 20;
-        layout.ranksep = 20;
+        layout.ranksep = 28;
         const direction = this.options.direction;
         const rotate = edges.length === 0 ? direction === 'vertical' : direction !== 'vertical';
         if (rotate) {
@@ -1176,14 +1191,30 @@ grapher.Graph = class {
             if (!source || !target) {
                 continue;
             }
+            const mx = (source.x + target.x) / 2;
+            const my = (source.y + target.y) / 2;
+            // Generate 5 waypoints along the edge with slight perpendicular
+            // offsets at the 1/4 and 3/4 marks.  This gives the B-spline curve
+            // in Edge.Curve smooth curvature instead of a rigid straight line,
+            // while keeping labels centred at the midpoint.
+            const dx = target.x - source.x;
+            const dy = target.y - source.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Perpendicular unit vector
+            const px = -dy / len;
+            const py = dx / len;
+            // Offset proportional to edge length (capped for very long edges)
+            const off = Math.min(len * 0.08, 20);
             edge.points = [
                 { x: source.x, y: source.y },
-                { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 },
+                { x: source.x + dx * 0.25 + px * off, y: source.y + dy * 0.25 + py * off },
+                { x: mx, y: my },
+                { x: source.x + dx * 0.75 - px * off, y: source.y + dy * 0.75 - py * off },
                 { x: target.x, y: target.y }
             ];
             if (edge.width || edge.height) {
-                edge.x = (source.x + target.x) / 2;
-                edge.y = (source.y + target.y) / 2;
+                edge.x = mx;
+                edge.y = my;
             }
         }
     }
@@ -1406,8 +1437,8 @@ grapher.Graph = class {
         }
 
         // --- Generate edge waypoints ---
-        // Three points (source-centre → midpoint → target-centre) give the
-        // Catmull-Rom curve in grapher.Edge.Curve something to work with.
+        // Five points with slight perpendicular offsets give the B-spline curve
+        // in grapher.Edge.Curve smooth curvature instead of a rigid straight line.
         // grapher.Edge.update() then trims the path to the node boundaries via
         // intersectRect(), so the arrowhead lands exactly on the node edge.
         for (const edge of edges) {
@@ -1416,14 +1447,24 @@ grapher.Graph = class {
             if (!src || !tgt) {
                 edge.points = []; continue;
             }
+            const mx = (src.x + tgt.x) / 2;
+            const my = (src.y + tgt.y) / 2;
+            const dx = tgt.x - src.x;
+            const dy = tgt.y - src.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const px = -dy / len;
+            const py = dx / len;
+            const off = Math.min(len * 0.08, 20);
             edge.points = [
                 { x: src.x, y: src.y },
-                { x: (src.x + tgt.x) / 2, y: (src.y + tgt.y) / 2 },
+                { x: src.x + dx * 0.25 + px * off, y: src.y + dy * 0.25 + py * off },
+                { x: mx, y: my },
+                { x: src.x + dx * 0.75 - px * off, y: src.y + dy * 0.75 - py * off },
                 { x: tgt.x, y: tgt.y }
             ];
             if (edge.width || edge.height) {
-                edge.x = (src.x + tgt.x) / 2;
-                edge.y = (src.y + tgt.y) / 2;
+                edge.x = mx;
+                edge.y = my;
             }
         }
     }
@@ -1568,7 +1609,7 @@ grapher.Node = class {
     }
 
     static roundedRect(x, y, width, height, r1, r2, r3, r4) {
-        const radius = 5;
+        const radius = 8;
         r1 = r1 ? radius : 0;
         r2 = r2 ? radius : 0;
         r3 = r3 ? radius : 0;
@@ -1719,8 +1760,8 @@ grapher.Node.Header.Entry = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 4;
-        const xPadding = 7;
+        const yPadding = 6;
+        const xPadding = 10;
         const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeItem, 12);
         this.width = metrics.width + xPadding + xPadding;
         this.height = metrics.height + yPadding + yPadding;
@@ -1784,7 +1825,7 @@ grapher.ArgumentList = class {
     }
 
     measure() {
-        this.width = 75;
+        this.width = 90;
         this.height = 3;
         for (let i = 0; i < this._items.length; i++) {
             const item = this._items[i];
@@ -1910,8 +1951,8 @@ grapher.Argument = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 3;
+        const xPadding = 8;
         const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeArgument, 11);
         this.width = xPadding + metrics.width + xPadding;
         this.bottom = yPadding + metrics.height + yPadding;
@@ -1932,8 +1973,8 @@ grapher.Argument = class {
     }
 
     layout() {
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 3;
+        const xPadding = 8;
         let y = this.y + this.bottom;
         if (this.type === 'node') {
             const node = this.content;
@@ -1953,8 +1994,8 @@ grapher.Argument = class {
     }
 
     update() {
-        const yPadding = 1;
-        const xPadding = 6;
+        const yPadding = 3;
+        const xPadding = 8;
         this.text.setAttribute('x', this.x + xPadding);
         this.text.setAttribute('y', this.y + yPadding - this.offset);
         this.border.setAttribute('x', this.x + 3);

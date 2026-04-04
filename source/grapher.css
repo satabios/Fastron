@@ -1,169 +1,180 @@
-.node path { stroke: #333; fill: none; stroke-width: 1px; }
-.node rect.node-border { stroke: #333; fill: none; stroke-width: 1px; }
-.node line { stroke: #333; fill: none; stroke-width: 1px; }
+/* ─── Node borders & lines ─────────────────────────────────────────────────── */
+.node path { stroke: #4b5563; fill: none; stroke-width: 1.5px; }
+.node rect.node-border { stroke: #4b5563; fill: none; stroke-width: 1.5px; }
+.node line { stroke: #d1d5db; fill: none; stroke-width: 1px; }
 
+/* Drop-shadow applied to every node group */
+.node { filter: url(#node-shadow); }
+
+/* ─── Node header items ────────────────────────────────────────────────────── */
 .node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
-.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; text-rendering: geometricPrecision; user-select: none; }
+.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 12px; text-rendering: geometricPrecision; user-select: none; }
 
-.node-item-function path { fill: #fff; }
-.node-item-function text { fill: #000; }
+.node-item-function path { fill: #f9fafb; }
+.node-item-function text { fill: #111827; }
 .node-item-function:hover { cursor: pointer; }
-.node-item-function:hover path { fill: #eee; }
+.node-item-function:hover path { fill: #f3f4f6; transition: fill 0.15s ease; }
 
-.node-item-type path { fill: #333; }
-.node-item-type text { fill: #fff; }
+.node-item-type path { fill: #374151; }
+.node-item-type text { fill: #f9fafb; }
 .node-item-type:hover { cursor: pointer; }
-.node-item-type:hover path { fill: #fff; }
-.node-item-type:hover text { fill: #000; }
+.node-item-type:hover path { fill: #f9fafb; transition: fill 0.15s ease; }
+.node-item-type:hover text { fill: #111827; }
 
-.node-item-type-constant path { fill: #eee; }
-.node-item-type-constant text { fill: #000; }
+.node-item-type-constant path { fill: #f3f4f6; }
+.node-item-type-constant text { fill: #374151; }
 .node-item-type-constant:hover path { fill: #fff; }
 
-.node-item-type-control path { fill: #eee; }
-.node-item-type-control text { fill: #000; }
+.node-item-type-control path { fill: #f3f4f6; }
+.node-item-type-control text { fill: #374151; }
 .node-item-type-control:hover path { fill: #fff; }
 
-.node-item-type-layer path { fill: rgb(51, 85, 136); }
-.node-item-type-activation path { fill: rgb(112, 41, 33); }
-.node-item-type-pool path { fill: rgb(51, 85, 51); }
-.node-item-type-normalization path { fill: rgb(51, 85, 68); }
-.node-item-type-dropout path { fill: rgb(69, 71, 112); }
-.node-item-type-shape path { fill: rgb(108, 79, 71); }
-.node-item-type-tensor path { fill: rgb(89, 66, 59); }
-.node-item-type-transform path { fill: rgb(51, 85, 68); }
-.node-item-type-data path { fill: rgb(85, 85, 85); }
-.node-item-type-quantization path { fill: rgb(80, 40, 0); }
-.node-item-type-attention path { fill: rgb(120, 60, 0); }
-/* FIX: added missing light-mode rule for custom node type */
-.node-item-type-custom path { fill: rgb(64, 64, 64); }
+/* ─── Category colour palette (modern, vibrant) ────────────────────────────── */
+.node-item-type-layer path        { fill: #2563eb; }   /* blue-600 */
+.node-item-type-activation path   { fill: #dc2626; }   /* red-600 */
+.node-item-type-pool path         { fill: #16a34a; }   /* green-600 */
+.node-item-type-normalization path { fill: #0891b2; }  /* cyan-600 */
+.node-item-type-dropout path      { fill: #7c3aed; }   /* violet-600 */
+.node-item-type-shape path        { fill: #b45309; }   /* amber-700 */
+.node-item-type-tensor path       { fill: #92400e; }   /* amber-800 */
+.node-item-type-transform path    { fill: #0d9488; }   /* teal-600 */
+.node-item-type-data path         { fill: #4b5563; }   /* gray-600 */
+.node-item-type-quantization path { fill: #c2410c; }   /* orange-700 */
+.node-item-type-attention path    { fill: #d97706; }   /* amber-600 */
+.node-item-type-custom path       { fill: #475569; }   /* slate-600 */
 
-.node-item-input path { fill: #fff; }
+.node-item-input path { fill: #f9fafb; }
 .node-item-input:hover { cursor: pointer; }
-.node-item-input:hover path { fill: #fff; }
+.node-item-input:hover path { fill: #fff; transition: fill 0.15s ease; }
 
-.node-item-constant path { fill: #eee; }
+.node-item-constant path { fill: #f3f4f6; }
 .node-item-constant:hover { cursor: pointer; }
-.node-item-constant:hover path { fill: #fff; }
+.node-item-constant:hover path { fill: #fff; transition: fill 0.15s ease; }
 
-.node-item-undefined path { fill: #f00; }
+.node-item-undefined path { fill: #ef4444; }
 .node-item-undefined:hover { cursor: pointer; }
-.node-item-undefined:hover path { fill: #fff; }
+.node-item-undefined:hover path { fill: #fca5a5; }
 
-.node-argument-list > path { fill: #fff; stroke-width: 0; stroke: #000; }
+/* ─── Argument list ────────────────────────────────────────────────────────── */
+.node-argument-list > path { fill: #fafafa; stroke-width: 0; stroke: #000; }
 .node-argument-list:hover { cursor: pointer; }
-.node-argument-list:hover > path { fill: #f6f6f6; }
-.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 9px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
+.node-argument-list:hover > path { fill: #f3f4f6; transition: fill 0.15s ease; }
+.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 10px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
 .node-argument > rect { fill: transparent; }
 
-.graph-item-input path { fill: #eee; }
+/* ─── Graph-level input / output nodes ────────────────────────────────────── */
+.graph-item-input path { fill: #f3f4f6; }
 .graph-item-input:hover { cursor: pointer; }
-.graph-item-input:hover path { fill: #fff; }
+.graph-item-input:hover path { fill: #fff; transition: fill 0.15s ease; }
 
-.graph-item-output path { fill: #eee; }
+.graph-item-output path { fill: #f3f4f6; }
 .graph-item-output:hover { cursor: pointer; }
-.graph-item-output:hover path { fill: #fff; }
+.graph-item-output:hover path { fill: #fff; transition: fill 0.15s ease; }
 
-#arrowhead { fill: #000; }
-#arrowhead-hover { fill: rgba(220, 0, 0, 0.9); }
-#arrowhead-select { fill: rgba(220, 0, 0, 0.9); }
+/* ─── Arrowheads ───────────────────────────────────────────────────────────── */
+#arrowhead        { fill: #374151; }
+#arrowhead-hover  { fill: #2563eb; }
+#arrowhead-select { fill: #2563eb; }
 
+/* ─── Edges ────────────────────────────────────────────────────────────────── */
 .edge-paths { pointer-events: none; }
-.edge-path { stroke: #000; stroke-width: 1px; fill: none; marker-end: url("#arrowhead"); }
+.edge-path { stroke: #374151; stroke-width: 1.5px; fill: none; marker-end: url("#arrowhead"); }
 .edge-paths-hit-test { pointer-events: stroke; stroke-width: 0.5em; fill: none; stroke: #000; stroke-opacity: 0.001; }
 
-.select > .node.node-border { stroke: rgba(220, 0, 0, 0.9); stroke-width: 2px; }
-.select.edge-path { stroke: rgba(220, 0, 0, 0.9); stroke-width: 1px; marker-end: url("#arrowhead-select"); }
-.select.node-argument > rect { fill: transparent; stroke: rgba(220, 0, 0, 0.9); }
+/* ─── Selection (blue instead of red) ─────────────────────────────────────── */
+.select > .node.node-border { stroke: #2563eb; stroke-width: 2px; }
+.select.edge-path { stroke: #2563eb; stroke-width: 1.5px; marker-end: url("#arrowhead-select"); }
+.select.node-argument > rect { fill: transparent; stroke: #2563eb; }
 
-.edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 10px; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
-.edge-path-control-dependency { stroke-dasharray: 3, 2; }
+/* ─── Edge labels ──────────────────────────────────────────────────────────── */
+.edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; fill: #374151; }
+.edge-path-control-dependency { stroke-dasharray: 4, 3; }
 
-.cluster rect { stroke: #000; fill: #000; fill-opacity: 0.02; stroke-opacity: 0.06; stroke-width: 1px; }
+/* ─── Clusters ─────────────────────────────────────────────────────────────── */
+.cluster rect { stroke: #9ca3af; fill: #6b7280; fill-opacity: 0.03; stroke-opacity: 0.25; stroke-width: 1px; }
 
-/* Used by JavaScript for animated selection highlight; duration/iteration set at call site. */
-@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; }  }
+/* ─── Animated selection pulse ─────────────────────────────────────────────── */
+@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; } }
 
-/* Model comparison diff highlights */
-.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
-.node-diff-added .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
-.node-diff-removed .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }
+/* ─── Model comparison diff highlights ─────────────────────────────────────── */
+.node-diff-modified .node-border { stroke: #f59e0b !important; stroke-width: 2.5px !important; }
+.node-diff-added    .node-border { stroke: #10b981 !important; stroke-width: 2.5px !important; }
+.node-diff-removed  .node-border { stroke: #ef4444 !important; stroke-width: 2.5px !important; }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* DARK MODE                                                                   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
 @media (prefers-color-scheme: dark) {
 
-    .edge-path { stroke: #888; }
+    /* Node borders & lines */
+    .node path { stroke: #374151; }
+    .node rect.node-border { stroke: #374151; fill: none; stroke-width: 1.5px; }
+    .node line { stroke: #374151; }
 
-    .node path { stroke: #1d1d1d; }
-    .node rect.node-border { stroke: #1d1d1d; fill: none; stroke-width: 1px; }
-    .node line { stroke: #1d1d1d; }
+    /* Edges */
+    .edge-path { stroke: #9ca3af; }
+    #arrowhead        { fill: #9ca3af; }
+    #arrowhead-hover  { fill: #60a5fa; }
+    #arrowhead-select { fill: #60a5fa; }
 
-    .select > .node.node-border { stroke: rgba(192, 0, 0, 0.8); }
-    .select.edge-path { stroke: rgba(192, 0, 0, 0.8); }
-    .select.node-argument > rect { fill: transparent; stroke: rgba(192, 0, 0, 0.8); }
-    #arrowhead { fill: #888; }
-    #arrowhead-hover { fill: rgba(192, 0, 0, 0.8); }
-    #arrowhead-select { fill: rgba(192, 0, 0, 0.8); }
+    /* Edge labels */
+    .edge-label { fill: #d1d5db; stroke: #111827; }
 
-    /* FIX: improved contrast from #b2b2b2 (~4.5:1) to #c8c8c8 (~5.7:1) on #404040 background */
-    .edge-label { fill: #c8c8c8; stroke: #1e1e1e; }
+    /* Selection */
+    .select > .node.node-border { stroke: #3b82f6; }
+    .select.edge-path { stroke: #3b82f6; }
+    .select.node-argument > rect { fill: transparent; stroke: #3b82f6; }
 
-    /* FIX: corrected 8-digit hex typo #dfdfdfdf → #dfdfdf */
-    .node-item-function path { fill: #404040; }
-    .node-item-function text { fill: #dfdfdf; }
-    .node-item-function:hover { cursor: pointer; }
-    .node-item-function:hover path { fill: #666666; }
+    /* Node header items */
+    .node-item path { stroke: #1f2937; }
+    .node-item text { fill: #e5e7eb; }
 
-    .node-item-type path { fill: #303030; }
-    .node-item-type text { fill: #dfdfdf; }
-    .node-item-type:hover { cursor: pointer; }
-    .node-item-type:hover path { fill: #808080; }
-    .node-item-type:hover text { fill: #dfdfdf; }
+    .node-item-function path { fill: #1f2937; }
+    .node-item-function text { fill: #e5e7eb; }
+    .node-item-function:hover path { fill: #374151; }
 
-    .node-item path { stroke: #fff; }
-    .node-item text { fill: #dfdfdf; }
+    .node-item-type path { fill: #111827; }
+    .node-item-type text { fill: #e5e7eb; }
+    .node-item-type:hover path { fill: #6b7280; }
+    .node-item-type:hover text { fill: #f9fafb; }
 
-    /* FIX: improved contrast from #b2b2b2 to #c8c8c8 */
-    .node-argument > text { fill: #c8c8c8; }
-    .node-argument-list > path { fill: #2d2d2d; }
-    .node-argument-list:hover > path { fill: #303030; }
+    /* Category colours — slightly desaturated for dark backgrounds */
+    .node-item-type-layer path        { fill: #1d4ed8; }
+    .node-item-type-activation path   { fill: #b91c1c; }
+    .node-item-type-pool path         { fill: #15803d; }
+    .node-item-type-normalization path { fill: #0e7490; }
+    .node-item-type-dropout path      { fill: #6d28d9; }
+    .node-item-type-shape path        { fill: #92400e; }
+    .node-item-type-tensor path       { fill: #78350f; }
+    .node-item-type-transform path    { fill: #0f766e; }
+    .node-item-type-data path         { fill: #374151; }
+    .node-item-type-quantization path { fill: #9a3412; }
+    .node-item-type-attention path    { fill: #b45309; }
+    .node-item-type-custom path       { fill: #334155; }
 
-    .graph-item-input path { fill: #404040; }
-    .graph-item-input:hover { cursor: pointer; }
-    .graph-item-input:hover path { fill: #666666; }
+    .node-item-input path { fill: #1f2937; }
+    .node-item-input:hover path { fill: #374151; }
+    .node-item-constant path { fill: #1f2937; }
+    .node-item-constant:hover path { fill: #374151; }
+    .node-item-undefined path { fill: #991b1b; }
+    .node-item-undefined:hover path { fill: #dc2626; }
 
-    .graph-item-output path { fill: #404040; }
-    .graph-item-output:hover { cursor: pointer; }
-    .graph-item-output:hover path { fill: #666666; }
+    /* Argument list */
+    .node-argument > text { fill: #d1d5db; }
+    .node-argument-list > path { fill: #1f2937; }
+    .node-argument-list:hover > path { fill: #374151; }
 
-    .node-item-input path { fill: #404040; }
-    .node-item-input:hover path { fill: #666666; }
-    .node-item-constant path { fill: #4b4b4b; }
-    .node-item-constant:hover path { fill: #666666; }
+    /* Graph-level input / output */
+    .graph-item-input path { fill: #1f2937; }
+    .graph-item-input:hover path { fill: #374151; }
+    .graph-item-output path { fill: #1f2937; }
+    .graph-item-output:hover path { fill: #374151; }
 
-    /* FIX: added dark mode for undefined nodes (was harsh pure red #f00 on dark bg) */
-    .node-item-undefined path { fill: #cc3333; }
-    .node-item-undefined:hover path { fill: #ff6666; }
+    /* Clusters */
+    .cluster rect { stroke: #4b5563; fill: #fff; fill-opacity: 0.03; stroke-opacity: 0.3; }
 
-    .node-item-type-layer path { fill: rgba(51, 85, 136, 0.7); }
-    /* FIX: removed duplicate .node-item-type-activation and .node-item-type-pool rules */
-    .node-item-type-activation path { fill: rgba(75, 27, 22, 0.7); }
-    .node-item-type-pool path { fill: rgba(51, 85, 51, 0.7); }
-    .node-item-type-normalization path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-dropout path { fill: rgba(69, 71, 112, 0.7); }
-    .node-item-type-shape path { fill: rgba(108, 79, 71, 0.7); }
-    .node-item-type-tensor path { fill: rgba(89, 66, 59, 0.7); }
-    .node-item-type-transform path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-data path { fill: rgba(85, 85, 85, 0.7); }
-    /* FIX: rgb() → rgba() — rgb() does not accept a 4th alpha argument */
-    .node-item-type-quantization path { fill: rgba(80, 40, 0, 0.7); }
-    .node-item-type-attention path { fill: rgba(100, 50, 0, 0.7); }
-    .node-item-type-custom path { fill: rgba(64, 64, 64, 0.7); }
-
-    /* FIX: added dark mode for cluster borders (was near-invisible black on dark bg) */
-    .cluster rect { stroke: #666; fill: #fff; fill-opacity: 0.03; stroke-opacity: 0.2; }
-
-    /* FIX: dark-mode overrides for diff highlights (light-mode colors were too harsh on dark bg) */
-    .node-diff-modified .node-border { stroke: #f0a050 !important; }
-    .node-diff-added    .node-border { stroke: #3dcc7a !important; }
-    .node-diff-removed  .node-border { stroke: #f06060 !important; }
+    /* Diff highlights — softer on dark backgrounds */
+    .node-diff-modified .node-border { stroke: #fbbf24 !important; }
+    .node-diff-added    .node-border { stroke: #34d399 !important; }
+    .node-diff-removed  .node-border { stroke: #f87171 !important; }
 }
