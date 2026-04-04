@@ -2497,18 +2497,6 @@ view.Graph = class extends grapher.Graph {
             }, 100);
         }
 
-        // Initialize minimap after layout is complete
-        if (this._minimap) {
-            this._minimap.detach();
-            this._minimap = null;
-        }
-        const minimapContainer = this._containerElement && this._containerElement.ownerDocument
-            ? this._containerElement.ownerDocument.body
-            : null;
-        if (minimapContainer) {
-            this._minimap = new view.Minimap(this);
-            this._minimap.attach(minimapContainer);
-        }
     }
 
     register() {
@@ -2586,10 +2574,6 @@ view.Graph = class extends grapher.Graph {
             this._intersectionObserver.disconnect();
             this._intersectionObserver = null;
         }
-        if (this._minimap) {
-            this._minimap.detach();
-            this._minimap = null;
-        }
     }
 
     get zoom() {
@@ -2642,11 +2626,6 @@ view.Graph = class extends grapher.Graph {
                     cl.remove('lod-hide-edges');
                 }
             }
-        }
-
-        // Update minimap viewport indicator
-        if (this._minimap) {
-            this._minimap.updateViewport();
         }
 
         // Trigger viewport observer on zoom
@@ -2780,11 +2759,6 @@ view.Graph = class extends grapher.Graph {
         }
         if (this._scrollTop && e.target.scrollTop !== Math.floor(this._scrollTop)) {
             delete this._scrollTop;
-        }
-
-        // Update minimap viewport on scroll
-        if (this._minimap) {
-            this._minimap.updateViewport();
         }
 
         // Trigger viewport observer
@@ -3090,150 +3064,6 @@ view.Graph = class extends grapher.Graph {
             }
             container.scrollBy(options);
         }
-    }
-};
-
-view.Minimap = class {
-
-    constructor(graph) {
-        this._graph = graph;
-        this._element = null;
-        this._canvas = null;
-        this._viewport = null;
-        this._minimapScale = undefined;
-        this._minimapOx = 0;
-        this._minimapOy = 0;
-    }
-
-    attach(container) {
-        const doc = container.ownerDocument;
-        const el = doc.createElement('div');
-        el.id = 'minimap';
-        el.setAttribute('title', 'Overview — click to navigate');
-        const canvas = doc.createElement('canvas');
-        canvas.width = 192;
-        canvas.height = 128;
-        el.appendChild(canvas);
-        const vp = doc.createElement('div');
-        vp.id = 'minimap-viewport';
-        el.appendChild(vp);
-        container.appendChild(el);
-        this._element = el;
-        this._canvas = canvas;
-        this._viewport = vp;
-        el.addEventListener('pointerdown', (e) => this._navigateTo(e));
-        setTimeout(() => {
-            this._render();
-            this.updateViewport();
-            el.classList.add('minimap-visible');
-        }, 250);
-    }
-
-    _render() {
-        const graph = this._graph;
-        const canvas = this._canvas;
-        if (!canvas || !graph._table) {
-            return;
-        }
-        const ctx = canvas.getContext('2d');
-        const W = canvas.width;
-        const H = canvas.height;
-        ctx.clearRect(0, 0, W, H);
-        const nodes = [];
-        let maxX = -Infinity, maxY = -Infinity, minX = Infinity, minY = Infinity;
-        for (const obj of graph._table.values()) {
-            if (typeof obj.x === 'number' && typeof obj.y === 'number' && obj.width && obj.height) {
-                const x = obj.x - obj.width / 2;
-                const y = obj.y - obj.height / 2;
-                nodes.push({ x, y, w: obj.width, h: obj.height });
-                minX = Math.min(minX, x);
-                minY = Math.min(minY, y);
-                maxX = Math.max(maxX, x + obj.width);
-                maxY = Math.max(maxY, y + obj.height);
-            }
-        }
-        if (nodes.length === 0) {
-            return;
-        }
-        const pad = 8;
-        const gw = maxX - minX + pad * 2;
-        const gh = maxY - minY + pad * 2;
-        const scale = Math.min(W / gw, H / gh);
-        const ox = (W - gw * scale) / 2 - (minX - pad) * scale;
-        const oy = (H - gh * scale) / 2 - (minY - pad) * scale;
-        this._minimapScale = scale;
-        this._minimapOx = ox;
-        this._minimapOy = oy;
-        ctx.fillStyle = 'rgba(243,244,246,0.97)';
-        ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = 'rgba(55,65,81,0.65)';
-        for (const n of nodes) {
-            const rx = n.x * scale + ox;
-            const ry = n.y * scale + oy;
-            const rw = Math.max(2, n.w * scale);
-            const rh = Math.max(1, n.h * scale);
-            ctx.fillRect(rx, ry, rw, rh);
-        }
-    }
-
-    updateViewport() {
-        const graph = this._graph;
-        const vp = this._viewport;
-        if (!vp || this._minimapScale === undefined) {
-            return;
-        }
-        const container = graph._containerElement;
-        if (!container) {
-            return;
-        }
-        const zoom = graph._zoom;
-        const scale = this._minimapScale;
-        const ox = this._minimapOx;
-        const oy = this._minimapOy;
-        const scrollX = container.scrollLeft / zoom;
-        const scrollY = container.scrollTop / zoom;
-        const vw = container.clientWidth / zoom;
-        const vh = container.clientHeight / zoom;
-        const left = scrollX * scale + ox;
-        const top = scrollY * scale + oy;
-        const width = vw * scale;
-        const height = vh * scale;
-        const W = this._canvas ? this._canvas.width : 192;
-        const H = this._canvas ? this._canvas.height : 128;
-        vp.style.left = `${Math.max(0, left)}px`;
-        vp.style.top = `${Math.max(0, top)}px`;
-        vp.style.width = `${Math.min(width, W - Math.max(0, left))}px`;
-        vp.style.height = `${Math.min(height, H - Math.max(0, top))}px`;
-    }
-
-    _navigateTo(e) {
-        const graph = this._graph;
-        const canvas = this._canvas;
-        if (!canvas || this._minimapScale === undefined) {
-            return;
-        }
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        const gx = (mx - this._minimapOx) / this._minimapScale;
-        const gy = (my - this._minimapOy) / this._minimapScale;
-        const container = graph._containerElement;
-        if (!container) {
-            return;
-        }
-        const zoom = graph._zoom;
-        const left = gx * zoom - container.clientWidth / 2;
-        const top = gy * zoom - container.clientHeight / 2;
-        container.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: 'smooth' });
-    }
-
-    detach() {
-        if (this._element && this._element.parentNode) {
-            this._element.parentNode.removeChild(this._element);
-        }
-        this._element = null;
-        this._canvas = null;
-        this._viewport = null;
     }
 };
 
