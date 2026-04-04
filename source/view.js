@@ -3125,7 +3125,7 @@ view.Minimap = class {
         const H = canvas.height;
         ctx.clearRect(0, 0, W, H);
         const nodes = [];
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let maxX = -Infinity, maxY = -Infinity, minX = Infinity, minY = Infinity;
         for (const obj of graph._table.values()) {
             if (typeof obj.x === 'number' && typeof obj.y === 'number' && obj.width && obj.height) {
                 const x = obj.x - obj.width / 2;
@@ -3283,8 +3283,8 @@ view.Tooltip = class {
 
     _position(el, x, y) {
         const margin = 14;
-        const vw = (typeof window !== 'undefined' ? window.innerWidth : 1200);
-        const vh = (typeof window !== 'undefined' ? window.innerHeight : 800);
+        const vw = (typeof window === 'undefined' ? 1200 : window.innerWidth);
+        const vh = (typeof window === 'undefined' ? 800 : window.innerHeight);
         el.style.left = '0px';
         el.style.top = '0px';
         const w = el.offsetWidth || 180;
