@@ -2106,6 +2106,39 @@ grapher.Edge = class {
             const points = edge.points.slice(1, edge.points.length - 1);
             points.unshift(intersectRect(tail, points[0]));
             points.push(intersectRect(head, points[points.length - 1]));
+            if (points.length < 2) {
+                return '';
+            }
+            const p0 = points[0];
+            const pN = points[points.length - 1];
+            const dx = pN.x - p0.x;
+            const dy = pN.y - p0.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (points.length <= 3) {
+                // For simple edges (2–3 waypoints) use a clean cubic bezier whose
+                // control points extend in the primary flow direction.  This produces
+                // smooth, organic S-curves that follow the natural top-to-bottom or
+                // left-to-right flow of the graph without any B-spline artefacts.
+                const tension = Math.min(dist * 0.45, 120);
+                const isVertical = Math.abs(dy) >= Math.abs(dx);
+                let cx1, cy1, cx2, cy2;
+                if (isVertical) {
+                    const sign = dy >= 0 ? 1 : -1;
+                    cx1 = p0.x;
+                    cy1 = p0.y + sign * tension;
+                    cx2 = pN.x;
+                    cy2 = pN.y - sign * tension;
+                } else {
+                    const sign = dx >= 0 ? 1 : -1;
+                    cx1 = p0.x + sign * tension;
+                    cy1 = p0.y;
+                    cx2 = pN.x - sign * tension;
+                    cy2 = pN.y;
+                }
+                return `M${p0.x},${p0.y}C${cx1},${cy1},${cx2},${cy2},${pN.x},${pN.y}`;
+            }
+            // For complex routed edges with 4+ waypoints (e.g. Dagre detour paths)
+            // fall back to the smooth B-spline interpolation.
             return new grapher.Edge.Curve(points).path.data;
         };
         const edgePath = curvePath(this, this.from, this.to);
