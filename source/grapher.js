@@ -970,7 +970,11 @@ grapher.Graph = class {
         let boundsMaxX = -Infinity;
         let boundsMaxY = -Infinity;
         for (const node of nodes) {
-            const label = this.node(node.v).label;
+            const entry = this.node(node.v);
+            if (!entry) {
+                continue; // skip Dagre dummy nodes
+            }
+            const label = entry.label;
             label.x = node.x;
             label.y = node.y;
             if (this.children(node.v).length) {
@@ -986,7 +990,11 @@ grapher.Graph = class {
         }
         this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const edge of edges) {
-            const label = this.edge(edge.v, edge.w).label;
+            const edgeEntry = this.edge(edge.v, edge.w);
+            if (!edgeEntry) {
+                continue; // skip Dagre dummy edges
+            }
+            const label = edgeEntry.label;
             label.points = edge.points;
             if ('x' in edge) {
                 label.x = edge.x;
@@ -2134,9 +2142,16 @@ grapher.Edge = class {
             return { x: x + w, y: y + (dx === 0 ? 0 : w * dy / dx) };
         };
         const curvePath = (edge, tail, head) => {
+            if (!edge.points || edge.points.length < 2) {
+                return '';
+            }
+            // For a 2-point edge slice(1, 1) produces an empty array, so
+            // fall back to the opposite endpoint as the direction reference.
             const points = edge.points.slice(1, edge.points.length - 1);
-            points.unshift(intersectRect(tail, points[0]));
-            points.push(intersectRect(head, points[points.length - 1]));
+            const tailRef = points.length > 0 ? points[0] : edge.points[edge.points.length - 1];
+            const headRef = points.length > 0 ? points[points.length - 1] : edge.points[0];
+            points.unshift(intersectRect(tail, tailRef));
+            points.push(intersectRect(head, headRef));
             if (points.length < 2) {
                 return '';
             }
