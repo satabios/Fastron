@@ -1,4 +1,3 @@
-
 import { getTextLayoutService } from './text-layout-service.js';
 
 const grapher = {};
@@ -1185,6 +1184,9 @@ grapher.Graph = class {
             primary += maxSpan + rankSep;
         }
 
+        // --- Orthogonal edge waypoints ---
+        // Generate 2-point (straight) or 4-point (L-shaped) orthogonal routes.
+        // The curvePath renderer in Edge.update() adds 4px rounded corners at bends.
         for (const edge of edges) {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
@@ -1193,25 +1195,36 @@ grapher.Graph = class {
             }
             const mx = (source.x + target.x) / 2;
             const my = (source.y + target.y) / 2;
-            // Generate 5 waypoints along the edge with slight perpendicular
-            // offsets at the 1/4 and 3/4 marks.  This gives the B-spline curve
-            // in Edge.Curve smooth curvature instead of a rigid straight line,
-            // while keeping labels centred at the midpoint.
-            const dx = target.x - source.x;
-            const dy = target.y - source.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            // Perpendicular unit vector
-            const px = -dy / len;
-            const py = dx / len;
-            // Offset proportional to edge length (capped for very long edges)
-            const off = Math.min(len * 0.08, 20);
-            edge.points = [
-                { x: source.x, y: source.y },
-                { x: source.x + dx * 0.25 + px * off, y: source.y + dy * 0.25 + py * off },
-                { x: mx, y: my },
-                { x: source.x + dx * 0.75 - px * off, y: source.y + dy * 0.75 - py * off },
-                { x: target.x, y: target.y }
-            ];
+            if (rotate) {
+                // LR layout: horizontal flow — jog vertically at midpoint X
+                if (Math.abs(source.y - target.y) < 1) {
+                    edge.points = [
+                        { x: source.x, y: source.y },
+                        { x: target.x, y: target.y }
+                    ];
+                } else {
+                    edge.points = [
+                        { x: source.x, y: source.y },
+                        { x: mx, y: source.y },
+                        { x: mx, y: target.y },
+                        { x: target.x, y: target.y }
+                    ];
+                }
+            } else if (Math.abs(source.x - target.x) < 1) {
+                // TB layout: vertical flow — straight line
+                edge.points = [
+                    { x: source.x, y: source.y },
+                    { x: target.x, y: target.y }
+                ];
+            } else {
+                // TB layout: vertical flow — jog horizontally at midpoint Y
+                edge.points = [
+                    { x: source.x, y: source.y },
+                    { x: source.x, y: my },
+                    { x: target.x, y: my },
+                    { x: target.x, y: target.y }
+                ];
+            }
             if (edge.width || edge.height) {
                 edge.x = mx;
                 edge.y = my;
@@ -1436,11 +1449,9 @@ grapher.Graph = class {
             node.y += margin - minY;
         }
 
-        // --- Generate edge waypoints ---
-        // Five points with slight perpendicular offsets give the B-spline curve
-        // in grapher.Edge.Curve smooth curvature instead of a rigid straight line.
-        // grapher.Edge.update() then trims the path to the node boundaries via
-        // intersectRect(), so the arrowhead lands exactly on the node edge.
+        // --- Orthogonal edge waypoints ---
+        // Generate 2-point (straight) or 4-point (L-shaped) orthogonal routes.
+        // The curvePath renderer in Edge.update() adds 4px rounded corners at bends.
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
@@ -1451,17 +1462,37 @@ grapher.Graph = class {
             const my = (src.y + tgt.y) / 2;
             const dx = tgt.x - src.x;
             const dy = tgt.y - src.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            const px = -dy / len;
-            const py = dx / len;
-            const off = Math.min(len * 0.08, 20);
-            edge.points = [
-                { x: src.x, y: src.y },
-                { x: src.x + dx * 0.25 + px * off, y: src.y + dy * 0.25 + py * off },
-                { x: mx, y: my },
-                { x: src.x + dx * 0.75 - px * off, y: src.y + dy * 0.75 - py * off },
-                { x: tgt.x, y: tgt.y }
-            ];
+            // Choose primary routing axis based on dominant direction
+            if (Math.abs(dy) >= Math.abs(dx)) {
+                // Predominantly vertical: jog horizontally at midpoint Y
+                if (Math.abs(dx) < 1) {
+                    edge.points = [
+                        { x: src.x, y: src.y },
+                        { x: tgt.x, y: tgt.y }
+                    ];
+                } else {
+                    edge.points = [
+                        { x: src.x, y: src.y },
+                        { x: src.x, y: my },
+                        { x: tgt.x, y: my },
+                        { x: tgt.x, y: tgt.y }
+                    ];
+                }
+            } else if (Math.abs(dy) < 1) {
+                // Predominantly horizontal: straight line
+                edge.points = [
+                    { x: src.x, y: src.y },
+                    { x: tgt.x, y: tgt.y }
+                ];
+            } else {
+                // Predominantly horizontal: jog vertically at midpoint X
+                edge.points = [
+                    { x: src.x, y: src.y },
+                    { x: mx, y: src.y },
+                    { x: mx, y: tgt.y },
+                    { x: tgt.x, y: tgt.y }
+                ];
+            }
             if (edge.width || edge.height) {
                 edge.x = mx;
                 edge.y = my;
@@ -2109,30 +2140,30 @@ grapher.Edge = class {
             if (points.length < 2) {
                 return '';
             }
-            const p0 = points[0];
-            const pN = points[points.length - 1];
-            const dx = pN.x - p0.x;
-            const dy = pN.y - p0.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (points.length <= 3) {
-                // For simple edges (2–3 waypoints) use a clean cubic bezier whose
-                // control points extend in the primary flow direction.  This produces
-                // smooth, organic S-curves that follow the natural top-to-bottom or
-                // left-to-right flow of the graph without any B-spline artefacts.
-                const tension = Math.min(dist * 0.25, 60);
-                const isVertical = Math.abs(dy) >= Math.abs(dx);
-                const signV = dy >= 0 ? 1 : -1;
-                const signH = dx >= 0 ? 1 : -1;
-                const sign = isVertical ? signV : signH;
-                const cx1 = isVertical ? p0.x : p0.x + sign * tension;
-                const cx2 = isVertical ? pN.x : pN.x - sign * tension;
-                const cy1 = isVertical ? p0.y + sign * tension : p0.y;
-                const cy2 = isVertical ? pN.y - sign * tension : pN.y;
-                return `M${p0.x},${p0.y}C${cx1},${cy1},${cx2},${cy2},${pN.x},${pN.y}`;
+            if (points.length === 2) {
+                return `M${points[0].x},${points[0].y}L${points[1].x},${points[1].y}`;
             }
-            // For complex routed edges with 4+ waypoints (e.g. Dagre detour paths)
-            // fall back to the smooth B-spline interpolation.
-            return new grapher.Edge.Curve(points).path.data;
+            const r = 4;
+            let d = `M${points[0].x},${points[0].y}`;
+            for (let i = 1; i < points.length - 1; i++) {
+                const prev = points[i - 1];
+                const curr = points[i];
+                const next = points[i + 1];
+                const dx1 = curr.x - prev.x;
+                const dy1 = curr.y - prev.y;
+                const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) || 1;
+                const dx2 = next.x - curr.x;
+                const dy2 = next.y - curr.y;
+                const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
+                const radius = Math.min(r, len1 / 2, len2 / 2);
+                const bx = curr.x - (dx1 / len1) * radius;
+                const by = curr.y - (dy1 / len1) * radius;
+                const ax = curr.x + (dx2 / len2) * radius;
+                const ay = curr.y + (dy2 / len2) * radius;
+                d += `L${bx},${by}Q${curr.x},${curr.y} ${ax},${ay}`;
+            }
+            d += `L${points[points.length - 1].x},${points[points.length - 1].y}`;
+            return d;
         };
         const edgePath = curvePath(this, this.from, this.to);
         this.element.setAttribute('d', edgePath);
@@ -2203,138 +2234,13 @@ grapher.Edge = class {
     }
 };
 
-grapher.Edge.Curve = class {
-
-    constructor(points) {
-        this._path = new grapher.Edge.Path();
-        this._x0 = NaN;
-        this._x1 = NaN;
-        this._y0 = NaN;
-        this._y1 = NaN;
-        this._state = 0;
-        for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            this.point(point.x, point.y);
-            if (i === points.length - 1) {
-                switch (this._state) {
-                    case 3:
-                        this.curve(this._x1, this._y1);
-                        this._path.lineTo(this._x1, this._y1);
-                        break;
-                    case 2:
-                        this._path.lineTo(this._x1, this._y1);
-                        break;
-                    default:
-                        break;
-                }
-                if (this._line || (this._line !== 0 && this._point === 1)) {
-                    this._path.closePath();
-                }
-                this._line = 1 - this._line;
-            }
-        }
-    }
-
-    get path() {
-        return this._path;
-    }
-
-    point(x, y) {
-        x = Number(x);
-        y = Number(y);
-        switch (this._state) {
-            case 0:
-                this._state = 1;
-                if (this._line) {
-                    this._path.lineTo(x, y);
-                } else {
-                    this._path.moveTo(x, y);
-                }
-                break;
-            case 1:
-                this._state = 2;
-                break;
-            case 2:
-                this._state = 3;
-                this._path.lineTo((5 * this._x0 + this._x1) / 6, (5 * this._y0 + this._y1) / 6);
-                this.curve(x, y);
-                break;
-            default:
-                this.curve(x, y);
-                break;
-        }
-        this._x0 = this._x1;
-        this._x1 = x;
-        this._y0 = this._y1;
-        this._y1 = y;
-    }
-
-    curve(x, y) {
-        this._path.bezierCurveTo(
-            (2 * this._x0 + this._x1) / 3,
-            (2 * this._y0 + this._y1) / 3,
-            (this._x0 + 2 * this._x1) / 3,
-            (this._y0 + 2 * this._y1) / 3,
-            (this._x0 + 4 * this._x1 + x) / 6,
-            (this._y0 + 4 * this._y1 + y) / 6
-        );
-    }
-};
-
-grapher.Edge.Path = class {
-
-    constructor() {
-        this._x0 = null;
-        this._y0 = null;
-        this._x1 = null;
-        this._y1 = null;
-        this._data = '';
-    }
-
-    moveTo(x, y) {
-        this._x0 = x;
-        this._x1 = x;
-        this._y0 = y;
-        this._y1 = y;
-        this._data += `M${x},${y}`;
-    }
-
-    lineTo(x, y) {
-        this._x1 = x;
-        this._y1 = y;
-        this._data += `L${x},${y}`;
-    }
-
-    bezierCurveTo(x1, y1, x2, y2, x, y) {
-        this._x1 = x;
-        this._y1 = y;
-        this._data += `C${x1},${y1},${x2},${y2},${x},${y}`;
-    }
-
-    closePath() {
-        if (this._x1 !== null) {
-            this._x1 = this._x0;
-            this._y1 = this._y0;
-            this._data += "Z";
-        }
-    }
-
-    get data() {
-        return this._data;
-    }
-};
-
 grapher.TileManager = class {
 
     constructor(tileSize = 300) {
         this._tileSize = tileSize;
-        // Integer-keyed tile map: key = (tileX + 0x8000) | ((tileY + 0x8000) << 16)
-        // Avoids string allocation on every addNode/addEdge/queryViewport call.
-        // Supports tile coordinates in the range [-32768, 32767] which covers
-        // graphs up to ~9.8 million pixels wide/tall at the default 300px tile size.
-        this._tiles = new Map(); // intKey -> { nodes: Set, edges: Set }
-        this._nodeTiles = new Map(); // nodeKey -> Set of int tile keys
-        this._edgeTiles = new Map(); // edgeKey -> Set of int tile keys
+        this._tiles = new Map();
+        this._nodeTiles = new Map();
+        this._edgeTiles = new Map();
         this._bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
@@ -2346,8 +2252,6 @@ grapher.TileManager = class {
     }
 
     _getTileKey(tileX, tileY) {
-        // Pack two signed 16-bit integers into one 32-bit integer key.
-        // Bias by 0x8000 so negative coordinates map to positive integers.
         return ((tileX + 0x8000) & 0xFFFF) | (((tileY + 0x8000) & 0xFFFF) << 16);
     }
 
@@ -2366,19 +2270,13 @@ grapher.TileManager = class {
     }
 
     addNode(nodeKey, bounds) {
-        // bounds: { x, y, width, height }
         const { x, y, width, height } = bounds;
-
-        // Update global bounds
         this._bounds.minX = Math.min(this._bounds.minX, x);
         this._bounds.minY = Math.min(this._bounds.minY, y);
         this._bounds.maxX = Math.max(this._bounds.maxX, x + width);
         this._bounds.maxY = Math.max(this._bounds.maxY, y + height);
-
-        // Calculate which tiles this node overlaps
         const topLeft = this._getTileCoords(x, y);
         const bottomRight = this._getTileCoords(x + width, y + height);
-
         const tileset = new Set();
         for (let tileX = topLeft.tileX; tileX <= bottomRight.tileX; tileX++) {
             for (let tileY = topLeft.tileY; tileY <= bottomRight.tileY; tileY++) {
@@ -2391,14 +2289,10 @@ grapher.TileManager = class {
     }
 
     addEdge(edgeKey, points) {
-        // points: array of {x, y} coordinates for edge path
         if (!points || points.length === 0) {
             return;
         }
-
         const tileset = new Set();
-
-        // For each line segment in the edge path
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
             const { tileX, tileY } = this._getTileCoords(point.x, point.y);
@@ -2406,21 +2300,15 @@ grapher.TileManager = class {
             this._ensureTile(tileKey).edges.add(edgeKey);
             tileset.add(tileKey);
         }
-
         this._edgeTiles.set(edgeKey, tileset);
     }
 
     queryViewport(viewportBounds, bufferTiles = 1) {
-        // viewportBounds: { x, y, width, height }
         const { x, y, width, height } = viewportBounds;
-
         const topLeft = this._getTileCoords(x, y);
         const bottomRight = this._getTileCoords(x + width, y + height);
-
         const visibleNodes = new Set();
         const visibleEdges = new Set();
-
-        // Query tiles within viewport plus buffer
         for (let tileX = topLeft.tileX - bufferTiles; tileX <= bottomRight.tileX + bufferTiles; tileX++) {
             for (let tileY = topLeft.tileY - bufferTiles; tileY <= bottomRight.tileY + bufferTiles; tileY++) {
                 const tileKey = this._getTileKey(tileX, tileY);
@@ -2431,7 +2319,6 @@ grapher.TileManager = class {
                 }
             }
         }
-
         return { nodes: visibleNodes, edges: visibleEdges };
     }
 
@@ -2466,29 +2353,22 @@ grapher.ViewportObserver = class {
         this._debounceMs = debounceMs;
         this._debounceTimer = null;
         this._lastViewport = null;
-        this._threshold = 50; // pixels - minimum movement to trigger update
+        this._threshold = 50;
         this._rafId = null;
     }
 
     observe(viewport) {
-        // viewport: { x, y, width, height, zoom }
-
-        // Check if viewport changed significantly
         if (this._lastViewport) {
             const dx = Math.abs(viewport.x - this._lastViewport.x);
             const dy = Math.abs(viewport.y - this._lastViewport.y);
             const dw = Math.abs(viewport.width - this._lastViewport.width);
             const dh = Math.abs(viewport.height - this._lastViewport.height);
             const dz = Math.abs(viewport.zoom - this._lastViewport.zoom);
-
-            // Skip if change is below threshold
             if (dx < this._threshold && dy < this._threshold &&
                 dw < this._threshold && dh < this._threshold && dz < 0.01) {
                 return;
             }
         }
-
-        // Cancel existing timers
         if (this._debounceTimer) {
             clearTimeout(this._debounceTimer);
         }
@@ -2498,8 +2378,6 @@ grapher.ViewportObserver = class {
             }
             this._rafId = null;
         }
-
-        // Debounce the callback
         this._debounceTimer = setTimeout(() => {
             if (typeof requestAnimationFrame === 'undefined') {
                 this._lastViewport = { ...viewport };
