@@ -112,36 +112,6 @@
 .node.search-match path,
 .node.search-match rect.node-border { stroke: #2563eb !important; stroke-width: 2.5px !important; }
 
-/* ─── Minimap ───────────────────────────────────────────────────────────────── */
-#minimap {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 192px;
-    height: 128px;
-    background: rgba(255,255,255,0.94);
-    border: 1px solid #d1d5db;
-    border-radius: 10px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.13);
-    overflow: hidden;
-    z-index: 200;
-    cursor: crosshair;
-    display: none;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    transition: opacity 0.2s ease;
-}
-#minimap.minimap-visible { display: block; }
-#minimap canvas { display: block; width: 100%; height: 100%; }
-#minimap-viewport {
-    position: absolute;
-    border: 1.5px solid #2563eb;
-    background: rgba(37,99,235,0.07);
-    border-radius: 2px;
-    pointer-events: none;
-    box-sizing: border-box;
-}
-
 /* ─── Graph hover tooltip ───────────────────────────────────────────────────── */
 #graph-tooltip {
     position: fixed;

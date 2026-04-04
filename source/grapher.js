@@ -2119,7 +2119,7 @@ grapher.Edge = class {
                 // control points extend in the primary flow direction.  This produces
                 // smooth, organic S-curves that follow the natural top-to-bottom or
                 // left-to-right flow of the graph without any B-spline artefacts.
-                const tension = Math.min(dist * 0.45, 120);
+                const tension = Math.min(dist * 0.25, 60);
                 const isVertical = Math.abs(dy) >= Math.abs(dx);
                 const signV = dy >= 0 ? 1 : -1;
                 const signH = dx >= 0 ? 1 : -1;
