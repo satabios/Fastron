@@ -1,7 +1,6 @@
 
 import * as base from './base.js';
 import * as grapher from './grapher.js';
-import { getTextLayoutService } from './text-layout-service.js';
 
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
@@ -30,12 +29,7 @@ if (typeof window !== 'undefined') {
         gpuArchitecture: '',              // GPU architecture (WebGPU only)
         gpuLabel: '',                     // Human-readable label for About panel
         cudaAvailable: false,             // NVIDIA GPU detected (CUDA via WebGPU/WebGL)
-        adrenoAvailable: false,           // Qualcomm Adreno GPU detected
-        textLayoutEngine: 'legacy',       // legacy|shadow|pretext
-        textLayoutStrictParity: true,     // Fallback to legacy if pretext diverges too much
-        textLayoutShadowSampleRate: 0.05, // Fraction of shadow measurements to compare/log
-        textLayoutShadowLog: false,       // Emit shadow mismatch logs when enabled
-        textLayoutShadowLogThresholdPx: 4 // Log only mismatches above this threshold
+        adrenoAvailable: false            // Qualcomm Adreno GPU detected
     };
     window.NETRON_CONFIG = { ...defaults, ...(window.NETRON_CONFIG || {}) };
 }
@@ -44,15 +38,6 @@ const view = {};
 const markdown = {};
 const metadata = {};
 const metrics = {};
-
-view._textLayout = getTextLayoutService();
-view._textFontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Droid Sans", sans-serif';
-view._textFonts = {
-    sidebar: `11px ${view._textFontFamily}`,
-    sidebarCode: '12px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace',
-    documentation: `13px ${view._textFontFamily}`,
-    documentationCode: '12px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace'
-};
 
 view.View = class {
 
@@ -574,11 +559,6 @@ view.View = class {
                             this._target.scrollToSelection(nodeSelection, value.node);
                         }
                     }
-                }
-            });
-            sidebar.on('highlight', (sender, values) => {
-                if (this._target) {
-                    this._target.highlight(values);
                 }
             });
             this._sidebar.open(sidebar, 'Find');
@@ -1330,34 +1310,17 @@ view.View = class {
 
     about() {
         this._host.document.getElementById('version').innerText = this._host.version;
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
         // Show GPU info in the about panel
         const gpuElement = this._host.document.getElementById('gpu-info');
         const gpuRow = this._host.document.getElementById('gpu-info-row');
         if (gpuElement && gpuRow) {
+            const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
             if (config && config.gpuLabel) {
                 gpuElement.innerText = config.gpuLabel;
                 gpuRow.style.display = '';
             } else {
                 gpuRow.style.display = 'none';
             }
-        }
-        const textLayoutElement = this._host.document.getElementById('text-layout-info');
-        const textLayoutRow = this._host.document.getElementById('text-layout-info-row');
-        if (textLayoutElement && textLayoutRow) {
-            const mode = view._textLayout.mode();
-            const stats = view._textLayout.getShadowStats();
-            const fragments = [mode];
-            if (mode === 'pretext' && config) {
-                fragments.push(config.textLayoutStrictParity === false ? 'strict-parity:off' : 'strict-parity:on');
-            }
-            if (mode === 'shadow' && stats.count > 0) {
-                fragments.push(`samples:${stats.count}`);
-                fragments.push(`meanΔ:${stats.meanDelta}px`);
-                fragments.push(`maxΔ:${stats.maxDelta}px`);
-            }
-            textLayoutElement.innerText = fragments.join(' ');
-            textLayoutRow.style.display = '';
         }
         const handler = () => {
             this._host.window.removeEventListener('keydown', handler);
@@ -2245,39 +2208,6 @@ view.Graph = class extends grapher.Graph {
             value.build();
         }
         super.build(document, origin);
-        // Build element→value reverse map for tooltip delegation
-        this._elementMap = new WeakMap();
-        for (const [key, obj] of this._table) {
-            if (obj && obj.element) {
-                this._elementMap.set(obj.element, key);
-            }
-        }
-        // Tooltip event delegation on the SVG canvas
-        const _tooltip = view.Graph._sharedTooltip || (view.Graph._sharedTooltip = new view.Tooltip());
-        let _hoveredNode = null;
-        canvas.addEventListener('pointerover', (e) => {
-            const nodeEl = e.target && e.target.closest ? e.target.closest('.graph-node, .graph-input, .graph-output') : null;
-            if (nodeEl !== _hoveredNode) {
-                _hoveredNode = nodeEl;
-                if (nodeEl && this._elementMap && this._elementMap.has(nodeEl)) {
-                    const val = this._elementMap.get(nodeEl);
-                    if (val && val.type) {
-                        _tooltip.show(document, val, e.clientX, e.clientY);
-                    } else {
-                        _tooltip.hide();
-                    }
-                } else {
-                    _tooltip.hide();
-                }
-            }
-        });
-        canvas.addEventListener('pointermove', (e) => {
-            _tooltip.move(e.clientX, e.clientY);
-        });
-        canvas.addEventListener('pointerleave', () => {
-            _hoveredNode = null;
-            _tooltip.hide();
-        });
     }
 
     async measure() {
@@ -2391,30 +2321,6 @@ view.Graph = class extends grapher.Graph {
         }
     }
 
-    highlight(values) {
-        // Clear previous search-match highlights
-        if (this._highlighted) {
-            for (const el of this._highlighted) {
-                el.classList.remove('search-match');
-            }
-            this._highlighted.clear();
-        } else {
-            this._highlighted = new Set();
-        }
-        if (!values || values.length === 0) {
-            return;
-        }
-        for (const value of values) {
-            if (this._table.has(value)) {
-                const node = this._table.get(value);
-                if (node && node.element) {
-                    node.element.classList.add('search-match');
-                    this._highlighted.add(node.element);
-                }
-            }
-        }
-    }
-
     restore(state) {
         const canvas = this._canvasElement;
         const origin = this._originElement;
@@ -2496,7 +2402,6 @@ view.Graph = class extends grapher.Graph {
                 this._onViewportChange(viewport);
             }, 100);
         }
-
     }
 
     register() {
@@ -2605,28 +2510,6 @@ view.Graph = class extends grapher.Graph {
         container.scrollLeft = this._scrollLeft;
         container.scrollTop = this._scrollTop;
         this._zoom = zoom;
-
-        // Level-of-detail culling: toggle CSS classes on the SVG canvas at low zoom
-        if (this._canvasElement && this._canvasElement.classList) {
-            const cl = this._canvasElement.classList;
-            if (typeof cl.add === 'function' && typeof cl.remove === 'function') {
-                if (zoom < 0.35) {
-                    cl.add('lod-hide-labels');
-                } else {
-                    cl.remove('lod-hide-labels');
-                }
-                if (zoom < 0.20) {
-                    cl.add('lod-hide-args');
-                } else {
-                    cl.remove('lod-hide-args');
-                }
-                if (zoom < 0.08) {
-                    cl.add('lod-hide-edges');
-                } else {
-                    cl.remove('lod-hide-edges');
-                }
-            }
-        }
 
         // Trigger viewport observer on zoom
         if (this._viewportObserver) {
@@ -2870,49 +2753,6 @@ view.Graph = class extends grapher.Graph {
             };
         }
         if (element && Array.isArray(element._edges)) {
-            // For connectors, prefer using the source node's position as the
-            // primary anchor rather than the bounding box of all edge points.
-            // A connector like encoder_hidden_states may fan out to many nodes,
-            // and the centroid of all edge points lands nowhere near the visual
-            // connector.  The source (from) node is where the connector
-            // originates and is the most useful navigation target.
-            if (element.from && typeof element.from.x === 'number' && typeof element.from.y === 'number') {
-                const w = element.from.width || 0;
-                const h = element.from.height || 0;
-                return {
-                    x: element.from.x - (w / 2),
-                    y: element.from.y - (h / 2),
-                    width: w,
-                    height: h
-                };
-            }
-            // If no source node, try the first target node.
-            if (Array.isArray(element.to) && element.to.length > 0) {
-                const first = element.to[0];
-                if (first && typeof first.x === 'number' && typeof first.y === 'number') {
-                    const w = first.width || 0;
-                    const h = first.height || 0;
-                    return {
-                        x: first.x - (w / 2),
-                        y: first.y - (h / 2),
-                        width: w,
-                        height: h
-                    };
-                }
-            }
-            // Fallback: compute centroid from the first edge's midpoint rather
-            // than the bounding box of ALL edges, which can be enormous.
-            if (element._edges.length > 0) {
-                const firstEdge = element._edges[0];
-                const points = firstEdge && firstEdge.label ? firstEdge.label.points : null;
-                if (Array.isArray(points) && points.length > 0) {
-                    const mid = points[Math.floor(points.length / 2)];
-                    if (mid && typeof mid.x === 'number' && typeof mid.y === 'number') {
-                        return { x: mid.x, y: mid.y, width: 0, height: 0 };
-                    }
-                }
-            }
-            // Last resort: bounding box of all edge points.
             let left = Number.POSITIVE_INFINITY;
             let right = Number.NEGATIVE_INFINITY;
             let top = Number.POSITIVE_INFINITY;
@@ -2945,14 +2785,7 @@ view.Graph = class extends grapher.Graph {
         if (!container || !origin) {
             return;
         }
-        // Use the same cached origin translate that _getViewportBounds uses,
-        // ensuring the coordinate transform is consistent.  Falling back to
-        // _getOriginTranslate only if the cache hasn't been populated yet.
-        if (!this._originTranslate) {
-            const t = this._getOriginTranslate(origin);
-            this._originTranslate = t;
-        }
-        const translate = this._originTranslate;
+        const translate = this._getOriginTranslate(origin);
         const centerX = bounds.x + (bounds.width / 2) + translate.x;
         const centerY = bounds.y + (bounds.height / 2) + translate.y;
         const left = (centerX * this._zoom) - (container.clientWidth / 2);
@@ -3064,93 +2897,6 @@ view.Graph = class extends grapher.Graph {
             }
             container.scrollBy(options);
         }
-    }
-};
-
-view.Tooltip = class {
-
-    constructor() {
-        this._element = null;
-        this._hideTimer = null;
-    }
-
-    show(doc, node, x, y) {
-        if (!this._element) {
-            const el = doc.createElement('div');
-            el.id = 'graph-tooltip';
-            doc.body.appendChild(el);
-            this._element = el;
-        }
-        if (this._hideTimer) {
-            clearTimeout(this._hideTimer);
-            this._hideTimer = null;
-        }
-        const el = this._element;
-        const type = node.type;
-        const typeName = type ? (type.name || '') : '';
-        const category = type ? (type.category || '') : '';
-        const nodeName = node.name || node.identifier || '';
-        const inputs = Array.isArray(node.inputs) ? node.inputs.length : 0;
-        const outputs = Array.isArray(node.outputs) ? node.outputs.length : 0;
-        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        let html = `<div class="tooltip-type">${esc(typeName)}</div>`;
-        const meta = [];
-        if (category) {
-            meta.push(esc(category));
-        }
-        if (nodeName) {
-            meta.push(esc(nodeName));
-        }
-        meta.push(`In: ${inputs} · Out: ${outputs}`);
-        html += `<div class="tooltip-meta">${meta.join(' · ')}</div>`;
-        el.innerHTML = html;
-        this._position(el, x, y);
-        el.classList.add('tooltip-visible');
-    }
-
-    move(x, y) {
-        if (this._element && this._element.classList.contains('tooltip-visible')) {
-            this._position(this._element, x, y);
-        }
-    }
-
-    hide() {
-        if (this._hideTimer) {
-            return;
-        }
-        this._hideTimer = setTimeout(() => {
-            if (this._element) {
-                this._element.classList.remove('tooltip-visible');
-            }
-            this._hideTimer = null;
-        }, 100);
-    }
-
-    _position(el, x, y) {
-        const margin = 14;
-        const vw = (typeof window === 'undefined' ? 1200 : window.innerWidth);
-        const vh = (typeof window === 'undefined' ? 800 : window.innerHeight);
-        el.style.left = '0px';
-        el.style.top = '0px';
-        const w = el.offsetWidth || 180;
-        const h = el.offsetHeight || 60;
-        let left = x + margin;
-        let top = y + margin;
-        if (left + w > vw - margin) {
-            left = x - w - margin;
-        }
-        if (top + h > vh - margin) {
-            top = y - h - margin;
-        }
-        el.style.left = `${Math.max(margin, left)}px`;
-        el.style.top = `${Math.max(margin, top)}px`;
-    }
-
-    detach() {
-        if (this._element && this._element.parentNode) {
-            this._element.parentNode.removeChild(this._element);
-        }
-        this._element = null;
     }
 };
 
@@ -3732,57 +3478,6 @@ view.Control = class {
         return element;
     }
 
-    _measureText(text, options = {}) {
-        try {
-            const content = text === null || text === undefined ? '' : `${text}`;
-            return view._textLayout.measureTextElement(null, {
-                text: content,
-                font: options.font || view._textFonts.sidebar,
-                lineHeight: options.lineHeight,
-                whiteSpace: options.whiteSpace || 'normal'
-            });
-        } catch {
-            return null;
-        }
-    }
-
-    _annotateTextLayout(element, text, options = {}) {
-        if (!element || text === null || text === undefined) {
-            return null;
-        }
-        const content = typeof text === 'string' ? text : `${text}`;
-        if (content.length === 0) {
-            return null;
-        }
-        const maxMeasureLength = Number.isFinite(options.maxMeasureLength) ? Math.max(1, options.maxMeasureLength) : 4096;
-        const measureText = content.length > maxMeasureLength ? `${content.slice(0, maxMeasureLength)}\u2026` : content;
-        const metrics = this._measureText(measureText, options);
-        if (!metrics) {
-            return null;
-        }
-        if (element.dataset) {
-            if (Number.isFinite(metrics.width)) {
-                element.dataset.textWidth = `${Math.round(metrics.width)}`;
-            }
-            if (Number.isFinite(metrics.height)) {
-                element.dataset.textHeight = `${Math.round(metrics.height)}`;
-            }
-            if (typeof metrics.engine === 'string' && metrics.engine.length > 0) {
-                element.dataset.textEngine = metrics.engine;
-            }
-        }
-        const setTitle = options.setTitle !== false;
-        if (setTitle && !element.getAttribute('title') && Number.isFinite(metrics.width)) {
-            const threshold = Number.isFinite(options.titleThresholdPx) ? options.titleThresholdPx : 420;
-            if (metrics.width > threshold) {
-                const maxTitleLength = Number.isFinite(options.maxTitleLength) ? options.maxTitleLength : 512;
-                const title = content.length > maxTitleLength ? `${content.slice(0, Math.max(0, maxTitleLength - 1))}\u2026` : content;
-                element.setAttribute('title', title);
-            }
-        }
-        return metrics;
-    }
-
     on(event, callback) {
         this._events = this._events || {};
         this._events[event] = this._events[event] || [];
@@ -4138,37 +3833,30 @@ view.TextView = class extends view.Control {
         if (value !== null && value !== undefined) {
             const list = Array.isArray(value) ? value : [value];
             for (const item of list) {
-                const text = item === null || item === undefined ? '' : `${item}`;
                 const line = this.createElement('div', className);
                 switch (style) {
                     case 'code': {
                         const element = this.createElement('code');
-                        element.textContent = text;
+                        element.textContent = item;
                         line.appendChild(element);
                         break;
                     }
                     case 'bold': {
                         const element = this.createElement('b');
-                        element.textContent = text;
+                        element.textContent = item;
                         line.appendChild(element);
                         break;
                     }
                     case 'nowrap': {
-                        line.innerText = text;
+                        line.innerText = item;
                         line.style.whiteSpace = style;
                         break;
                     }
                     default: {
-                        line.innerText = text;
+                        line.innerText = item;
                         break;
                     }
                 }
-                this._annotateTextLayout(line, text, {
-                    font: style === 'code' ? view._textFonts.sidebarCode : view._textFonts.sidebar,
-                    whiteSpace: style === 'nowrap' ? 'normal' : 'pre-wrap',
-                    titleThresholdPx: style === 'nowrap' ? 280 : 420,
-                    maxTitleLength: 1024
-                });
                 this.element.appendChild(line);
                 className = 'sidebar-item-value-line-border';
             }
@@ -4309,21 +3997,14 @@ view.PrimitiveView = class extends view.Expander {
                     if (content && content.length > 1000) {
                         content = `${content.substring(0, 1000)}\u2026`;
                     }
-                    const text = typeof content === 'string' ? content : `${content}`;
                     if (content && typeof content === 'string') {
                         content = content.split('<').join('&lt;').split('>').join('&gt;');
                     }
-                    if (typeof content === 'string' && content.indexOf('\n') >= 0) {
+                    if (content.indexOf('\n') >= 0) {
                         content = content.split('\n').join('<br>');
                     }
                     const line = this.createElement('div', 'sidebar-item-value-line');
                     line.innerHTML = content ? content : '&nbsp;';
-                    this._annotateTextLayout(line, text, {
-                        font: view._textFonts.sidebar,
-                        whiteSpace: 'pre-wrap',
-                        titleThresholdPx: 360,
-                        maxTitleLength: 1024
-                    });
                     this.add(line);
                 }
             }
@@ -4356,11 +4037,6 @@ view.PrimitiveView = class extends view.Expander {
     _info(name, value) {
         const line = this.createElement('div');
         line.innerHTML = `<b>${name}:</b> ${value}`;
-        this._annotateTextLayout(line, `${name}: ${value}`, {
-            font: view._textFonts.sidebar,
-            whiteSpace: 'pre-wrap',
-            titleThresholdPx: 360
-        });
         this._add(line);
     }
 
@@ -4416,11 +4092,6 @@ view.ValueView = class extends view.Expander {
                 line.innerText = 'name: ';
                 line.appendChild(text);
                 element.appendChild(line);
-                this._annotateTextLayout(element, `name: ${name || ' '}`, {
-                    font: view._textFonts.sidebar,
-                    whiteSpace: 'normal',
-                    titleThresholdPx: 280
-                });
                 element.addEventListener('pointerenter', () => this.emit('focus', this._value));
                 element.addEventListener('pointerleave', () => this.emit('blur', this._value));
                 element.style.cursor = 'pointer';
@@ -4516,33 +4187,18 @@ view.ValueView = class extends view.Expander {
     _bold(name, value) {
         const line = this.createElement('div');
         line.innerHTML = `${name}: <b>${value}</b>`;
-        this._annotateTextLayout(line, `${name}: ${value}`, {
-            font: view._textFonts.sidebar,
-            whiteSpace: 'pre-wrap',
-            titleThresholdPx: 360
-        });
         this._add(line);
     }
 
     _code(name, value) {
         const line = this.createElement('div');
         line.innerHTML = `${name}: <code><b>${value}</b></code>`;
-        this._annotateTextLayout(line, `${name}: ${value}`, {
-            font: view._textFonts.sidebarCode,
-            whiteSpace: 'pre-wrap',
-            titleThresholdPx: 360
-        });
         this._add(line);
     }
 
     _info(name, value) {
         const line = this.createElement('div');
         line.innerHTML = `<b>${name}:</b> ${value}`;
-        this._annotateTextLayout(line, `${name}: ${value}`, {
-            font: view._textFonts.sidebar,
-            whiteSpace: 'pre-wrap',
-            titleThresholdPx: 360
-        });
         this._add(line);
     }
 
@@ -4605,7 +4261,7 @@ view.TensorView = class extends view.Expander {
                         this._tensor = new base.Tensor(value, { skipWeights: false });
                         this._renderTensorContent(value, this._tensor, content);
                     } catch (error) {
-                        this._setTensorText(content, `Error loading weights: ${error.message}`);
+                        content.innerHTML = `Error loading weights: ${error.message}`;
                     }
                 };
                 materialize();
@@ -4625,7 +4281,7 @@ view.TensorView = class extends view.Expander {
                     content.innerHTML = '';
                     content.appendChild(newContent);
                 } catch (error) {
-                    this._setTensorText(content, `Error loading weights: ${error.message}`);
+                    content.innerHTML = `Error loading weights: ${error.message}`;
                 }
             }, { once: true });
             return content;
@@ -4634,22 +4290,11 @@ view.TensorView = class extends view.Expander {
         // Check if weights are skipped (legacy path)
         if (tensor._skipWeights && skipWeights) {
             const metadataString = tensor.getMetadataString();
-            this._setTensorText(content, `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`);
+            content.innerHTML = `${metadataString}\n\nClick the weights toggle button in the toolbar to enable full weight loading.`;
             return content;
         }
 
         return this._renderTensorContent(value, tensor, content);
-    }
-
-    _setTensorText(content, text, options = {}) {
-        content.textContent = text;
-        this._annotateTextLayout(content, text, {
-            font: view._textFonts.sidebarCode,
-            whiteSpace: 'pre-wrap',
-            titleThresholdPx: Number.POSITIVE_INFINITY,
-            setTitle: false,
-            ...options
-        });
     }
 
     _renderTensorContent(value, tensor, content) {
@@ -4658,21 +4303,21 @@ view.TensorView = class extends view.Expander {
         }
 
         if (tensor.encoding !== '<' && tensor.encoding !== '>' && tensor.encoding !== '|') {
-            this._setTensorText(content, `Tensor encoding '${tensor.layout}' is not implemented.`);
+            content.innerHTML = `Tensor encoding '${tensor.layout}' is not implemented.`;
         } else if (tensor.layout && (tensor.layout !== 'sparse' && tensor.layout !== 'sparse.coo')) {
-            this._setTensorText(content, `Tensor layout '${tensor.layout}' is not implemented.`);
+            content.innerHTML = `Tensor layout '${tensor.layout}' is not implemented.`;
         } else if (tensor.type && tensor.type.dataType === '?') {
-            this._setTensorText(content, 'Tensor data type is not defined.');
+            content.innerHTML = 'Tensor data type is not defined.';
         } else if (tensor.type && !tensor.type.shape) {
-            this._setTensorText(content, 'Tensor shape is not defined.');
+            content.innerHTML = 'Tensor shape is not defined.';
         } else {
             content.innerHTML = '&#x23F3';
             const promise = value.peek && !value.peek() ? value.read() : Promise.resolve();
             promise.then(() => {
                 if (tensor.empty) {
-                    this._setTensorText(content, 'Tensor data is empty.');
+                    content.innerHTML = 'Tensor data is empty.';
                 } else {
-                    this._setTensorText(content, tensor.toString());
+                    content.innerHTML = tensor.toString();
                     if (this._host.save && value.type.shape && value.type.shape.dimensions && value.type.shape.dimensions.length > 0) {
                         this._saveButton = this.createElement('div', 'sidebar-item-value-button');
                         this._saveButton.classList.add('sidebar-item-value-button-context');
@@ -4685,7 +4330,7 @@ view.TensorView = class extends view.Expander {
                     }
                 }
             }).catch((error) => {
-                this._setTensorText(content, error.message);
+                content.innerHTML = error.message;
             });
         }
         return content;
@@ -5236,35 +4881,8 @@ view.DocumentationSidebar = class extends view.Control {
 
     _append(parent, type, content) {
         const element = this.createElement(type);
-        if (content !== null && content !== undefined) {
-            if (typeof content === 'string' && !content.includes('<')) {
-                element.textContent = content;
-            } else {
-                element.innerHTML = content;
-            }
-        }
-        const text = element.textContent ? element.textContent.trim() : '';
-        switch (type) {
-            case 'h1':
-            case 'h2':
-            case 'h3':
-            case 'p':
-            case 'dt':
-            case 'dd':
-            case 'li':
-            case 'pre':
-                if (text.length > 0) {
-                    const code = type === 'dt' || type === 'pre';
-                    this._annotateTextLayout(element, text, {
-                        font: code ? view._textFonts.documentationCode : view._textFonts.documentation,
-                        whiteSpace: code ? 'pre-wrap' : 'normal',
-                        titleThresholdPx: Number.POSITIVE_INFINITY,
-                        setTitle: false
-                    });
-                }
-                break;
-            default:
-                break;
+        if (content) {
+            element.innerHTML = content;
         }
         parent.appendChild(element);
         return element;
@@ -5461,12 +5079,6 @@ view.FindSidebar = class extends view.Control {
         const element = this._toggles[type].template.cloneNode(true);
         const text = this._host.document.createTextNode(content);
         element.appendChild(text);
-        this._annotateTextLayout(element, content, {
-            font: view._textFonts.sidebar,
-            whiteSpace: 'normal',
-            titleThresholdPx: 300,
-            maxTitleLength: 1024
-        });
         this._table.set(element, value);
         this._content.appendChild(element);
     }
@@ -5509,8 +5121,6 @@ view.FindSidebar = class extends view.Control {
                     }
                 }
             }
-            // Emit highlight event with all matched values so the graph can animate them
-            this.emit('highlight', Array.from(this._table.values()));
         } catch (error) {
             this.error(error, false);
         }

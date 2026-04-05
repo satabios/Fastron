@@ -1,18 +1,5 @@
-import { getTextLayoutService } from './text-layout-service.js';
 
 const grapher = {};
-
-grapher._fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
-grapher._fonts = {
-    nodeItem: `12px ${grapher._fontFamily}`,
-    nodeArgument: `10px ${grapher._fontFamily}`,
-    edgeLabel: `11px ${grapher._fontFamily}`
-};
-grapher._textLayout = getTextLayoutService();
-
-grapher._measureText = (element, text, font, lineHeight) => {
-    return grapher._textLayout.measureTextElement(element, { text, font, lineHeight });
-};
 
 grapher.Graph = class {
 
@@ -40,7 +27,7 @@ grapher.Graph = class {
         this._estimatedNodeHeight = 65;
         this._detachInvisible = false;
         this._visibilityVersion = 0;
-        this._mainThreadLayoutThreshold = 2000;
+        this._mainThreadLayoutThreshold = 3000;
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -112,9 +99,9 @@ grapher.Graph = class {
             this._focusable.set(label.hitTest, label);
         }
         if (label.labelElement) {
-            const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
-            label.width = metrics.width;
-            label.height = metrics.height;
+            const box = label.labelElement.getBBox();
+            label.width = box.width;
+            label.height = box.height;
         }
         this._renderedEdges.add(edgeKey);
         return label;
@@ -399,9 +386,9 @@ grapher.Graph = class {
             // Pass 2: Measure all newly built edge labels (batched getBBox reads).
             for (const { label } of builtEdges) {
                 if (label.labelElement && label.width === undefined) {
-                    const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
-                    label.width = metrics.width;
-                    label.height = metrics.height;
+                    const box = label.labelElement.getBBox();
+                    label.width = box.width;
+                    label.height = box.height;
                 }
             }
             // Pass 3: Show and update (writes only).
@@ -711,8 +698,8 @@ grapher.Graph = class {
             element.setAttribute('markerHeight', 6);
             element.setAttribute('orient', 'auto');
             const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            markerPath.setAttribute('d', 'M 1 1 L 9 5 L 1 9 L 3.5 5 z');
-            markerPath.style.setProperty('stroke-width', 0);
+            markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 4 5 z');
+            markerPath.style.setProperty('stroke-width', 1);
             element.appendChild(markerPath);
             return element;
         };
@@ -745,21 +732,6 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead"));
         edgePathGroupDefs.appendChild(marker("arrowhead-select"));
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
-
-        // Drop-shadow filter for nodes
-        const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
-        filter.setAttribute('id', 'node-shadow');
-        filter.setAttribute('x', '-20%');
-        filter.setAttribute('y', '-20%');
-        filter.setAttribute('width', '140%');
-        filter.setAttribute('height', '140%');
-        const feDropShadow = document.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow');
-        feDropShadow.setAttribute('dx', '0');
-        feDropShadow.setAttribute('dy', '1');
-        feDropShadow.setAttribute('stdDeviation', '2');
-        feDropShadow.setAttribute('flood-color', 'rgba(0,0,0,0.18)');
-        filter.appendChild(feDropShadow);
-        edgePathGroupDefs.appendChild(filter);
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
@@ -835,12 +807,11 @@ grapher.Graph = class {
         origin.appendChild(clusterGroup);
         origin.appendChild(edgePathGroup);
         origin.appendChild(edgePathHitTestGroup);
-        origin.appendChild(nodeGroup);
-        // Edge labels render above nodes so that tensor shape annotations
-        // (e.g. "1×3×224×224") placed on connectors are never hidden behind
-        // node rectangles.  The pushOutsideNode() logic in Edge.update()
+        // Edge labels render below nodes so that node rectangles always appear
+        // on top on dense graphs.  The pushOutsideNode() logic in Edge.update()
         // nudges labels away from nodes to keep edges legible.
         origin.appendChild(edgeLabelGroup);
+        origin.appendChild(nodeGroup);
     }
 
     async measure() {
@@ -850,14 +821,14 @@ grapher.Graph = class {
         for (const edge of this.edges.values()) {
             const label = edge.label;
             if (label.labelElement) {
-                const metrics = grapher._measureText(label.labelElement, label.label || label.labelElement.textContent || '', grapher._fonts.edgeLabel, 14);
-                label.width = metrics.width;
-                label.height = metrics.height;
+                const box = label.labelElement.getBBox();
+                label.width = box.width;
+                label.height = box.height;
             } else if (label.label && !label.width) {
-                // Deferred edges: estimate label size without touching DOM.
-                const metrics = grapher._measureText(null, label.label, grapher._fonts.edgeLabel, 14);
-                label.width = metrics.width;
-                label.height = metrics.height;
+                // Deferred edges: estimate label size so dagre reserves space.
+                // Average character width at 10px font ≈ 6px; height ≈ 14px.
+                label.width = label.label.length * 6;
+                label.height = 14;
             }
         }
         const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
@@ -900,7 +871,7 @@ grapher.Graph = class {
         }
         const layout = {};
         layout.nodesep = 20;
-        layout.ranksep = 28;
+        layout.ranksep = 20;
         const direction = this.options.direction;
         const rotate = edges.length === 0 ? direction === 'vertical' : direction !== 'vertical';
         if (rotate) {
@@ -909,17 +880,13 @@ grapher.Graph = class {
         if (edges.length === 0) {
             nodes.reverse(); // rankdir workaround — in-place to avoid array copy
         }
-        if (nodes.length > 1000) {
+        if (nodes.length > 3000) {
             layout.ranker = 'longest-path';
         }
         const state = { /* log: true */ };
         const useForce = this.options && this.options.layout === 'force';
         // For very large graphs skip Dagre entirely and use the O(N) fast layout.
         // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
-        // Additionally, graphs that would produce an extreme number of dummy nodes
-        // during normalization must be diverted to fast layout to avoid V8's 4 GiB
-        // pointer-compression OOM.  Dagre itself guards against this via
-        // POST_NORMALIZE_LIMIT and signals abort through state._aborted.
         const FAST_LAYOUT_THRESHOLD = 3000;
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
@@ -932,14 +899,9 @@ grapher.Graph = class {
                 if (message.type === 'cancel' || message.type === 'terminate') {
                     return message.type;
                 }
-                // If dagre aborted due to post-normalization size, fall back.
-                if (message.state && message.state._aborted) {
-                    this._fastLayout(nodes, edges, rotate, layout);
-                } else {
-                    nodes = message.nodes;
-                    edges = message.edges;
-                    state.log = message.state.log;
-                }
+                nodes = message.nodes;
+                edges = message.edges;
+                state.log = message.state.log;
             } catch {
                 // Avoid long main-thread stalls for very large graphs.
                 if (nodes.length > this._mainThreadLayoutThreshold) {
@@ -947,9 +909,6 @@ grapher.Graph = class {
                 } else {
                     const dagre = await import('./dagre.js');
                     dagre.layout(nodes, edges, layout, state);
-                    if (state._aborted) {
-                        this._fastLayout(nodes, edges, rotate, layout);
-                    }
                 }
             }
         } else if (nodes.length > this._mainThreadLayoutThreshold) {
@@ -957,9 +916,6 @@ grapher.Graph = class {
         } else {
             const dagre = await import('./dagre.js');
             dagre.layout(nodes, edges, layout, state);
-            if (state._aborted) {
-                this._fastLayout(nodes, edges, rotate, layout);
-            }
         }
         if (state.log) {
             const fs = await import('fs');
@@ -970,11 +926,7 @@ grapher.Graph = class {
         let boundsMaxX = -Infinity;
         let boundsMaxY = -Infinity;
         for (const node of nodes) {
-            const entry = this.node(node.v);
-            if (!entry) {
-                continue; // skip Dagre dummy nodes
-            }
-            const label = entry.label;
+            const label = this.node(node.v).label;
             label.x = node.x;
             label.y = node.y;
             if (this.children(node.v).length) {
@@ -990,11 +942,7 @@ grapher.Graph = class {
         }
         this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const edge of edges) {
-            const edgeEntry = this.edge(edge.v, edge.w);
-            if (!edgeEntry) {
-                continue; // skip Dagre dummy edges
-            }
-            const label = edgeEntry.label;
+            const label = this.edge(edge.v, edge.w).label;
             label.points = edge.points;
             if ('x' in edge) {
                 label.x = edge.x;
@@ -1020,12 +968,20 @@ grapher.Graph = class {
             outgoing.set(node.v, []);
             indegree.set(node.v, 0);
         }
+        // Build edge minlen lookup for rank enforcement
+        const edgeMinlen = new Map();
         for (const edge of edges) {
             if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
                 continue;
             }
             outgoing.get(edge.v).push(edge.w);
             indegree.set(edge.w, indegree.get(edge.w) + 1);
+            // Store the maximum minlen for each v→w pair
+            const key = `${edge.v}\x00${edge.w}`;
+            const ml = edge.minlen || 1;
+            if (!edgeMinlen.has(key) || edgeMinlen.get(key) < ml) {
+                edgeMinlen.set(key, ml);
+            }
         }
 
         const queue = [];
@@ -1041,7 +997,8 @@ grapher.Graph = class {
             const base = level.get(nodeId) || 0;
             const children = outgoing.get(nodeId) || [];
             for (const childId of children) {
-                const next = base + 1;
+                const ml = edgeMinlen.get(`${nodeId}\x00${childId}`) || 1;
+                const next = base + ml;
                 const current = level.has(childId) ? level.get(childId) : -1;
                 if (next > current) {
                     level.set(childId, next);
@@ -1117,125 +1074,59 @@ grapher.Graph = class {
         const rankSep = Number.isFinite(layout.ranksep) ? layout.ranksep : 20;
         let primary = 0;
 
-        // --- Indentation pass ---
-        // Compute a preferred secondary-axis position for each node based on
-        // the average position of its incoming neighbors (parents).  This
-        // produces a hierarchical tree-like visual where children are centered
-        // beneath their parents rather than packed flush-left.
-        const preferredPos = new Map();
-        // First pass: assign initial secondary coord inside each rank so we
-        // have a baseline to compute parent centroids from.
-        const rankOffset = new Map(); // rank -> running secondary offset
-        for (const rank of rankKeys) {
-            let secondary = 0;
-            for (const node of ranks.get(rank)) {
-                const span = rotate ? Math.max(1, node.height || 0) : Math.max(1, node.width || 0);
-                preferredPos.set(node.v, secondary + span / 2);
-                secondary += span + nodeSep;
-            }
-            rankOffset.set(rank, secondary);
-        }
-        // Forward sweep: pull each node toward the centroid of its parents.
-        // Two passes (forward + backward) to propagate indentation both ways.
-        for (let pass = 0; pass < 2; pass++) {
-            const keys = pass === 0 ? rankKeys : [...rankKeys].reverse();
-            for (const rank of keys) {
-                const rankNodes = ranks.get(rank);
-                // Compute weighted target positions.
-                const targets = [];
-                for (const node of rankNodes) {
-                    const parents = pass === 0 ? incoming.get(node.v) : (outgoing.get(node.v) || []);
-                    const valid = parents.filter((id) => preferredPos.has(id));
-                    if (valid.length > 0) {
-                        let sum = 0;
-                        for (const id of valid) {
-                            sum += preferredPos.get(id);
-                        }
-                        targets.push({ node, target: sum / valid.length });
-                    } else {
-                        targets.push({ node, target: preferredPos.get(node.v) });
-                    }
-                }
-                // Sort by target to maintain ordering from barycenter.
-                targets.sort((a, b) => a.target - b.target);
-                // Assign positions while preventing overlaps.
-                let secondary = 0;
-                for (const { node, target } of targets) {
-                    const span = rotate ? Math.max(1, node.height || 0) : Math.max(1, node.width || 0);
-                    const pos = Math.max(secondary + span / 2, target);
-                    preferredPos.set(node.v, pos);
-                    secondary = pos + span / 2 + nodeSep;
-                }
-                // Re-establish the order in ranks to match the final positions.
-                rankNodes.sort((a, b) => preferredPos.get(a.v) - preferredPos.get(b.v));
-            }
-        }
-
-        // --- Final coordinate assignment ---
         for (const rank of rankKeys) {
             const rankNodes = ranks.get(rank);
+            let secondary = 0;
             let maxSpan = 0;
             for (const node of rankNodes) {
                 const width = Math.max(1, node.width || 0);
                 const height = Math.max(1, node.height || 0);
-                const pos = preferredPos.get(node.v);
                 if (rotate) {
                     node.x = primary + (width / 2);
-                    node.y = pos;
+                    node.y = secondary + (height / 2);
+                    secondary += height + nodeSep;
                     maxSpan = Math.max(maxSpan, width);
                 } else {
-                    node.x = pos;
+                    node.x = secondary + (width / 2);
                     node.y = primary + (height / 2);
+                    secondary += width + nodeSep;
                     maxSpan = Math.max(maxSpan, height);
                 }
             }
             primary += maxSpan + rankSep;
         }
 
-        // --- Orthogonal edge waypoints ---
-        // Generate 2-point (straight) or 4-point (L-shaped) orthogonal routes.
-        // The curvePath renderer in Edge.update() adds 4px rounded corners at bends.
         for (const edge of edges) {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
             if (!source || !target) {
                 continue;
             }
-            const mx = (source.x + target.x) / 2;
-            const my = (source.y + target.y) / 2;
+            // 4-point orthogonal route: produces proper elbow curves when passed
+            // to grapher.Edge.Curve (Catmull-Rom).  TB: source→(sx,midY)→(tx,midY)→target.
+            // LR: source→(midX,sy)→(midX,ty)→target.
             if (rotate) {
-                // LR layout: horizontal flow — jog vertically at midpoint X
-                if (Math.abs(source.y - target.y) < 1) {
-                    edge.points = [
-                        { x: source.x, y: source.y },
-                        { x: target.x, y: target.y }
-                    ];
-                } else {
-                    edge.points = [
-                        { x: source.x, y: source.y },
-                        { x: mx, y: source.y },
-                        { x: mx, y: target.y },
-                        { x: target.x, y: target.y }
-                    ];
-                }
-            } else if (Math.abs(source.x - target.x) < 1) {
-                // TB layout: vertical flow — straight line
+                // LR (left-to-right) graph
+                const midX = (source.x + target.x) / 2;
                 edge.points = [
                     { x: source.x, y: source.y },
+                    { x: midX,     y: source.y },
+                    { x: midX,     y: target.y },
                     { x: target.x, y: target.y }
                 ];
             } else {
-                // TB layout: vertical flow — jog horizontally at midpoint Y
+                // TB (top-to-bottom) graph — default
+                const midY = (source.y + target.y) / 2;
                 edge.points = [
                     { x: source.x, y: source.y },
-                    { x: source.x, y: my },
-                    { x: target.x, y: my },
+                    { x: source.x, y: midY     },
+                    { x: target.x, y: midY     },
                     { x: target.x, y: target.y }
                 ];
             }
             if (edge.width || edge.height) {
-                edge.x = mx;
-                edge.y = my;
+                edge.x = (source.x + target.x) / 2;
+                edge.y = (source.y + target.y) / 2;
             }
         }
     }
@@ -1457,53 +1348,28 @@ grapher.Graph = class {
             node.y += margin - minY;
         }
 
-        // --- Orthogonal edge waypoints ---
-        // Generate 2-point (straight) or 4-point (L-shaped) orthogonal routes.
-        // The curvePath renderer in Edge.update() adds 4px rounded corners at bends.
+        // --- Generate edge waypoints ---
+        // Three points (source-centre → midpoint → target-centre) give the
+        // Catmull-Rom curve in grapher.Edge.Curve something to work with.
+        // grapher.Edge.update() then trims the path to the node boundaries via
+        // intersectRect(), so the arrowhead lands exactly on the node edge.
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
             if (!src || !tgt) {
                 edge.points = []; continue;
             }
-            const mx = (src.x + tgt.x) / 2;
-            const my = (src.y + tgt.y) / 2;
-            const dx = tgt.x - src.x;
-            const dy = tgt.y - src.y;
-            // Choose primary routing axis based on dominant direction
-            if (Math.abs(dy) >= Math.abs(dx)) {
-                // Predominantly vertical: jog horizontally at midpoint Y
-                if (Math.abs(dx) < 1) {
-                    edge.points = [
-                        { x: src.x, y: src.y },
-                        { x: tgt.x, y: tgt.y }
-                    ];
-                } else {
-                    edge.points = [
-                        { x: src.x, y: src.y },
-                        { x: src.x, y: my },
-                        { x: tgt.x, y: my },
-                        { x: tgt.x, y: tgt.y }
-                    ];
-                }
-            } else if (Math.abs(dy) < 1) {
-                // Predominantly horizontal: straight line
-                edge.points = [
-                    { x: src.x, y: src.y },
-                    { x: tgt.x, y: tgt.y }
-                ];
-            } else {
-                // Predominantly horizontal: jog vertically at midpoint X
-                edge.points = [
-                    { x: src.x, y: src.y },
-                    { x: mx, y: src.y },
-                    { x: mx, y: tgt.y },
-                    { x: tgt.x, y: tgt.y }
-                ];
-            }
+            // 4-point orthogonal route for proper elbow curves (TB default for force layout).
+            const midY = (src.y + tgt.y) / 2;
+            edge.points = [
+                { x: src.x, y: src.y  },
+                { x: src.x, y: midY   },
+                { x: tgt.x, y: midY   },
+                { x: tgt.x, y: tgt.y  }
+            ];
             if (edge.width || edge.height) {
-                edge.x = mx;
-                edge.y = my;
+                edge.x = (src.x + tgt.x) / 2;
+                edge.y = (src.y + tgt.y) / 2;
             }
         }
     }
@@ -1648,7 +1514,7 @@ grapher.Node = class {
     }
 
     static roundedRect(x, y, width, height, r1, r2, r3, r4) {
-        const radius = 8;
+        const radius = 5;
         r1 = r1 ? radius : 0;
         r2 = r2 ? radius : 0;
         r3 = r3 ? radius : 0;
@@ -1720,7 +1586,7 @@ grapher.Node.Header = class {
             const r3 = i === this._entries.length - 1 && this.last;
             const r4 = i === 0 && this.last;
             entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, this.height, r1, r2, r3, r4));
-            entry.text.setAttribute('x', entry.tx || 7);
+            entry.text.setAttribute('x', entry.tx || 6);
             entry.text.setAttribute('y', entry.ty);
         }
         for (let i = 1; i < this._entries.length; i++) {
@@ -1799,13 +1665,13 @@ grapher.Node.Header.Entry = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 6;
-        const xPadding = 10;
-        const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeItem, 12);
-        this.width = metrics.width + xPadding + xPadding;
-        this.height = metrics.height + yPadding + yPadding;
+        const yPadding = 4;
+        const xPadding = 7;
+        const boundingBox = this.text.getBBox();
+        this.width = boundingBox.width + xPadding + xPadding;
+        this.height = boundingBox.height + yPadding + yPadding;
         this.tx = xPadding;
-        this.ty = yPadding - metrics.y;
+        this.ty = yPadding - boundingBox.y;
     }
 
     layout() {
@@ -1864,7 +1730,7 @@ grapher.ArgumentList = class {
     }
 
     measure() {
-        this.width = 90;
+        this.width = 75;
         this.height = 3;
         for (let i = 0; i < this._items.length; i++) {
             const item = this._items[i];
@@ -1990,12 +1856,12 @@ grapher.Argument = class {
         if (!this.text) {
             return;
         }
-        const yPadding = 3;
-        const xPadding = 8;
-        const metrics = grapher._measureText(this.text, this.text.textContent || '', grapher._fonts.nodeArgument, 11);
-        this.width = xPadding + metrics.width + xPadding;
-        this.bottom = yPadding + metrics.height + yPadding;
-        this.offset = metrics.y;
+        const yPadding = 1;
+        const xPadding = 6;
+        const size = this.text.getBBox();
+        this.width = xPadding + size.width + xPadding;
+        this.bottom = yPadding + size.height + yPadding;
+        this.offset = size.y;
         this.height = this.bottom;
         if (this.type === 'node') {
             const node = this.content;
@@ -2012,8 +1878,8 @@ grapher.Argument = class {
     }
 
     layout() {
-        const yPadding = 3;
-        const xPadding = 8;
+        const yPadding = 1;
+        const xPadding = 6;
         let y = this.y + this.bottom;
         if (this.type === 'node') {
             const node = this.content;
@@ -2033,8 +1899,8 @@ grapher.Argument = class {
     }
 
     update() {
-        const yPadding = 3;
-        const xPadding = 8;
+        const yPadding = 1;
+        const xPadding = 6;
         this.text.setAttribute('x', this.x + xPadding);
         this.text.setAttribute('y', this.y + yPadding - this.offset);
         this.border.setAttribute('x', this.x + 3);
@@ -2142,43 +2008,10 @@ grapher.Edge = class {
             return { x: x + w, y: y + (dx === 0 ? 0 : w * dy / dx) };
         };
         const curvePath = (edge, tail, head) => {
-            if (!edge.points || edge.points.length < 2) {
-                return '';
-            }
-            // For a 2-point edge slice(1, 1) produces an empty array, so
-            // fall back to the opposite endpoint as the direction reference.
             const points = edge.points.slice(1, edge.points.length - 1);
-            const tailRef = points.length > 0 ? points[0] : edge.points[edge.points.length - 1];
-            const headRef = points.length > 0 ? points[points.length - 1] : edge.points[0];
-            points.unshift(intersectRect(tail, tailRef));
-            points.push(intersectRect(head, headRef));
-            if (points.length < 2) {
-                return '';
-            }
-            if (points.length === 2) {
-                return `M${points[0].x},${points[0].y}L${points[1].x},${points[1].y}`;
-            }
-            const r = 4;
-            let d = `M${points[0].x},${points[0].y}`;
-            for (let i = 1; i < points.length - 1; i++) {
-                const prev = points[i - 1];
-                const curr = points[i];
-                const next = points[i + 1];
-                const dx1 = curr.x - prev.x;
-                const dy1 = curr.y - prev.y;
-                const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) || 1;
-                const dx2 = next.x - curr.x;
-                const dy2 = next.y - curr.y;
-                const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
-                const radius = Math.min(r, len1 / 2, len2 / 2);
-                const bx = curr.x - (dx1 / len1) * radius;
-                const by = curr.y - (dy1 / len1) * radius;
-                const ax = curr.x + (dx2 / len2) * radius;
-                const ay = curr.y + (dy2 / len2) * radius;
-                d += `L${bx},${by}Q${curr.x},${curr.y} ${ax},${ay}`;
-            }
-            d += `L${points[points.length - 1].x},${points[points.length - 1].y}`;
-            return d;
+            points.unshift(intersectRect(tail, points[0]));
+            points.push(intersectRect(head, points[points.length - 1]));
+            return new grapher.Edge.Curve(points).path.data;
         };
         const edgePath = curvePath(this, this.from, this.to);
         this.element.setAttribute('d', edgePath);
@@ -2249,13 +2082,138 @@ grapher.Edge = class {
     }
 };
 
+grapher.Edge.Curve = class {
+
+    constructor(points) {
+        this._path = new grapher.Edge.Path();
+        this._x0 = NaN;
+        this._x1 = NaN;
+        this._y0 = NaN;
+        this._y1 = NaN;
+        this._state = 0;
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            this.point(point.x, point.y);
+            if (i === points.length - 1) {
+                switch (this._state) {
+                    case 3:
+                        this.curve(this._x1, this._y1);
+                        this._path.lineTo(this._x1, this._y1);
+                        break;
+                    case 2:
+                        this._path.lineTo(this._x1, this._y1);
+                        break;
+                    default:
+                        break;
+                }
+                if (this._line || (this._line !== 0 && this._point === 1)) {
+                    this._path.closePath();
+                }
+                this._line = 1 - this._line;
+            }
+        }
+    }
+
+    get path() {
+        return this._path;
+    }
+
+    point(x, y) {
+        x = Number(x);
+        y = Number(y);
+        switch (this._state) {
+            case 0:
+                this._state = 1;
+                if (this._line) {
+                    this._path.lineTo(x, y);
+                } else {
+                    this._path.moveTo(x, y);
+                }
+                break;
+            case 1:
+                this._state = 2;
+                break;
+            case 2:
+                this._state = 3;
+                this._path.lineTo((5 * this._x0 + this._x1) / 6, (5 * this._y0 + this._y1) / 6);
+                this.curve(x, y);
+                break;
+            default:
+                this.curve(x, y);
+                break;
+        }
+        this._x0 = this._x1;
+        this._x1 = x;
+        this._y0 = this._y1;
+        this._y1 = y;
+    }
+
+    curve(x, y) {
+        this._path.bezierCurveTo(
+            (2 * this._x0 + this._x1) / 3,
+            (2 * this._y0 + this._y1) / 3,
+            (this._x0 + 2 * this._x1) / 3,
+            (this._y0 + 2 * this._y1) / 3,
+            (this._x0 + 4 * this._x1 + x) / 6,
+            (this._y0 + 4 * this._y1 + y) / 6
+        );
+    }
+};
+
+grapher.Edge.Path = class {
+
+    constructor() {
+        this._x0 = null;
+        this._y0 = null;
+        this._x1 = null;
+        this._y1 = null;
+        this._data = '';
+    }
+
+    moveTo(x, y) {
+        this._x0 = x;
+        this._x1 = x;
+        this._y0 = y;
+        this._y1 = y;
+        this._data += `M${x},${y}`;
+    }
+
+    lineTo(x, y) {
+        this._x1 = x;
+        this._y1 = y;
+        this._data += `L${x},${y}`;
+    }
+
+    bezierCurveTo(x1, y1, x2, y2, x, y) {
+        this._x1 = x;
+        this._y1 = y;
+        this._data += `C${x1},${y1},${x2},${y2},${x},${y}`;
+    }
+
+    closePath() {
+        if (this._x1 !== null) {
+            this._x1 = this._x0;
+            this._y1 = this._y0;
+            this._data += "Z";
+        }
+    }
+
+    get data() {
+        return this._data;
+    }
+};
+
 grapher.TileManager = class {
 
     constructor(tileSize = 300) {
         this._tileSize = tileSize;
-        this._tiles = new Map();
-        this._nodeTiles = new Map();
-        this._edgeTiles = new Map();
+        // Integer-keyed tile map: key = (tileX + 0x8000) | ((tileY + 0x8000) << 16)
+        // Avoids string allocation on every addNode/addEdge/queryViewport call.
+        // Supports tile coordinates in the range [-32768, 32767] which covers
+        // graphs up to ~9.8 million pixels wide/tall at the default 300px tile size.
+        this._tiles = new Map(); // intKey -> { nodes: Set, edges: Set }
+        this._nodeTiles = new Map(); // nodeKey -> Set of int tile keys
+        this._edgeTiles = new Map(); // edgeKey -> Set of int tile keys
         this._bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     }
 
@@ -2267,6 +2225,8 @@ grapher.TileManager = class {
     }
 
     _getTileKey(tileX, tileY) {
+        // Pack two signed 16-bit integers into one 32-bit integer key.
+        // Bias by 0x8000 so negative coordinates map to positive integers.
         return ((tileX + 0x8000) & 0xFFFF) | (((tileY + 0x8000) & 0xFFFF) << 16);
     }
 
@@ -2285,13 +2245,19 @@ grapher.TileManager = class {
     }
 
     addNode(nodeKey, bounds) {
+        // bounds: { x, y, width, height }
         const { x, y, width, height } = bounds;
+
+        // Update global bounds
         this._bounds.minX = Math.min(this._bounds.minX, x);
         this._bounds.minY = Math.min(this._bounds.minY, y);
         this._bounds.maxX = Math.max(this._bounds.maxX, x + width);
         this._bounds.maxY = Math.max(this._bounds.maxY, y + height);
+
+        // Calculate which tiles this node overlaps
         const topLeft = this._getTileCoords(x, y);
         const bottomRight = this._getTileCoords(x + width, y + height);
+
         const tileset = new Set();
         for (let tileX = topLeft.tileX; tileX <= bottomRight.tileX; tileX++) {
             for (let tileY = topLeft.tileY; tileY <= bottomRight.tileY; tileY++) {
@@ -2304,10 +2270,14 @@ grapher.TileManager = class {
     }
 
     addEdge(edgeKey, points) {
+        // points: array of {x, y} coordinates for edge path
         if (!points || points.length === 0) {
             return;
         }
+
         const tileset = new Set();
+
+        // For each line segment in the edge path
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
             const { tileX, tileY } = this._getTileCoords(point.x, point.y);
@@ -2315,15 +2285,21 @@ grapher.TileManager = class {
             this._ensureTile(tileKey).edges.add(edgeKey);
             tileset.add(tileKey);
         }
+
         this._edgeTiles.set(edgeKey, tileset);
     }
 
     queryViewport(viewportBounds, bufferTiles = 1) {
+        // viewportBounds: { x, y, width, height }
         const { x, y, width, height } = viewportBounds;
+
         const topLeft = this._getTileCoords(x, y);
         const bottomRight = this._getTileCoords(x + width, y + height);
+
         const visibleNodes = new Set();
         const visibleEdges = new Set();
+
+        // Query tiles within viewport plus buffer
         for (let tileX = topLeft.tileX - bufferTiles; tileX <= bottomRight.tileX + bufferTiles; tileX++) {
             for (let tileY = topLeft.tileY - bufferTiles; tileY <= bottomRight.tileY + bufferTiles; tileY++) {
                 const tileKey = this._getTileKey(tileX, tileY);
@@ -2334,6 +2310,7 @@ grapher.TileManager = class {
                 }
             }
         }
+
         return { nodes: visibleNodes, edges: visibleEdges };
     }
 
@@ -2368,22 +2345,29 @@ grapher.ViewportObserver = class {
         this._debounceMs = debounceMs;
         this._debounceTimer = null;
         this._lastViewport = null;
-        this._threshold = 50;
+        this._threshold = 50; // pixels - minimum movement to trigger update
         this._rafId = null;
     }
 
     observe(viewport) {
+        // viewport: { x, y, width, height, zoom }
+
+        // Check if viewport changed significantly
         if (this._lastViewport) {
             const dx = Math.abs(viewport.x - this._lastViewport.x);
             const dy = Math.abs(viewport.y - this._lastViewport.y);
             const dw = Math.abs(viewport.width - this._lastViewport.width);
             const dh = Math.abs(viewport.height - this._lastViewport.height);
             const dz = Math.abs(viewport.zoom - this._lastViewport.zoom);
+
+            // Skip if change is below threshold
             if (dx < this._threshold && dy < this._threshold &&
                 dw < this._threshold && dh < this._threshold && dz < 0.01) {
                 return;
             }
         }
+
+        // Cancel existing timers
         if (this._debounceTimer) {
             clearTimeout(this._debounceTimer);
         }
@@ -2393,6 +2377,8 @@ grapher.ViewportObserver = class {
             }
             this._rafId = null;
         }
+
+        // Debounce the callback
         this._debounceTimer = setTimeout(() => {
             if (typeof requestAnimationFrame === 'undefined') {
                 this._lastViewport = { ...viewport };
