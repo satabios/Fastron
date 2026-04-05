@@ -1325,7 +1325,7 @@ view.View = class {
         // Show layout engine info in the about panel
         const layoutInfoElement = this._host.document.getElementById('text-layout-info');
         if (layoutInfoElement) {
-            const nodeCount = this._graph ? (this._graph.nodes ? this._graph.nodes.size : 0) : 0;
+            const nodeCount = this._graph?.nodes?.size || 0;
             let layoutLabel = 'Dagre (network-simplex)';
             if (nodeCount > 3000) {
                 layoutLabel = 'Fast Layout (BFS + barycenter)';
