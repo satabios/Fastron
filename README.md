@@ -5,9 +5,10 @@
 
 # Fastron - Optimized Neural Network Visualizer
 
-Fastron is a high-performance viewer for neural network, deep learning and machine learning models. This is an optimized fork of [Netron](https://github.com/lutzroeder/netron) with significant performance enhancements for working with large models..
+Fastron is a high-performance viewer for neural network, deep learning and machine learning models. This is an optimized fork of [Netron](https://github.com/lutzroeder/netron) with significant performance enhancements for working with large models.
 
 ## Overview
+
 
 Fastron supports ONNX, TensorFlow Lite, PyTorch, torch.export, ExecuTorch, Core ML, Keras, Caffe, Darknet, TensorFlow.js, Safetensors and NumPy.
 
