@@ -27,7 +27,7 @@ grapher.Graph = class {
         this._estimatedNodeHeight = 65;
         this._detachInvisible = false;
         this._visibilityVersion = 0;
-        this._mainThreadLayoutThreshold = 3000;
+        this._mainThreadLayoutThreshold = 5000;
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -680,10 +680,15 @@ grapher.Graph = class {
         const edgePathHitTestGroup = createGroup('edge-paths-hit-test');
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
+        // Tunnel edges (cross-subgraph connectors) render in a separate layer
+        // so they appear behind regular edges and nodes.  Matches Netron's
+        // tunnelGroup pattern.
+        const tunnelGroup = createGroup('tunnel');
         this._nodeGroupElement = nodeGroup;
         this._edgePathGroupElement = edgePathGroup;
         this._edgePathHitTestGroupElement = edgePathHitTestGroup;
         this._edgeLabelGroupElement = edgeLabelGroup;
+        this._tunnelGroupElement = tunnelGroup;
 
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         edgePathGroup.appendChild(edgePathGroupDefs);
@@ -797,7 +802,10 @@ grapher.Graph = class {
 
         for (const edge of this.edges.values()) {
             if (!deferEdgeBuild) {
-                edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
+                // Tunnel edges go into the dedicated tunnel SVG group so they
+                // render behind regular edges and nodes.
+                const pathGroup = edge.label._tunnel ? tunnelGroup : edgePathGroup;
+                edge.label.build(document, pathGroup, edgePathHitTestGroup, edgeLabelGroup);
                 if (edge.label.hitTest) {
                     this._focusable.set(edge.label.hitTest, edge.label);
                 }
@@ -805,11 +813,11 @@ grapher.Graph = class {
             }
         }
         origin.appendChild(clusterGroup);
+        origin.appendChild(tunnelGroup);
         origin.appendChild(edgePathGroup);
         origin.appendChild(edgePathHitTestGroup);
         // Edge labels render below nodes so that node rectangles always appear
-        // on top on dense graphs.  The pushOutsideNode() logic in Edge.update()
-        // nudges labels away from nodes to keep edges legible.
+        // above edge labels on dense layouts.
         origin.appendChild(edgeLabelGroup);
         origin.appendChild(nodeGroup);
     }
@@ -887,7 +895,7 @@ grapher.Graph = class {
         const useForce = this.options && this.options.layout === 'force';
         // For very large graphs skip Dagre entirely and use the O(N) fast layout.
         // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
-        const FAST_LAYOUT_THRESHOLD = 3000;
+        const FAST_LAYOUT_THRESHOLD = 5000;
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
         } else if (!useForce && nodes.length > FAST_LAYOUT_THRESHOLD) {
@@ -1041,7 +1049,7 @@ grapher.Graph = class {
                 incoming.get(edge.w).push(edge.v);
             }
         }
-        const SWEEPS = 4;
+        const SWEEPS = 12;
         for (let sweep = 0; sweep < SWEEPS; sweep++) {
             const keys = sweep % 2 === 0 ? rankKeys : [...rankKeys].reverse();
             for (let ri = 1; ri < keys.length; ri++) {
@@ -1076,8 +1084,17 @@ grapher.Graph = class {
 
         for (const rank of rankKeys) {
             const rankNodes = ranks.get(rank);
-            let secondary = 0;
             let maxSpan = 0;
+            // Compute total secondary-axis extent for centering
+            let totalSecondary = -nodeSep;
+            for (const node of rankNodes) {
+                const width = Math.max(1, node.width || 0);
+                const height = Math.max(1, node.height || 0);
+                totalSecondary += (rotate ? height : width) + nodeSep;
+                maxSpan = Math.max(maxSpan, rotate ? width : height);
+            }
+            // Start offset so nodes are centered around the secondary-axis origin
+            let secondary = -(totalSecondary / 2);
             for (const node of rankNodes) {
                 const width = Math.max(1, node.width || 0);
                 const height = Math.max(1, node.height || 0);
@@ -1085,12 +1102,10 @@ grapher.Graph = class {
                     node.x = primary + (width / 2);
                     node.y = secondary + (height / 2);
                     secondary += height + nodeSep;
-                    maxSpan = Math.max(maxSpan, width);
                 } else {
                     node.x = secondary + (width / 2);
                     node.y = primary + (height / 2);
                     secondary += width + nodeSep;
-                    maxSpan = Math.max(maxSpan, height);
                 }
             }
             primary += maxSpan + rankSep;
@@ -1102,28 +1117,16 @@ grapher.Graph = class {
             if (!source || !target) {
                 continue;
             }
-            // 4-point orthogonal route: produces proper elbow curves when passed
-            // to grapher.Edge.Curve (Catmull-Rom).  TB: source→(sx,midY)→(tx,midY)→target.
-            // LR: source→(midX,sy)→(midX,ty)→target.
-            if (rotate) {
-                // LR (left-to-right) graph
-                const midX = (source.x + target.x) / 2;
-                edge.points = [
-                    { x: source.x, y: source.y },
-                    { x: midX,     y: source.y },
-                    { x: midX,     y: target.y },
-                    { x: target.x, y: target.y }
-                ];
-            } else {
-                // TB (top-to-bottom) graph — default
-                const midY = (source.y + target.y) / 2;
-                edge.points = [
-                    { x: source.x, y: source.y },
-                    { x: source.x, y: midY     },
-                    { x: target.x, y: midY     },
-                    { x: target.x, y: target.y }
-                ];
-            }
+            // 3-point smooth route: source → midpoint → target.
+            // Catmull-Rom through 3 points produces a clean S-curve that matches
+            // Dagre's output quality.  The 4-point orthogonal elbow approach caused
+            // wiggly artefacts because Catmull-Rom interpolated through the sharp
+            // elbow waypoints.
+            edge.points = [
+                { x: source.x, y: source.y },
+                { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 },
+                { x: target.x, y: target.y }
+            ];
             if (edge.width || edge.height) {
                 edge.x = (source.x + target.x) / 2;
                 edge.y = (source.y + target.y) / 2;
@@ -1349,23 +1352,21 @@ grapher.Graph = class {
         }
 
         // --- Generate edge waypoints ---
-        // Three points (source-centre → midpoint → target-centre) give the
-        // Catmull-Rom curve in grapher.Edge.Curve something to work with.
-        // grapher.Edge.update() then trims the path to the node boundaries via
-        // intersectRect(), so the arrowhead lands exactly on the node edge.
+        // 3-point smooth route: source → midpoint → target.
+        // Catmull-Rom through 3 points produces a clean S-curve matching Dagre's
+        // output quality.  The previous 4-point orthogonal elbow approach caused
+        // wiggly artefacts because Catmull-Rom interpolated through the sharp
+        // elbow waypoints.
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
             if (!src || !tgt) {
                 edge.points = []; continue;
             }
-            // 4-point orthogonal route for proper elbow curves (TB default for force layout).
-            const midY = (src.y + tgt.y) / 2;
             edge.points = [
-                { x: src.x, y: src.y  },
-                { x: src.x, y: midY   },
-                { x: tgt.x, y: midY   },
-                { x: tgt.x, y: tgt.y  }
+                { x: src.x, y: src.y },
+                { x: (src.x + tgt.x) / 2, y: (src.y + tgt.y) / 2 },
+                { x: tgt.x, y: tgt.y }
             ];
             if (edge.width || edge.height) {
                 edge.x = (src.x + tgt.x) / 2;
@@ -2019,37 +2020,6 @@ grapher.Edge = class {
         if (this.labelElement) {
             let labelX = this.x;
             let labelY = this.y;
-            if (Number.isFinite(labelX) && Number.isFinite(labelY) && Number.isFinite(this.width) && Number.isFinite(this.height)) {
-                const padding = 12;
-                const pushOutsideNode = (node) => {
-                    if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y) ||
-                        !Number.isFinite(node.width) || !Number.isFinite(node.height)) {
-                        return;
-                    }
-                    const labelLeft = labelX - (this.width / 2);
-                    const labelRight = labelX + (this.width / 2);
-                    const labelTop = labelY - (this.height / 2);
-                    const labelBottom = labelY + (this.height / 2);
-                    const nodeLeft = node.x - (node.width / 2) - padding;
-                    const nodeRight = node.x + (node.width / 2) + padding;
-                    const nodeTop = node.y - (node.height / 2) - padding;
-                    const nodeBottom = node.y + (node.height / 2) + padding;
-                    const overlapsHorizontally = labelRight > nodeLeft && labelLeft < nodeRight;
-                    const overlapsVertically = labelBottom > nodeTop && labelTop < nodeBottom;
-                    if (!overlapsHorizontally || !overlapsVertically) {
-                        return;
-                    }
-                    const dx = labelX - node.x;
-                    const dy = labelY - node.y;
-                    if (Math.abs(dx) >= Math.abs(dy)) {
-                        labelX = dx < 0 ? nodeLeft - (this.width / 2) : nodeRight + (this.width / 2);
-                    } else {
-                        labelY = dy < 0 ? nodeTop - (this.height / 2) : nodeBottom + (this.height / 2);
-                    }
-                };
-                pushOutsideNode(this.from);
-                pushOutsideNode(this.to);
-            }
             this.labelElement.setAttribute('transform', `translate(${labelX - (this.width / 2)},${labelY - (this.height / 2)})`);
             this.labelElement.style.opacity = 1;
         }
