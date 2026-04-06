@@ -2018,8 +2018,8 @@ grapher.Edge = class {
         this.element.setAttribute('d', edgePath);
         this.hitTest.setAttribute('d', edgePath);
         if (this.labelElement) {
-            let labelX = this.x;
-            let labelY = this.y;
+            const labelX = this.x;
+            const labelY = this.y;
             this.labelElement.setAttribute('transform', `translate(${labelX - (this.width / 2)},${labelY - (this.height / 2)})`);
             this.labelElement.style.opacity = 1;
         }
