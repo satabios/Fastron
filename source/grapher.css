@@ -166,6 +166,13 @@
     .node-diff-modified .node-border { stroke: #f0a050 !important; }
     .node-diff-added    .node-border { stroke: #3dcc7a !important; }
     .node-diff-removed  .node-border { stroke: #f06060 !important; }
+
+    /* Tunnel edges in dark mode */
+    .edge-path-tunnel { stroke: #888; }
+
+    /* Node block edge paths in dark mode */
+    .node-block .edge-path { stroke: #666; }
+    .node-block .select.edge-path { stroke: #fff; }
 }
 
 /* ── Tunnel edges (subgraph cross-boundary connectors) ─────────────────────── */
@@ -191,6 +198,27 @@
     stroke-dasharray: 4, 2;
 }
 
+.node-block .edge-path {
+    stroke: #aaa;
+    fill: none;
+}
+
+.node-block .select.edge-path {
+    stroke: #000;
+}
+
 .dark .node-block > rect {
     stroke: #555;
+}
+
+.dark .node-block .edge-path {
+    stroke: #666;
+}
+
+.dark .node-block .select.edge-path {
+    stroke: #fff;
+}
+
+.dark .edge-path-tunnel {
+    stroke: #888;
 }
