@@ -1322,17 +1322,13 @@ view.View = class {
                 gpuRow.style.display = 'none';
             }
         }
-        // Show layout engine info in the about panel
+        // Show text layout engine info in the about panel
         const layoutInfoElement = this._host.document.getElementById('text-layout-info');
         if (layoutInfoElement) {
-            const nodeCount = this._graph?.nodes?.size || 0;
-            let layoutLabel = 'Dagre (network-simplex)';
-            if (nodeCount > 3000) {
-                layoutLabel = 'Fast Layout (BFS + barycenter)';
-            } else if (nodeCount > 0) {
-                layoutLabel = 'Dagre (network-simplex)';
-            }
-            layoutInfoElement.innerText = layoutLabel;
+            const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+            const mode = (config && typeof config.textLayoutEngine === 'string') ? config.textLayoutEngine : 'legacy';
+            const validModes = ['legacy', 'shadow', 'pretext'];
+            layoutInfoElement.innerText = validModes.includes(mode) ? mode : 'legacy';
         }
         const handler = () => {
             this._host.window.removeEventListener('keydown', handler);
