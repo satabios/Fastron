@@ -5087,6 +5087,22 @@ view.FindSidebar = class extends view.Control {
         const element = this._toggles[type].template.cloneNode(true);
         const text = this._host.document.createTextNode(content);
         element.appendChild(text);
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        const engine = (config && typeof config.textLayoutEngine === 'string') ? config.textLayoutEngine : 'legacy';
+        const validEngines = ['legacy', 'shadow', 'pretext'];
+        element.setAttribute('data-text-engine', validEngines.includes(engine) ? engine : 'legacy');
+        let textWidth = 0;
+        try {
+            const canvas = this._host.document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", sans-serif';
+                textWidth = ctx.measureText(content).width;
+            }
+        } catch {
+            // fallback
+        }
+        element.setAttribute('data-text-width', textWidth.toFixed(2));
         this._table.set(element, value);
         this._content.appendChild(element);
     }
