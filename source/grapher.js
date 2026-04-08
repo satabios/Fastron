@@ -1111,25 +1111,119 @@ grapher.Graph = class {
             primary += maxSpan + rankSep;
         }
 
+        // Build a spatial index of node bounding boxes for edge-node avoidance.
+        // Only check nodes in ranks between source and target to keep this O(E*R)
+        // where R is the average rank width, not O(E*N).
+        const nodesByRank = new Map();
+        for (const node of nodes) {
+            const rank = level.get(node.v) || 0;
+            if (!nodesByRank.has(rank)) {
+                nodesByRank.set(rank, []);
+            }
+            nodesByRank.get(rank).push(node);
+        }
+
+        // Build per-node edge index to detect parallel/fan edges and offset them.
+        const nodeOutEdges = new Map(); // v -> [edge, ...]
+        for (const edge of edges) {
+            if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
+                continue;
+            }
+            if (!nodeOutEdges.has(edge.v)) {
+                nodeOutEdges.set(edge.v, []);
+            }
+            nodeOutEdges.get(edge.v).push(edge);
+        }
+        // For each pair with multiple edges, assign an index so they fan out.
+        const edgePairIndex = new Map(); // "v\0w" -> { index, total }
+        for (const edgeList of nodeOutEdges.values()) {
+            // Group by target
+            const byTarget = new Map();
+            for (const edge of edgeList) {
+                if (!byTarget.has(edge.w)) {
+                    byTarget.set(edge.w, []);
+                }
+                byTarget.get(edge.w).push(edge);
+            }
+            for (const [, group] of byTarget) {
+                const total = group.length;
+                for (let i = 0; i < group.length; i++) {
+                    edgePairIndex.set(`${group[i].v}\x00${group[i].w}`, { index: i, total });
+                }
+            }
+        }
+
         for (const edge of edges) {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
             if (!source || !target) {
                 continue;
             }
-            // 3-point smooth route: source → midpoint → target.
-            // Catmull-Rom through 3 points produces a clean S-curve that matches
-            // Dagre's output quality.  The 4-point orthogonal elbow approach caused
-            // wiggly artefacts because Catmull-Rom interpolated through the sharp
-            // elbow waypoints.
+            // 5-point route: source → quarter → mid → three-quarter → target.
+            // Gives the Catmull-Rom curve renderer enough control points to
+            // produce proper bezier curves instead of near-straight segments.
+            const mx = (source.x + target.x) / 2;
+            const my = (source.y + target.y) / 2;
+            const dx = target.x - source.x;
+            const dy = target.y - source.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Perpendicular unit vector for lateral offset
+            const px = -dy / len;
+            const py = dx / len;
+            // Offset for parallel edges sharing the same endpoints
+            const pairInfo = edgePairIndex.get(`${edge.v}\x00${edge.w}`);
+            let lateralOffset = 0;
+            if (pairInfo && pairInfo.total > 1) {
+                const spread = Math.min(20, nodeSep * 0.6);
+                lateralOffset = (pairInfo.index - (pairInfo.total - 1) / 2) * spread;
+            }
+            // Curvature offset proportional to edge length for S-curve shape.
+            // Scale with rankSep to match the layout density.
+            const curvature = Math.min(rankSep * 0.4, len * 0.15);
+            // Offset midpoint perpendicular to the source→target line
+            const offsetX = px * (curvature + lateralOffset);
+            const offsetY = py * (curvature + lateralOffset);
             edge.points = [
                 { x: source.x, y: source.y },
-                { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 },
+                { x: source.x + dx * 0.25 + offsetX * 0.5, y: source.y + dy * 0.25 + offsetY * 0.5 },
+                { x: mx + offsetX, y: my + offsetY },
+                { x: source.x + dx * 0.75 + offsetX * 0.5, y: source.y + dy * 0.75 + offsetY * 0.5 },
                 { x: target.x, y: target.y }
             ];
+            // Node-avoidance: nudge interior waypoints away from intervening nodes.
+            // Only check nodes in ranks between source and target for O(E*R).
+            const srcRank = level.get(edge.v) || 0;
+            const tgtRank = level.get(edge.w) || 0;
+            const rankLo = Math.min(srcRank, tgtRank);
+            const rankHi = Math.max(srcRank, tgtRank);
+            const pad = nodeSep * 0.5;
+            for (let pi = 1; pi <= 3; pi++) {
+                const pt = edge.points[pi];
+                for (let r = rankLo; r <= rankHi; r++) {
+                    const rankList = nodesByRank.get(r);
+                    if (!rankList) {
+                        continue;
+                    }
+                    for (const n of rankList) {
+                        if (n.v === edge.v || n.v === edge.w) {
+                            continue;
+                        }
+                        const hw = (n.width || 0) / 2 + pad;
+                        const hh = (n.height || 0) / 2 + pad;
+                        if (pt.x > n.x - hw && pt.x < n.x + hw &&
+                            pt.y > n.y - hh && pt.y < n.y + hh) {
+                            // Push the waypoint outside the node's bounding box
+                            // along the perpendicular direction.
+                            const nudge = hw + pad;
+                            pt.x += px >= 0 ? nudge : -nudge;
+                            pt.y += py >= 0 ? nudge * 0.5 : -nudge * 0.5;
+                        }
+                    }
+                }
+            }
             if (edge.width || edge.height) {
-                edge.x = (source.x + target.x) / 2;
-                edge.y = (source.y + target.y) / 2;
+                edge.x = edge.points[2].x;
+                edge.y = edge.points[2].y;
             }
         }
     }
@@ -1351,26 +1445,68 @@ grapher.Graph = class {
             node.y += margin - minY;
         }
 
+        // --- Build per-node edge index for parallel edge fan-out ---
+        const forceOutEdges = new Map();
+        for (const edge of edges) {
+            if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
+                continue;
+            }
+            if (!forceOutEdges.has(edge.v)) {
+                forceOutEdges.set(edge.v, []);
+            }
+            forceOutEdges.get(edge.v).push(edge);
+        }
+        const forcePairIndex = new Map();
+        for (const edgeList of forceOutEdges.values()) {
+            const byTarget = new Map();
+            for (const edge of edgeList) {
+                if (!byTarget.has(edge.w)) {
+                    byTarget.set(edge.w, []);
+                }
+                byTarget.get(edge.w).push(edge);
+            }
+            for (const [, group] of byTarget) {
+                for (let i = 0; i < group.length; i++) {
+                    forcePairIndex.set(`${group[i].v}\x00${group[i].w}`, { index: i, total: group.length });
+                }
+            }
+        }
+
         // --- Generate edge waypoints ---
-        // 3-point smooth route: source → midpoint → target.
-        // Catmull-Rom through 3 points produces a clean S-curve matching Dagre's
-        // output quality.  The previous 4-point orthogonal elbow approach caused
-        // wiggly artefacts because Catmull-Rom interpolated through the sharp
-        // elbow waypoints.
+        // 5-point smooth route: source → quarter → mid → three-quarter → target.
+        // Gives the Catmull-Rom curve enough control points for proper bezier
+        // curves, with perpendicular offsets to separate parallel edges.
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
             if (!src || !tgt) {
                 edge.points = []; continue;
             }
+            const mx = (src.x + tgt.x) / 2;
+            const my = (src.y + tgt.y) / 2;
+            const dx = tgt.x - src.x;
+            const dy = tgt.y - src.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const px = -dy / len;
+            const py = dx / len;
+            const pairInfo = forcePairIndex.get(`${edge.v}\x00${edge.w}`);
+            let lateralOffset = 0;
+            if (pairInfo && pairInfo.total > 1) {
+                lateralOffset = (pairInfo.index - (pairInfo.total - 1) / 2) * 20;
+            }
+            const curvature = Math.min(NODE_PADDING * 2, len * 0.15);
+            const offsetX = px * (curvature + lateralOffset);
+            const offsetY = py * (curvature + lateralOffset);
             edge.points = [
                 { x: src.x, y: src.y },
-                { x: (src.x + tgt.x) / 2, y: (src.y + tgt.y) / 2 },
+                { x: src.x + dx * 0.25 + offsetX * 0.5, y: src.y + dy * 0.25 + offsetY * 0.5 },
+                { x: mx + offsetX, y: my + offsetY },
+                { x: src.x + dx * 0.75 + offsetX * 0.5, y: src.y + dy * 0.75 + offsetY * 0.5 },
                 { x: tgt.x, y: tgt.y }
             ];
             if (edge.width || edge.height) {
-                edge.x = (src.x + tgt.x) / 2;
-                edge.y = (src.y + tgt.y) / 2;
+                edge.x = mx + offsetX;
+                edge.y = my + offsetY;
             }
         }
     }
@@ -2246,14 +2382,37 @@ grapher.TileManager = class {
         }
 
         const tileset = new Set();
+        const ts = this._tileSize;
 
-        // For each line segment in the edge path
+        // Register every tile that each line segment between consecutive
+        // waypoints passes through.  The old code only registered the tiles
+        // containing the discrete waypoints, so long segments spanning many
+        // tiles were invisible in intermediate tiles.
         for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            const { tileX, tileY } = this._getTileCoords(point.x, point.y);
-            const tileKey = this._getTileKey(tileX, tileY);
-            this._ensureTile(tileKey).edges.add(edgeKey);
-            tileset.add(tileKey);
+            const p = points[i];
+            const { tileX, tileY } = this._getTileCoords(p.x, p.y);
+            const tk = this._getTileKey(tileX, tileY);
+            this._ensureTile(tk).edges.add(edgeKey);
+            tileset.add(tk);
+
+            if (i > 0) {
+                // Walk the segment from points[i-1] to points[i] and register
+                // all tiles the bounding box of the segment overlaps.
+                const prev = points[i - 1];
+                const minX = Math.floor(Math.min(prev.x, p.x) / ts);
+                const maxX = Math.floor(Math.max(prev.x, p.x) / ts);
+                const minY = Math.floor(Math.min(prev.y, p.y) / ts);
+                const maxY = Math.floor(Math.max(prev.y, p.y) / ts);
+                for (let tx = minX; tx <= maxX; tx++) {
+                    for (let ty = minY; ty <= maxY; ty++) {
+                        const segKey = this._getTileKey(tx, ty);
+                        if (!tileset.has(segKey)) {
+                            this._ensureTile(segKey).edges.add(edgeKey);
+                            tileset.add(segKey);
+                        }
+                    }
+                }
+            }
         }
 
         this._edgeTiles.set(edgeKey, tileset);
