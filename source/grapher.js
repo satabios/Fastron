@@ -1189,7 +1189,13 @@ grapher.Graph = class {
                 // Adjacent or same-rank: clean 3-point straight path.
                 const mx = (source.x + target.x) / 2;
                 const my = (source.y + target.y) / 2;
-                if (lateralOff !== 0) {
+                if (lateralOff === 0) {
+                    edge.points = [
+                        { x: source.x, y: source.y },
+                        { x: mx, y: my },
+                        { x: target.x, y: target.y }
+                    ];
+                } else {
                     const dx = target.x - source.x;
                     const dy = target.y - source.y;
                     const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -1198,12 +1204,6 @@ grapher.Graph = class {
                     edge.points = [
                         { x: source.x, y: source.y },
                         { x: mx + px * lateralOff, y: my + py * lateralOff },
-                        { x: target.x, y: target.y }
-                    ];
-                } else {
-                    edge.points = [
-                        { x: source.x, y: source.y },
-                        { x: mx, y: my },
                         { x: target.x, y: target.y }
                     ];
                 }
