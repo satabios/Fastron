@@ -1111,20 +1111,28 @@ grapher.Graph = class {
             primary += maxSpan + rankSep;
         }
 
-        // Build a spatial index of node bounding boxes for edge-node avoidance.
-        // Only check nodes in ranks between source and target to keep this O(E*R)
-        // where R is the average rank width, not O(E*N).
-        const nodesByRank = new Map();
-        for (const node of nodes) {
-            const rank = level.get(node.v) || 0;
-            if (!nodesByRank.has(rank)) {
-                nodesByRank.set(rank, []);
+        // Record the primary-axis start of each rank so we can route edges
+        // through inter-rank gaps rather than node centers.
+        const rankPrimaryStart = new Map(); // rank -> primary start position
+        const rankPrimaryEnd = new Map();   // rank -> primary end position
+        {
+            let p = 0;
+            for (const rank of rankKeys) {
+                const rNodes = ranks.get(rank);
+                let maxSpan = 0;
+                for (const node of rNodes) {
+                    const w = Math.max(1, node.width || 0);
+                    const h = Math.max(1, node.height || 0);
+                    maxSpan = Math.max(maxSpan, rotate ? w : h);
+                }
+                rankPrimaryStart.set(rank, p);
+                rankPrimaryEnd.set(rank, p + maxSpan);
+                p += maxSpan + rankSep;
             }
-            nodesByRank.get(rank).push(node);
         }
 
-        // Build per-node edge index to detect parallel/fan edges and offset them.
-        const nodeOutEdges = new Map(); // v -> [edge, ...]
+        // Build per-node edge index to detect parallel edges sharing endpoints.
+        const nodeOutEdges = new Map();
         for (const edge of edges) {
             if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
                 continue;
@@ -1134,10 +1142,8 @@ grapher.Graph = class {
             }
             nodeOutEdges.get(edge.v).push(edge);
         }
-        // For each pair with multiple edges, assign an index so they fan out.
-        const edgePairIndex = new Map(); // "v\0w" -> { index, total }
+        const edgePairIndex = new Map();
         for (const edgeList of nodeOutEdges.values()) {
-            // Group by target
             const byTarget = new Map();
             for (const edge of edgeList) {
                 if (!byTarget.has(edge.w)) {
@@ -1146,11 +1152,20 @@ grapher.Graph = class {
                 byTarget.get(edge.w).push(edge);
             }
             for (const [, group] of byTarget) {
-                const total = group.length;
                 for (let i = 0; i < group.length; i++) {
-                    edgePairIndex.set(`${group[i].v}\x00${group[i].w}`, { index: i, total });
+                    edgePairIndex.set(`${group[i].v}\x00${group[i].w}`, { index: i, total: group.length });
                 }
             }
+        }
+
+        // Build per-rank node list for lightweight node-crossing detection.
+        const nodesByRank = new Map();
+        for (const node of nodes) {
+            const r = level.get(node.v) || 0;
+            if (!nodesByRank.has(r)) {
+                nodesByRank.set(r, []);
+            }
+            nodesByRank.get(r).push(node);
         }
 
         for (const edge of edges) {
@@ -1159,48 +1174,82 @@ grapher.Graph = class {
             if (!source || !target) {
                 continue;
             }
-            // 5-point route: source → quarter → mid → three-quarter → target.
-            // Gives the Catmull-Rom curve renderer enough control points to
-            // produce proper bezier curves instead of near-straight segments.
-            const mx = (source.x + target.x) / 2;
-            const my = (source.y + target.y) / 2;
-            const dx = target.x - source.x;
-            const dy = target.y - source.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            // Perpendicular unit vector for lateral offset
-            const px = -dy / len;
-            const py = dx / len;
-            // Offset for parallel edges sharing the same endpoints
-            const pairInfo = edgePairIndex.get(`${edge.v}\x00${edge.w}`);
-            let lateralOffset = 0;
-            if (pairInfo && pairInfo.total > 1) {
-                const spread = Math.min(20, nodeSep * 0.6);
-                lateralOffset = (pairInfo.index - (pairInfo.total - 1) / 2) * spread;
-            }
-            // Curvature offset proportional to edge length for S-curve shape.
-            // Scale with rankSep to match the layout density.
-            const curvature = Math.min(rankSep * 0.4, len * 0.15);
-            // Offset midpoint perpendicular to the source→target line
-            const offsetX = px * (curvature + lateralOffset);
-            const offsetY = py * (curvature + lateralOffset);
-            edge.points = [
-                { x: source.x, y: source.y },
-                { x: source.x + dx * 0.25 + offsetX * 0.5, y: source.y + dy * 0.25 + offsetY * 0.5 },
-                { x: mx + offsetX, y: my + offsetY },
-                { x: source.x + dx * 0.75 + offsetX * 0.5, y: source.y + dy * 0.75 + offsetY * 0.5 },
-                { x: target.x, y: target.y }
-            ];
-            // Node-avoidance: nudge interior waypoints away from intervening nodes.
-            // Only check nodes in ranks between source and target for O(E*R).
             const srcRank = level.get(edge.v) || 0;
             const tgtRank = level.get(edge.w) || 0;
-            const rankLo = Math.min(srcRank, tgtRank);
-            const rankHi = Math.max(srcRank, tgtRank);
-            const pad = nodeSep * 0.5;
-            for (let pi = 1; pi <= 3; pi++) {
-                const pt = edge.points[pi];
-                for (let r = rankLo; r <= rankHi; r++) {
-                    const rankList = nodesByRank.get(r);
+            const rankDiff = Math.abs(tgtRank - srcRank);
+
+            // Subtle lateral offset for parallel edges (same v→w pair).
+            const pairInfo = edgePairIndex.get(`${edge.v}\x00${edge.w}`);
+            let lateralOff = 0;
+            if (pairInfo && pairInfo.total > 1) {
+                lateralOff = (pairInfo.index - (pairInfo.total - 1) / 2) * 3;
+            }
+
+            if (rankDiff <= 1) {
+                // Adjacent or same-rank: clean 3-point straight path.
+                const mx = (source.x + target.x) / 2;
+                const my = (source.y + target.y) / 2;
+                if (lateralOff !== 0) {
+                    const dx = target.x - source.x;
+                    const dy = target.y - source.y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const px = -dy / len;
+                    const py = dx / len;
+                    edge.points = [
+                        { x: source.x, y: source.y },
+                        { x: mx + px * lateralOff, y: my + py * lateralOff },
+                        { x: target.x, y: target.y }
+                    ];
+                } else {
+                    edge.points = [
+                        { x: source.x, y: source.y },
+                        { x: mx, y: my },
+                        { x: target.x, y: target.y }
+                    ];
+                }
+            } else {
+                // Multi-rank edge: route through inter-rank gaps so the edge
+                // follows a smooth diagonal rather than converging to the graph
+                // center like a single midpoint does.
+                const lo = Math.min(srcRank, tgtRank);
+                const hi = Math.max(srcRank, tgtRank);
+                const sP = rotate ? source.x : source.y; // source primary
+                const tP = rotate ? target.x : target.y; // target primary
+                const sS = rotate ? source.y : source.x; // source secondary
+                const tS = rotate ? target.y : target.x; // target secondary
+                const points = [{ x: source.x, y: source.y }];
+                for (let r = lo + 1; r < hi; r++) {
+                    const t = (r - lo) / (hi - lo);
+                    // Place waypoint in the gap before rank r.
+                    const endPrev = rankPrimaryEnd.get(r - 1);
+                    const startCur = rankPrimaryStart.get(r);
+                    const gapPrimary = endPrev !== undefined && startCur !== undefined
+                        ? (endPrev + startCur) / 2
+                        : sP + (tP - sP) * t;
+                    const interpSecondary = sS + (tS - sS) * t + lateralOff;
+                    if (rotate) {
+                        points.push({ x: gapPrimary, y: interpSecondary });
+                    } else {
+                        points.push({ x: interpSecondary, y: gapPrimary });
+                    }
+                }
+                points.push({ x: target.x, y: target.y });
+                // Ensure minimum 3 points for Catmull-Rom.
+                if (points.length < 3) {
+                    const mx = (source.x + target.x) / 2;
+                    const my = (source.y + target.y) / 2;
+                    points.splice(1, 0, { x: mx, y: my });
+                }
+                edge.points = points;
+
+                // Lightweight node-crossing deflection: for each interior
+                // waypoint, if it sits inside a node bbox, push it laterally
+                // just enough to clear the node.  Only checks the single rank
+                // that the waypoint was placed at (O(rank_width) per point).
+                for (let pi = 1; pi < edge.points.length - 1; pi++) {
+                    const pt = edge.points[pi];
+                    const ptRank = lo + pi; // approximate rank this waypoint is near
+                    const rankList = nodesByRank.get(ptRank);
                     if (!rankList) {
                         continue;
                     }
@@ -1208,22 +1257,28 @@ grapher.Graph = class {
                         if (n.v === edge.v || n.v === edge.w) {
                             continue;
                         }
-                        const hw = (n.width || 0) / 2 + pad;
-                        const hh = (n.height || 0) / 2 + pad;
+                        const hw = (n.width || 0) / 2 + 4;
+                        const hh = (n.height || 0) / 2 + 4;
                         if (pt.x > n.x - hw && pt.x < n.x + hw &&
                             pt.y > n.y - hh && pt.y < n.y + hh) {
-                            // Push the waypoint outside the node's bounding box
-                            // along the perpendicular direction.
-                            const nudge = hw + pad;
-                            pt.x += px >= 0 ? nudge : -nudge;
-                            pt.y += py >= 0 ? nudge * 0.5 : -nudge * 0.5;
+                            // Push to the nearer side of the node in secondary axis.
+                            if (rotate) {
+                                const distTop = Math.abs(pt.y - (n.y - hh));
+                                const distBot = Math.abs(pt.y - (n.y + hh));
+                                pt.y = distTop < distBot ? n.y - hh - 2 : n.y + hh + 2;
+                            } else {
+                                const distL = Math.abs(pt.x - (n.x - hw));
+                                const distR = Math.abs(pt.x - (n.x + hw));
+                                pt.x = distL < distR ? n.x - hw - 2 : n.x + hw + 2;
+                            }
                         }
                     }
                 }
             }
             if (edge.width || edge.height) {
-                edge.x = edge.points[2].x;
-                edge.y = edge.points[2].y;
+                const mid = edge.points[Math.floor(edge.points.length / 2)];
+                edge.x = mid.x;
+                edge.y = mid.y;
             }
         }
     }
@@ -1473,9 +1528,8 @@ grapher.Graph = class {
         }
 
         // --- Generate edge waypoints ---
-        // 5-point smooth route: source → quarter → mid → three-quarter → target.
-        // Gives the Catmull-Rom curve enough control points for proper bezier
-        // curves, with perpendicular offsets to separate parallel edges.
+        // Clean 3-point route: source → midpoint → target.
+        // Parallel edges get a subtle lateral offset (3px) to prevent overlap.
         for (const edge of edges) {
             const src = nodeMap.get(edge.v);
             const tgt = nodeMap.get(edge.w);
@@ -1484,29 +1538,29 @@ grapher.Graph = class {
             }
             const mx = (src.x + tgt.x) / 2;
             const my = (src.y + tgt.y) / 2;
-            const dx = tgt.x - src.x;
-            const dy = tgt.y - src.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            const px = -dy / len;
-            const py = dx / len;
             const pairInfo = forcePairIndex.get(`${edge.v}\x00${edge.w}`);
-            let lateralOffset = 0;
             if (pairInfo && pairInfo.total > 1) {
-                lateralOffset = (pairInfo.index - (pairInfo.total - 1) / 2) * 20;
+                const dx = tgt.x - src.x;
+                const dy = tgt.y - src.y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const px = -dy / len;
+                const py = dx / len;
+                const off = (pairInfo.index - (pairInfo.total - 1) / 2) * 3;
+                edge.points = [
+                    { x: src.x, y: src.y },
+                    { x: mx + px * off, y: my + py * off },
+                    { x: tgt.x, y: tgt.y }
+                ];
+            } else {
+                edge.points = [
+                    { x: src.x, y: src.y },
+                    { x: mx, y: my },
+                    { x: tgt.x, y: tgt.y }
+                ];
             }
-            const curvature = Math.min(NODE_PADDING * 2, len * 0.15);
-            const offsetX = px * (curvature + lateralOffset);
-            const offsetY = py * (curvature + lateralOffset);
-            edge.points = [
-                { x: src.x, y: src.y },
-                { x: src.x + dx * 0.25 + offsetX * 0.5, y: src.y + dy * 0.25 + offsetY * 0.5 },
-                { x: mx + offsetX, y: my + offsetY },
-                { x: src.x + dx * 0.75 + offsetX * 0.5, y: src.y + dy * 0.75 + offsetY * 0.5 },
-                { x: tgt.x, y: tgt.y }
-            ];
             if (edge.width || edge.height) {
-                edge.x = mx + offsetX;
-                edge.y = my + offsetY;
+                edge.x = edge.points[1].x;
+                edge.y = edge.points[1].y;
             }
         }
     }
