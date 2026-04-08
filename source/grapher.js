@@ -896,6 +896,12 @@ grapher.Graph = class {
         // For very large graphs skip Dagre entirely and use the O(N) fast layout.
         // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
         const FAST_LAYOUT_THRESHOLD = 5000;
+        // Widen spacing for very large graphs so edges have room to route between
+        // nodes rather than converging into a dense center band.
+        if (nodes.length > FAST_LAYOUT_THRESHOLD) {
+            layout.nodesep = 40;
+            layout.ranksep = 40;
+        }
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
         } else if (!useForce && nodes.length > FAST_LAYOUT_THRESHOLD) {
@@ -955,6 +961,14 @@ grapher.Graph = class {
             if ('x' in edge) {
                 label.x = edge.x;
                 label.y = edge.y;
+            }
+            // Transfer per-edge visual overrides set by _fastLayout so that
+            // Edge.update() can apply them as SVG attributes.
+            if (edge._strokeOpacity !== undefined) {
+                label._strokeOpacity = edge._strokeOpacity;
+            }
+            if (edge._strokeWidth !== undefined) {
+                label._strokeWidth = edge._strokeWidth;
             }
         }
         for (const key of this.nodes.keys()) {
@@ -1279,6 +1293,21 @@ grapher.Graph = class {
                 const mid = edge.points[Math.floor(edge.points.length / 2)];
                 edge.x = mid.x;
                 edge.y = mid.y;
+            }
+            // Scale stroke opacity and width by rank distance so long-distance
+            // edges fade into the background while adjacent-rank edges (the
+            // structurally important ones) stay fully visible.  This prevents
+            // thousands of overlapping long-distance edges from forming an
+            // opaque black mass at the center of the graph.
+            if (rankDiff > 1) {
+                if (rankDiff <= 3) {
+                    edge._strokeOpacity = 0.35;
+                } else if (rankDiff <= 8) {
+                    edge._strokeOpacity = 0.15;
+                } else {
+                    edge._strokeOpacity = 0.06;
+                }
+                edge._strokeWidth = 0.5;
             }
         }
     }
@@ -2207,6 +2236,13 @@ grapher.Edge = class {
         const edgePath = curvePath(this, this.from, this.to);
         this.element.setAttribute('d', edgePath);
         this.hitTest.setAttribute('d', edgePath);
+        // Apply per-edge visual overrides for large-graph readability.
+        if (this._strokeOpacity !== undefined) {
+            this.element.setAttribute('stroke-opacity', this._strokeOpacity);
+        }
+        if (this._strokeWidth !== undefined) {
+            this.element.setAttribute('stroke-width', this._strokeWidth);
+        }
         if (this.labelElement) {
             const labelX = this.x;
             const labelY = this.y;
