@@ -148,18 +148,23 @@ grapher.Graph = class {
             throw new Error(`Invalid edge '${JSON.stringify(edge.w)}'.`);
         }
         const key = `${edge.v}:${edge.w}`;
-        if (!this._edges.has(key)) {
-            this._edges.set(key, { v: edge.v, w: edge.w, label: edge });
-            // Maintain adjacency index for O(degree) edge lookup per node.
-            if (!this._nodeEdges.has(edge.v)) {
-                this._nodeEdges.set(edge.v, new Set());
-            }
-            this._nodeEdges.get(edge.v).add(key);
-            if (!this._nodeEdges.has(edge.w)) {
-                this._nodeEdges.set(edge.w, new Set());
-            }
-            this._nodeEdges.get(edge.w).add(key);
+        const entry = this._edges.get(key);
+        if (entry) {
+            entry.v = edge.v;
+            entry.w = edge.w;
+            entry.label = edge;
+            return;
         }
+        this._edges.set(key, { v: edge.v, w: edge.w, label: edge });
+        // Maintain adjacency index for O(degree) edge lookup per node.
+        if (!this._nodeEdges.has(edge.v)) {
+            this._nodeEdges.set(edge.v, new Set());
+        }
+        this._nodeEdges.get(edge.v).add(key);
+        if (!this._nodeEdges.has(edge.w)) {
+            this._nodeEdges.set(edge.w, new Set());
+        }
+        this._nodeEdges.get(edge.w).add(key);
     }
 
     setParent(node, parent) {
@@ -308,7 +313,11 @@ grapher.Graph = class {
                     continue;
                 }
                 this._ensureNodeElement(nodeId, document);
-                const node = this.node(nodeId).label;
+                const entry = this.node(nodeId);
+                if (!entry || !entry.label) {
+                    continue;
+                }
+                const node = entry.label;
                 if (node.element) {
                     this._showNode(node);
                     builtNodes.push({ nodeId, node });
@@ -940,7 +949,11 @@ grapher.Graph = class {
         let boundsMaxX = -Infinity;
         let boundsMaxY = -Infinity;
         for (const node of nodes) {
-            const label = this.node(node.v).label;
+            const entry = this.node(node.v);
+            if (!entry || !entry.label) {
+                continue;
+            }
+            const label = entry.label;
             label.x = node.x;
             label.y = node.y;
             if (this.children(node.v).length) {
@@ -956,7 +969,11 @@ grapher.Graph = class {
         }
         this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const edge of edges) {
-            const label = this.edge(edge.v, edge.w).label;
+            const entry = this.edge(edge.v, edge.w);
+            if (!entry || !entry.label) {
+                continue;
+            }
+            const label = entry.label;
             label.points = edge.points;
             if ('x' in edge) {
                 label.x = edge.x;
@@ -964,11 +981,20 @@ grapher.Graph = class {
             }
             // Transfer per-edge visual overrides set by _fastLayout so that
             // Edge.update() can apply them as SVG attributes.
-            if (edge._strokeOpacity !== undefined) {
+            if (edge._strokeOpacity === undefined) {
+                delete label._strokeOpacity;
+            } else {
                 label._strokeOpacity = edge._strokeOpacity;
             }
-            if (edge._strokeWidth !== undefined) {
+            if (edge._strokeWidth === undefined) {
+                delete label._strokeWidth;
+            } else {
                 label._strokeWidth = edge._strokeWidth;
+            }
+            if (edge._pathStyle === undefined) {
+                delete label._pathStyle;
+            } else {
+                label._pathStyle = edge._pathStyle;
             }
         }
         for (const key of this.nodes.keys()) {
@@ -1182,6 +1208,7 @@ grapher.Graph = class {
             nodesByRank.get(r).push(node);
         }
 
+        const largeGraph = edges.length > 512 || nodes.length > 256;
         for (const edge of edges) {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
@@ -1221,6 +1248,35 @@ grapher.Graph = class {
                         { x: target.x, y: target.y }
                     ];
                 }
+            } else if (largeGraph) {
+                // For large graphs, prefer a Netron-like orthogonal route with
+                // monotonic primary-axis progression. This avoids high-curvature
+                // splines piling into the center while staying O(rankDiff).
+                const sourceHalfPrimary = rotate ? ((source.width || 0) / 2) : ((source.height || 0) / 2);
+                const targetHalfPrimary = rotate ? ((target.width || 0) / 2) : ((target.height || 0) / 2);
+                const primaryDir = tgtRank >= srcRank ? 1 : -1;
+                const sP = (rotate ? source.x : source.y) + (sourceHalfPrimary * primaryDir);
+                const tP = (rotate ? target.x : target.y) - (targetHalfPrimary * primaryDir);
+                const sS = (rotate ? source.y : source.x);
+                const tS = (rotate ? target.y : target.x);
+                const points = [{ x: source.x, y: source.y }];
+                const startGap = sP + primaryDir * Math.min(rankSep * 0.35, 24);
+                const endGap = tP - primaryDir * Math.min(rankSep * 0.35, 24);
+                const midSecondary = sS + ((tS - sS) * 0.5) + lateralOff;
+                if (rotate) {
+                    points.push({ x: startGap, y: sS + lateralOff * 0.5 });
+                    points.push({ x: startGap, y: midSecondary });
+                    points.push({ x: endGap, y: midSecondary });
+                    points.push({ x: endGap, y: tS + lateralOff * 0.5 });
+                } else {
+                    points.push({ x: sS + lateralOff * 0.5, y: startGap });
+                    points.push({ x: midSecondary, y: startGap });
+                    points.push({ x: midSecondary, y: endGap });
+                    points.push({ x: tS + lateralOff * 0.5, y: endGap });
+                }
+                points.push({ x: target.x, y: target.y });
+                edge.points = points;
+                edge._pathStyle = 'orthogonal';
             } else {
                 // Multi-rank edge: route through inter-rank gaps so the edge
                 // follows a smooth diagonal rather than converging to the graph
@@ -1599,6 +1655,9 @@ grapher.Graph = class {
         for (const nodeId of this.nodes.keys()) {
             if (this._isLeafNode(nodeId)) {
                 const entry = this.node(nodeId);
+                if (!entry || !entry.label) {
+                    continue;
+                }
                 const node = entry.label;
                 const shouldUpdate = !restrictToVisible || this._visibleNodes.has(nodeId);
                 if (node.element && shouldUpdate) {
@@ -1622,6 +1681,9 @@ grapher.Graph = class {
             } else {
                 // cluster
                 const entry = this.node(nodeId);
+                if (!entry || !entry.label) {
+                    continue;
+                }
                 const node = entry.label;
                 node.element.setAttribute('transform', `translate(${node.x},${node.y})`);
                 node.rectangle.setAttribute('x', - node.width / 2);
@@ -2228,9 +2290,25 @@ grapher.Edge = class {
             return { x: x + w, y: y + (dx === 0 ? 0 : w * dy / dx) };
         };
         const curvePath = (edge, tail, head) => {
-            const points = edge.points.slice(1, edge.points.length - 1);
+            const sourcePoints = Array.isArray(edge.points) ? edge.points : [];
+            if (sourcePoints.length === 0) {
+                return '';
+            }
+            if (sourcePoints.length === 1) {
+                const p = sourcePoints[0];
+                return `M ${p.x} ${p.y}`;
+            }
+            const points = sourcePoints.slice(1, sourcePoints.length - 1);
+            if (points.length === 0) {
+                const start = sourcePoints[0];
+                const end = sourcePoints[sourcePoints.length - 1];
+                points.push({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 });
+            }
             points.unshift(intersectRect(tail, points[0]));
             points.push(intersectRect(head, points[points.length - 1]));
+            if (edge._pathStyle === 'orthogonal') {
+                return new grapher.Edge.Polyline(points, 6).path.data;
+            }
             return new grapher.Edge.Curve(points).path.data;
         };
         const edgePath = curvePath(this, this.from, this.to);
@@ -2356,6 +2434,67 @@ grapher.Edge.Curve = class {
     }
 };
 
+grapher.Edge.Polyline = class {
+
+    constructor(points, radius = 0) {
+        this._path = new grapher.Edge.Path();
+        const list = [];
+        for (const point of points) {
+            const x = Number(point.x);
+            const y = Number(point.y);
+            const last = list.length > 0 ? list[list.length - 1] : null;
+            if (!last || last.x !== x || last.y !== y) {
+                list.push({ x, y });
+            }
+        }
+        if (list.length === 0) {
+            return;
+        }
+        this._path.moveTo(list[0].x, list[0].y);
+        if (list.length === 1) {
+            return;
+        }
+        if (radius <= 0 || list.length < 3) {
+            for (let i = 1; i < list.length; i++) {
+                this._path.lineTo(list[i].x, list[i].y);
+            }
+            return;
+        }
+        for (let i = 1; i < list.length - 1; i++) {
+            const a = list[i - 1];
+            const b = list[i];
+            const c = list[i + 1];
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            const bcx = c.x - b.x;
+            const bcy = c.y - b.y;
+            const abLen = Math.sqrt((abx * abx) + (aby * aby));
+            const bcLen = Math.sqrt((bcx * bcx) + (bcy * bcy));
+            if (!abLen || !bcLen) {
+                this._path.lineTo(b.x, b.y);
+                continue;
+            }
+            const cross = (abx * bcy) - (aby * bcx);
+            if (Math.abs(cross) < 0.001) {
+                this._path.lineTo(b.x, b.y);
+                continue;
+            }
+            const corner = Math.min(radius, abLen / 2, bcLen / 2);
+            const startX = b.x - ((abx / abLen) * corner);
+            const startY = b.y - ((aby / abLen) * corner);
+            const endX = b.x + ((bcx / bcLen) * corner);
+            const endY = b.y + ((bcy / bcLen) * corner);
+            this._path.lineTo(startX, startY);
+            this._path.quadraticCurveTo(b.x, b.y, endX, endY);
+        }
+        this._path.lineTo(list[list.length - 1].x, list[list.length - 1].y);
+    }
+
+    get path() {
+        return this._path;
+    }
+};
+
 grapher.Edge.Path = class {
 
     constructor() {
@@ -2384,6 +2523,12 @@ grapher.Edge.Path = class {
         this._x1 = x;
         this._y1 = y;
         this._data += `C${x1},${y1},${x2},${y2},${x},${y}`;
+    }
+
+    quadraticCurveTo(x1, y1, x, y) {
+        this._x1 = x;
+        this._y1 = y;
+        this._data += `Q${x1},${y1},${x},${y}`;
     }
 
     closePath() {
