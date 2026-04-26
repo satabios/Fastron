@@ -902,36 +902,47 @@ grapher.Graph = class {
         }
         const state = { /* log: true */ };
         const useForce = this.options && this.options.layout === 'force';
-        // For very large graphs skip Dagre entirely and use the O(N) fast layout.
-        // Dagre's network-simplex is O(N²) and causes multi-second stalls for N > 3000.
-        const FAST_LAYOUT_THRESHOLD = 5000;
-        // Widen spacing for very large graphs so edges have room to route between
-        // nodes rather than converging into a dense center band.
-        if (nodes.length > FAST_LAYOUT_THRESHOLD) {
+        const nodeCount = nodes.length;
+        const edgeCount = edges.length;
+        const edgeDensity = edgeCount / Math.max(1, nodeCount);
+        // Keep Dagre for medium-size sparse graphs where it materially improves
+        // placement, but keep the fast fallback for huge or dense graphs so
+        // loading performance does not regress.
+        const FAST_LAYOUT_NODE_THRESHOLD = 9000;
+        const FAST_LAYOUT_EDGE_DENSITY = 4;
+        const preferFastLayout = nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
+        // Widen spacing only when using the fast fallback so long edges have
+        // room to route between nodes rather than converging into a dense band.
+        if (preferFastLayout) {
             layout.nodesep = 40;
             layout.ranksep = 40;
         }
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
-        } else if (!useForce && nodes.length > FAST_LAYOUT_THRESHOLD) {
+        } else if (!useForce && !worker && preferFastLayout) {
             this._fastLayout(nodes, edges, rotate, layout);
         } else if (worker) {
-            try {
-                const timeoutMs = Math.max(30000, nodes.length * 20);
-                const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, timeoutMs, 'This large graph layout might take a very long time to complete.');
-                if (message.type === 'cancel' || message.type === 'terminate') {
-                    return message.type;
-                }
-                nodes = message.nodes;
-                edges = message.edges;
-                state.log = message.state.log;
-            } catch {
-                // Avoid long main-thread stalls for very large graphs.
-                if (nodes.length > this._mainThreadLayoutThreshold) {
-                    this._fastLayout(nodes, edges, rotate, layout);
-                } else {
-                    const dagre = await import('./dagre.js');
-                    dagre.layout(nodes, edges, layout, state);
+            if (preferFastLayout) {
+                this._fastLayout(nodes, edges, rotate, layout);
+            } else {
+                try {
+                    const timeoutMs = Math.max(20000, Math.min(60000, (nodeCount * 10) + (edgeCount * 2)));
+                    const message = await worker.request({ type: 'dagre.layout', nodes, edges, layout, state }, timeoutMs, 'This large graph layout might take a very long time to complete.');
+                    if (message.type === 'cancel' || message.type === 'terminate') {
+                        return message.type;
+                    }
+                    nodes = message.nodes;
+                    edges = message.edges;
+                    state.log = message.state.log;
+                } catch {
+                    // Preserve responsiveness when the worker is unavailable or
+                    // Dagre fails on graphs large enough to threaten interactivity.
+                    if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                        this._fastLayout(nodes, edges, rotate, layout);
+                    } else {
+                        const dagre = await import('./dagre.js');
+                        dagre.layout(nodes, edges, layout, state);
+                    }
                 }
             }
         } else if (nodes.length > this._mainThreadLayoutThreshold) {
@@ -1120,35 +1131,113 @@ grapher.Graph = class {
 
         const nodeSep = Number.isFinite(layout.nodesep) ? layout.nodesep : 20;
         const rankSep = Number.isFinite(layout.ranksep) ? layout.ranksep : 20;
-        let primary = 0;
-
-        for (const rank of rankKeys) {
-            const rankNodes = ranks.get(rank);
-            let maxSpan = 0;
-            // Compute total secondary-axis extent for centering
-            let totalSecondary = -nodeSep;
+        const secondarySpan = (node) => rotate ? Math.max(1, node.height || 0) : Math.max(1, node.width || 0);
+        const primarySpan = (node) => rotate ? Math.max(1, node.width || 0) : Math.max(1, node.height || 0);
+        const rankNodeSep = new Map();
+        const rankPrimarySpan = new Map();
+        const placeRank = (rankNodes, desired) => {
+            const previous = new Map(rankNodes.map((node) => [node.v, Number.isFinite(node._secondary) ? node._secondary : 0]));
+            rankNodes.sort((a, b) => {
+                const ad = desired.get(a.v);
+                const bd = desired.get(b.v);
+                const af = Number.isFinite(ad);
+                const bf = Number.isFinite(bd);
+                if (af && bf && ad !== bd) {
+                    return ad - bd;
+                }
+                if (af !== bf) {
+                    return af ? -1 : 1;
+                }
+                return (previous.get(a.v) || 0) - (previous.get(b.v) || 0);
+            });
+            const separation = rankNodeSep.get(level.get(rankNodes[0].v) || 0) || nodeSep;
+            let cursor = null;
             for (const node of rankNodes) {
-                const width = Math.max(1, node.width || 0);
-                const height = Math.max(1, node.height || 0);
-                totalSecondary += (rotate ? height : width) + nodeSep;
-                maxSpan = Math.max(maxSpan, rotate ? width : height);
+                const half = secondarySpan(node) / 2;
+                let center = desired.get(node.v);
+                if (!Number.isFinite(center)) {
+                    center = cursor === null ? half : cursor + separation + half;
+                }
+                if (cursor !== null) {
+                    center = Math.max(center, cursor + separation + half);
+                }
+                node._secondary = center;
+                cursor = center + half;
             }
-            // Start offset so nodes are centered around the secondary-axis origin
-            let secondary = -(totalSecondary / 2);
+            const targetCenters = [];
             for (const node of rankNodes) {
-                const width = Math.max(1, node.width || 0);
-                const height = Math.max(1, node.height || 0);
-                if (rotate) {
-                    node.x = primary + (width / 2);
-                    node.y = secondary + (height / 2);
-                    secondary += height + nodeSep;
-                } else {
-                    node.x = secondary + (width / 2);
-                    node.y = primary + (height / 2);
-                    secondary += width + nodeSep;
+                const value = desired.get(node.v);
+                if (Number.isFinite(value)) {
+                    targetCenters.push(value);
                 }
             }
-            primary += maxSpan + rankSep;
+            const reference = targetCenters.length > 0
+                ? targetCenters.reduce((sum, value) => sum + value, 0) / targetCenters.length
+                : rankNodes.reduce((sum, node) => sum + (previous.get(node.v) || 0), 0) / Math.max(1, rankNodes.length);
+            const current = rankNodes.reduce((sum, node) => sum + node._secondary, 0) / Math.max(1, rankNodes.length);
+            const shift = reference - current;
+            for (const node of rankNodes) {
+                node._secondary += shift;
+            }
+        };
+        const desiredFromNeighbors = (rankNodes, neighbors) => {
+            const desired = new Map();
+            for (const node of rankNodes) {
+                const ids = neighbors.get(node.v) || [];
+                let total = 0;
+                let count = 0;
+                for (const id of ids) {
+                    const other = nodeMap.get(id);
+                    if (other && Number.isFinite(other._secondary)) {
+                        total += other._secondary;
+                        count++;
+                    }
+                }
+                if (count > 0) {
+                    const anchor = Number.isFinite(node._secondary) ? node._secondary : (total / count);
+                    desired.set(node.v, ((total / count) * 0.85) + (anchor * 0.15));
+                }
+            }
+            return desired;
+        };
+        for (const rank of rankKeys) {
+            const rankNodes = ranks.get(rank);
+            rankPrimarySpan.set(rank, rankNodes.reduce((max, node) => Math.max(max, primarySpan(node)), 0));
+            rankNodeSep.set(rank, nodeSep + Math.min(28, Math.max(0, (Math.sqrt(rankNodes.length) - 2) * 6)));
+            let cursor = 0;
+            for (const node of rankNodes) {
+                const half = secondarySpan(node) / 2;
+                node._secondary = cursor + half;
+                cursor += (half * 2) + rankNodeSep.get(rank);
+            }
+            const mean = rankNodes.reduce((sum, node) => sum + node._secondary, 0) / Math.max(1, rankNodes.length);
+            for (const node of rankNodes) {
+                node._secondary -= mean;
+            }
+        }
+        for (let sweep = 0; sweep < 6; sweep++) {
+            for (let index = 1; index < rankKeys.length; index++) {
+                const rank = rankKeys[index];
+                placeRank(ranks.get(rank), desiredFromNeighbors(ranks.get(rank), incoming));
+            }
+            for (let index = rankKeys.length - 2; index >= 0; index--) {
+                const rank = rankKeys[index];
+                placeRank(ranks.get(rank), desiredFromNeighbors(ranks.get(rank), outgoing));
+            }
+        }
+        let primary = 0;
+        for (const rank of rankKeys) {
+            const rankNodes = ranks.get(rank);
+            for (const node of rankNodes) {
+                if (rotate) {
+                    node.x = primary + (primarySpan(node) / 2);
+                    node.y = node._secondary;
+                } else {
+                    node.x = node._secondary;
+                    node.y = primary + (primarySpan(node) / 2);
+                }
+            }
+            primary += (rankPrimarySpan.get(rank) || 0) + rankSep;
         }
 
         // Record the primary-axis start of each rank so we can route edges
@@ -1158,13 +1247,7 @@ grapher.Graph = class {
         {
             let p = 0;
             for (const rank of rankKeys) {
-                const rNodes = ranks.get(rank);
-                let maxSpan = 0;
-                for (const node of rNodes) {
-                    const w = Math.max(1, node.width || 0);
-                    const h = Math.max(1, node.height || 0);
-                    maxSpan = Math.max(maxSpan, rotate ? w : h);
-                }
+                const maxSpan = rankPrimarySpan.get(rank) || 0;
                 rankPrimaryStart.set(rank, p);
                 rankPrimaryEnd.set(rank, p + maxSpan);
                 p += maxSpan + rankSep;
@@ -1208,7 +1291,6 @@ grapher.Graph = class {
             nodesByRank.get(r).push(node);
         }
 
-        const largeGraph = edges.length > 512 || nodes.length > 256;
         for (const edge of edges) {
             const source = nodeMap.get(edge.v);
             const target = nodeMap.get(edge.w);
@@ -1248,54 +1330,25 @@ grapher.Graph = class {
                         { x: target.x, y: target.y }
                     ];
                 }
-            } else if (largeGraph) {
-                // For large graphs, prefer a Netron-like orthogonal route with
-                // monotonic primary-axis progression. This avoids high-curvature
-                // splines piling into the center while staying O(rankDiff).
-                const sourceHalfPrimary = rotate ? ((source.width || 0) / 2) : ((source.height || 0) / 2);
-                const targetHalfPrimary = rotate ? ((target.width || 0) / 2) : ((target.height || 0) / 2);
-                const primaryDir = tgtRank >= srcRank ? 1 : -1;
-                const sP = (rotate ? source.x : source.y) + (sourceHalfPrimary * primaryDir);
-                const tP = (rotate ? target.x : target.y) - (targetHalfPrimary * primaryDir);
-                const sS = (rotate ? source.y : source.x);
-                const tS = (rotate ? target.y : target.x);
-                const points = [{ x: source.x, y: source.y }];
-                const startGap = sP + primaryDir * Math.min(rankSep * 0.35, 24);
-                const endGap = tP - primaryDir * Math.min(rankSep * 0.35, 24);
-                const midSecondary = sS + ((tS - sS) * 0.5) + lateralOff;
-                if (rotate) {
-                    points.push({ x: startGap, y: sS + lateralOff * 0.5 });
-                    points.push({ x: startGap, y: midSecondary });
-                    points.push({ x: endGap, y: midSecondary });
-                    points.push({ x: endGap, y: tS + lateralOff * 0.5 });
-                } else {
-                    points.push({ x: sS + lateralOff * 0.5, y: startGap });
-                    points.push({ x: midSecondary, y: startGap });
-                    points.push({ x: midSecondary, y: endGap });
-                    points.push({ x: tS + lateralOff * 0.5, y: endGap });
-                }
-                points.push({ x: target.x, y: target.y });
-                edge.points = points;
             } else {
-                // Multi-rank edge: route through inter-rank gaps so the edge
-                // follows a smooth diagonal rather than converging to the graph
-                // center like a single midpoint does.
+                // Multi-rank edge: route through each inter-rank gap so long
+                // edges stay distributed across the graph instead of converging
+                // toward a shared midpoint band.
                 const lo = Math.min(srcRank, tgtRank);
                 const hi = Math.max(srcRank, tgtRank);
-                const sP = rotate ? source.x : source.y; // source primary
-                const tP = rotate ? target.x : target.y; // target primary
-                const sS = rotate ? source.y : source.x; // source secondary
-                const tS = rotate ? target.y : target.x; // target secondary
+                const sP = rotate ? source.x : source.y;
+                const tP = rotate ? target.x : target.y;
+                const sS = rotate ? source.y : source.x;
+                const tS = rotate ? target.y : target.x;
                 const points = [{ x: source.x, y: source.y }];
                 for (let r = lo + 1; r < hi; r++) {
                     const t = (r - lo) / (hi - lo);
-                    // Place waypoint in the gap before rank r.
                     const endPrev = rankPrimaryEnd.get(r - 1);
                     const startCur = rankPrimaryStart.get(r);
                     const gapPrimary = endPrev !== undefined && startCur !== undefined
                         ? (endPrev + startCur) / 2
-                        : sP + (tP - sP) * t;
-                    const interpSecondary = sS + (tS - sS) * t + lateralOff;
+                        : sP + ((tP - sP) * t);
+                    const interpSecondary = sS + ((tS - sS) * t) + lateralOff;
                     if (rotate) {
                         points.push({ x: gapPrimary, y: interpSecondary });
                     } else {
@@ -1303,42 +1356,35 @@ grapher.Graph = class {
                     }
                 }
                 points.push({ x: target.x, y: target.y });
-                // Ensure minimum 3 points for Catmull-Rom.
                 if (points.length < 3) {
                     const mx = (source.x + target.x) / 2;
                     const my = (source.y + target.y) / 2;
                     points.splice(1, 0, { x: mx, y: my });
                 }
                 edge.points = points;
-
-                // Lightweight node-crossing deflection: for each interior
-                // waypoint, if it sits inside a node bbox, push it laterally
-                // just enough to clear the node.  Only checks the single rank
-                // that the waypoint was placed at (O(rank_width) per point).
-                for (let pi = 1; pi < edge.points.length - 1; pi++) {
-                    const pt = edge.points[pi];
-                    const ptRank = lo + pi; // approximate rank this waypoint is near
-                    const rankList = nodesByRank.get(ptRank);
+                for (let pointIndex = 1; pointIndex < edge.points.length - 1; pointIndex++) {
+                    const point = edge.points[pointIndex];
+                    const pointRank = lo + pointIndex;
+                    const rankList = nodesByRank.get(pointRank);
                     if (!rankList) {
                         continue;
                     }
-                    for (const n of rankList) {
-                        if (n.v === edge.v || n.v === edge.w) {
+                    for (const node of rankList) {
+                        if (node.v === edge.v || node.v === edge.w) {
                             continue;
                         }
-                        const hw = (n.width || 0) / 2 + 4;
-                        const hh = (n.height || 0) / 2 + 4;
-                        if (pt.x > n.x - hw && pt.x < n.x + hw &&
-                            pt.y > n.y - hh && pt.y < n.y + hh) {
-                            // Push to the nearer side of the node in secondary axis.
+                        const halfWidth = (node.width || 0) / 2 + 4;
+                        const halfHeight = (node.height || 0) / 2 + 4;
+                        if (point.x > node.x - halfWidth && point.x < node.x + halfWidth &&
+                            point.y > node.y - halfHeight && point.y < node.y + halfHeight) {
                             if (rotate) {
-                                const distTop = Math.abs(pt.y - (n.y - hh));
-                                const distBot = Math.abs(pt.y - (n.y + hh));
-                                pt.y = distTop < distBot ? n.y - hh - 2 : n.y + hh + 2;
+                                const distTop = Math.abs(point.y - (node.y - halfHeight));
+                                const distBottom = Math.abs(point.y - (node.y + halfHeight));
+                                point.y = distTop < distBottom ? node.y - halfHeight - 2 : node.y + halfHeight + 2;
                             } else {
-                                const distL = Math.abs(pt.x - (n.x - hw));
-                                const distR = Math.abs(pt.x - (n.x + hw));
-                                pt.x = distL < distR ? n.x - hw - 2 : n.x + hw + 2;
+                                const distLeft = Math.abs(point.x - (node.x - halfWidth));
+                                const distRight = Math.abs(point.x - (node.x + halfWidth));
+                                point.x = distLeft < distRight ? node.x - halfWidth - 2 : node.x + halfWidth + 2;
                             }
                         }
                     }
@@ -1776,7 +1822,9 @@ grapher.Node = class {
             block.update();
         }
         this.border.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, true, true, true, true));
-        this.element.setAttribute('transform', `translate(${this.x - (this.width / 2)},${this.y - (this.height / 2)})`);
+        const x = grapher.Node.snap(this.x - (this.width / 2));
+        const y = grapher.Node.snap(this.y - (this.height / 2));
+        this.element.setAttribute('transform', `translate(${x},${y})`);
         this.element.style.removeProperty('opacity');
     }
 
@@ -1801,6 +1849,10 @@ grapher.Node = class {
         r3 = r3 ? radius : 0;
         r4 = r4 ? radius : 0;
         return `M${x + r1},${y}h${width - r1 - r2}a${r2},${r2} 0 0 1 ${r2},${r2}v${height - r2 - r3}a${r3},${r3} 0 0 1 ${-r3},${r3}h${r3 + r4 - width}a${r4},${r4} 0 0 1 ${-r4},${-r4}v${-height + r4 + r1}a${r1},${r1} 0 0 1 ${r1},${-r1}z`;
+    }
+
+    static snap(value) {
+        return Math.round(Number.isFinite(value) ? value : 0);
     }
 };
 
@@ -1861,30 +1913,30 @@ grapher.Node.Header = class {
     update() {
         for (let i = 0; i < this._entries.length; i++) {
             const entry = this._entries[i];
-            entry.element.setAttribute('transform', `translate(${entry.x},${this.y})`);
+            entry.element.setAttribute('transform', `translate(${grapher.Node.snap(entry.x)},${grapher.Node.snap(this.y)})`);
             const r1 = i === 0 && this.first;
             const r2 = i === this._entries.length - 1 && this.first;
             const r3 = i === this._entries.length - 1 && this.last;
             const r4 = i === 0 && this.last;
             entry.path.setAttribute('d', grapher.Node.roundedRect(0, 0, entry.width, this.height, r1, r2, r3, r4));
-            entry.text.setAttribute('x', entry.tx || 6);
-            entry.text.setAttribute('y', entry.ty);
+            entry.text.setAttribute('x', grapher.Node.snap(entry.tx || 6));
+            entry.text.setAttribute('y', grapher.Node.snap(entry.ty));
         }
         for (let i = 1; i < this._entries.length; i++) {
             const entry = this._entries[i];
             const line = entry.line;
             line.setAttribute('class', 'node');
-            line.setAttribute('x1', entry.x);
-            line.setAttribute('x2', entry.x);
-            line.setAttribute('y1', this.y);
-            line.setAttribute('y2', this.y + this.height);
+            line.setAttribute('x1', grapher.Node.snap(entry.x));
+            line.setAttribute('x2', grapher.Node.snap(entry.x));
+            line.setAttribute('y1', grapher.Node.snap(this.y));
+            line.setAttribute('y2', grapher.Node.snap(this.y + this.height));
         }
         if (this.line) {
             this.line.setAttribute('class', 'node');
             this.line.setAttribute('x1', 0);
-            this.line.setAttribute('x2', this.width);
-            this.line.setAttribute('y1', this.y);
-            this.line.setAttribute('y2', this.y);
+            this.line.setAttribute('x2', grapher.Node.snap(this.width));
+            this.line.setAttribute('y1', grapher.Node.snap(this.y));
+            this.line.setAttribute('y2', grapher.Node.snap(this.y));
         }
     }
 };
@@ -2042,14 +2094,14 @@ grapher.ArgumentList = class {
     }
 
     update() {
-        this.element.setAttribute('transform', `translate(${this.x},${this.y})`);
+        this.element.setAttribute('transform', `translate(${grapher.Node.snap(this.x)},${grapher.Node.snap(this.y)})`);
         this.background.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, this.first, this.first, this.last, this.last));
         for (const item of this._items) {
             item.update();
         }
         if (this.line) {
             this.line.setAttribute('x1', 0);
-            this.line.setAttribute('x2', this.width);
+            this.line.setAttribute('x2', grapher.Node.snap(this.width));
             this.line.setAttribute('y1', 0);
             this.line.setAttribute('y2', 0);
         }
@@ -2182,12 +2234,12 @@ grapher.Argument = class {
     update() {
         const yPadding = 1;
         const xPadding = 6;
-        this.text.setAttribute('x', this.x + xPadding);
-        this.text.setAttribute('y', this.y + yPadding - this.offset);
-        this.border.setAttribute('x', this.x + 3);
-        this.border.setAttribute('y', this.y);
-        this.border.setAttribute('width', this.width - 6);
-        this.border.setAttribute('height', this.height);
+        this.text.setAttribute('x', grapher.Node.snap(this.x + xPadding));
+        this.text.setAttribute('y', grapher.Node.snap(this.y + yPadding - this.offset));
+        this.border.setAttribute('x', grapher.Node.snap(this.x + 3));
+        this.border.setAttribute('y', grapher.Node.snap(this.y));
+        this.border.setAttribute('width', grapher.Node.snap(this.width - 6));
+        this.border.setAttribute('height', grapher.Node.snap(this.height));
         if (this.type === 'node') {
             const node = this.content;
             node.update();

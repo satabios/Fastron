@@ -18,7 +18,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ windows-latest ]
+        os: [ ubuntu-latest, windows-latest ]
 
     steps:
       - name: Clone Git repository
@@ -59,7 +59,6 @@ jobs:
               npm run build electron mac
               ;;
             ubuntu*)
-              sudo apt-get install rpm --yes
               npm run build electron linux
               ;;
             windows*)
@@ -78,16 +77,15 @@ jobs:
       #       dist/Netron*.exe
       #     retention-days: 30
 
-      # - name: Upload Artifacts (Linux)
-      #   if: runner.os == 'Linux'
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: build-linux
-      #     path: |
-      #       dist/*.deb
-      #       dist/*.rpm
-      #       dist/*.AppImage
-      #     retention-days: 30
+      - name: Upload Artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-linux
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+          retention-days: 30
 
       - name: Upload Artifacts (Windows)
         if: runner.os == 'Windows'
