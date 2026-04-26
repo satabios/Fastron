@@ -6,8 +6,8 @@
         "email": "satabios@users.noreply.github.com",
         "url": "https://www.satabios.com"
     },
-    "version": "4.25.26",
-    "date": "2026-01-03 04:00:58",
+    "version": "2026.4.26",
+    "date": "2026-04-26 05:57:42",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "satabios/netron",
@@ -22,6 +22,7 @@
         "build": "node package.js build",
         "publish": "node package.js publish",
         "version": "node package.js version",
+        "version:date": "node package.js sync-version",
         "test": "node package.js test",
         "validate": "node package.js validate",
         "coverage": "node package.js coverage",
