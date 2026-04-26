@@ -1959,6 +1959,8 @@ view.Graph = class extends grapher.Graph {
         const obj = new view.Input(this, input);
         obj.name = (this._nodeKey++).toString();
         this._table.set(input, obj);
+        this._inputNodes = this._inputNodes || [];
+        this._inputNodes.push(obj);
         return obj;
     }
 
@@ -2342,13 +2344,6 @@ view.Graph = class extends grapher.Graph {
         const canvas = this._canvasElement;
         const origin = this._originElement;
         const background = this._backgroundElement;
-        const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
-        if (elements.length === 0) {
-            const nodeElements = Array.from(canvas.getElementsByClassName('graph-node') || []);
-            if (nodeElements.length > 0) {
-                elements.push(nodeElements[0]);
-            }
-        }
         // When viewport culling with deferred node build is active, leaf nodes have no DOM
         // elements yet, so canvas.getBBox() returns a zero-size box. Use the bounding box
         // computed during layout() instead so the canvas is sized correctly.
@@ -2381,33 +2376,45 @@ view.Graph = class extends grapher.Graph {
         const context = state ? this.select([state.context]) : [];
         if (context.length > 0) {
             this.scrollTo(context, 'instant');
-        } else if (elements && elements.length > 0) {
-            // Center view based on input elements
-            const bounds = container.getBoundingClientRect();
-            const xs = [];
-            const ys = [];
-            for (let i = 0; i < elements.length; i++) {
-                const element = elements[i];
-                const rect = element.getBoundingClientRect();
-                const width = Math.min(rect.width, bounds.width);
-                const height = Math.min(rect.height, bounds.height);
-                xs.push(rect.left + (width / 2));
-                ys.push(rect.top + (height / 2));
-            }
-            let [x] = xs;
-            const [y] = ys;
-            if (ys.every((y) => y === ys[0])) {
-                x = xs.reduce((a, b) => a + b, 0) / xs.length;
-            }
-            const left = (container.scrollLeft + x - bounds.left) - (bounds.width / 2);
-            const top = (container.scrollTop + y - bounds.top) - (bounds.height / 2);
-            container.scrollTo({ left, top, behavior: 'auto' });
         } else {
-            const canvasRect = canvas.getBoundingClientRect();
-            const graphRect = container.getBoundingClientRect();
-            const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
-            const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
-            container.scrollTo({ left, top, behavior: 'auto' });
+            // Use graph-space coordinates from layout to scroll to the starting
+            // (input) nodes. This works at any zoom level and under deferred/
+            // viewport-culling rendering where no DOM elements exist yet.
+            const scrolledToInputs = (() => {
+                const inputNodes = this._inputNodes;
+                if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
+                    return false;
+                }
+                let left = Number.POSITIVE_INFINITY;
+                let right = Number.NEGATIVE_INFINITY;
+                let top = Number.POSITIVE_INFINITY;
+                let bottom = Number.NEGATIVE_INFINITY;
+                let hasCoords = false;
+                for (const node of inputNodes) {
+                    if (typeof node.x === 'number' && typeof node.y === 'number') {
+                        const hw = (node.width || 0) / 2;
+                        const hh = (node.height || 0) / 2;
+                        left = Math.min(left, node.x - hw);
+                        right = Math.max(right, node.x + hw);
+                        top = Math.min(top, node.y - hh);
+                        bottom = Math.max(bottom, node.y + hh);
+                        hasCoords = true;
+                    }
+                }
+                if (!hasCoords) {
+                    return false;
+                }
+                this._scrollToGraphBounds({ x: left, y: top, width: right - left, height: bottom - top }, 'auto');
+                return true;
+            })();
+            if (!scrolledToInputs) {
+                // Fallback: center the whole canvas
+                const canvasRect = canvas.getBoundingClientRect();
+                const graphRect = container.getBoundingClientRect();
+                const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
+                const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
+                container.scrollTo({ left, top, behavior: 'auto' });
+            }
         }
 
         // Trigger initial viewport update for lazy rendering.
