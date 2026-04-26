@@ -1276,7 +1276,6 @@ grapher.Graph = class {
                 }
                 points.push({ x: target.x, y: target.y });
                 edge.points = points;
-                edge._pathStyle = 'orthogonal';
             } else {
                 // Multi-rank edge: route through inter-rank gaps so the edge
                 // follows a smooth diagonal rather than converging to the graph
@@ -2307,7 +2306,7 @@ grapher.Edge = class {
             points.unshift(intersectRect(tail, points[0]));
             points.push(intersectRect(head, points[points.length - 1]));
             if (edge._pathStyle === 'orthogonal') {
-                return new grapher.Edge.Polyline(points, 6).path.data;
+                return new grapher.Edge.Polyline(points, 30).path.data;
             }
             return new grapher.Edge.Curve(points).path.data;
         };
