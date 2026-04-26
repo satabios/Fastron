@@ -503,30 +503,7 @@ view.View = class {
             });
             sidebar.on('select', (sender, value) => {
                 const selection = this._target.select([value]);
-                if (selection && selection.length > 0) {
-                    this._target.scrollToSelection(selection, value);
-                } else {
-                    // Selection failed, likely due to object identity mismatch
-                    // Try to find by name as fallback
-                    if (value && value.name) {
-                        const allValues = Array.from(this._target._values.values());
-                        const matchedValue = allValues.find((v) => v.value.name === value.name);
-                        if (matchedValue && matchedValue.value) {
-                            const retrySelection = this._target.select([matchedValue.value]);
-                            if (retrySelection && retrySelection.length > 0) {
-                                this._target.scrollToSelection(retrySelection, matchedValue.value);
-                                return;
-                            }
-                        }
-                    }
-                    // Last resort: try parent node
-                    if (value && value.node) {
-                        const nodeSelection = this._target.select([value.node]);
-                        if (nodeSelection && nodeSelection.length > 0) {
-                            this._target.scrollToSelection(nodeSelection, value.node);
-                        }
-                    }
-                }
+                this._target.scrollToSelection(selection, value);
             });
             sidebar.on('focus', (sender, value) => {
                 this._target.focus([value]);
@@ -537,29 +514,7 @@ view.View = class {
             sidebar.on('activate', (sender, value) => {
                 this._sidebar.close();
                 const selection = this._target.activate(value);
-                if (selection && selection.length > 0) {
-                    this._target.scrollToSelection(selection, value);
-                } else {
-                    // Activation failed, try name-based fallback
-                    if (value && value.name) {
-                        const allValues = Array.from(this._target._values.values());
-                        const matchedValue = allValues.find((v) => v.value.name === value.name);
-                        if (matchedValue && matchedValue.value) {
-                            const retrySelection = this._target.activate(matchedValue.value);
-                            if (retrySelection && retrySelection.length > 0) {
-                                this._target.scrollToSelection(retrySelection, matchedValue.value);
-                                return;
-                            }
-                        }
-                    }
-                    // Fallback to parent node
-                    if (value && value.node) {
-                        const nodeSelection = this._target.activate(value.node);
-                        if (nodeSelection && nodeSelection.length > 0) {
-                            this._target.scrollToSelection(nodeSelection, value.node);
-                        }
-                    }
-                }
+                this._target.scrollToSelection(selection, value);
             });
             this._sidebar.open(sidebar, 'Find');
         }
@@ -2274,6 +2229,7 @@ view.Graph = class extends grapher.Graph {
             let array = [];
             for (const value of selection) {
                 if (this._table.has(value)) {
+                    this._ensureSelectionMaterialized(value);
                     const element = this._table.get(value);
                     array = array.concat(element.select());
                     this._selection.add(element);
@@ -2295,6 +2251,7 @@ view.Graph = class extends grapher.Graph {
     activate(value) {
         if (this._table.has(value)) {
             this.select(null);
+            this._ensureSelectionMaterialized(value);
             const element = this._table.get(value);
             element.activate();
             return this.select([value]);
@@ -2313,6 +2270,7 @@ view.Graph = class extends grapher.Graph {
 
     focus(selection) {
         for (const value of selection) {
+            this._ensureSelectionMaterialized(value);
             const element = this._table.get(value);
             if (element && !this._selection.has(element)) {
                 element.select();
@@ -2325,6 +2283,57 @@ view.Graph = class extends grapher.Graph {
             const element = this._table.get(value);
             if (element && !this._selection.has(element)) {
                 element.deselect();
+            }
+        }
+    }
+
+    _ensureSelectionMaterialized(value) {
+        if (!value || !this._table.has(value)) {
+            return;
+        }
+        const document = this.host.document;
+        const materializeNode = (node) => {
+            if (!node || typeof node.name !== 'string' || !this.hasNode(node.name)) {
+                return;
+            }
+            const graphNode = this._ensureNodeElement(node.name, document);
+            if (!graphNode || !graphNode.element) {
+                return;
+            }
+            this._showNode(graphNode);
+            if (graphNode._needsUpdate || !graphNode.element.getAttribute('transform')) {
+                graphNode.measure();
+                graphNode.layout();
+                graphNode.update();
+                graphNode._needsUpdate = false;
+            }
+        };
+        const materializeEdge = (edge) => {
+            if (!edge) {
+                return;
+            }
+            const edgeEntry = this.edge(edge.v, edge.w);
+            if (!edgeEntry || !edgeEntry.label) {
+                return;
+            }
+            materializeNode(edgeEntry.label.from);
+            materializeNode(edgeEntry.label.to);
+            this._ensureEdgeElement(edgeEntry, document);
+            this._showEdge(edgeEntry.label);
+            if (edgeEntry.label.element) {
+                edgeEntry.label.update();
+                edgeEntry.label._needsUpdate = false;
+            }
+        };
+        const element = this._table.get(value);
+        if (value.node) {
+            const parentNode = this._table.get(value.node);
+            materializeNode(parentNode);
+        }
+        materializeNode(element);
+        if (Array.isArray(element && element._edges)) {
+            for (const edge of element._edges) {
+                materializeEdge(edge);
             }
         }
     }
@@ -2767,7 +2776,7 @@ view.Graph = class extends grapher.Graph {
             let bottom = Number.NEGATIVE_INFINITY;
             let hasPoint = false;
             for (const edge of element._edges) {
-                const points = edge && edge.label ? edge.label.points : null;
+                const points = edge ? edge.points : null;
                 if (Array.isArray(points)) {
                     for (const point of points) {
                         if (point && typeof point.x === 'number' && typeof point.y === 'number') {
