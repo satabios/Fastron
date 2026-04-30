@@ -6752,6 +6752,13 @@ view.Context = class {
         return this._context.require(id);
     }
 
+    parseJSON(str) {
+        if (this._context && typeof this._context.parseJSON === 'function') {
+            return this._context.parseJSON(str);
+        }
+        return JSON.parse(str);
+    }
+
     error(error, fatal) {
         if (error && this.identifier) {
             error.context = this.identifier;
@@ -7217,6 +7224,13 @@ view.EntryContext = class {
 
     error(error, fatal) {
         this._host.exception(error, fatal);
+    }
+
+    parseJSON(str) {
+        if (this._host && typeof this._host.parseJSON === 'function') {
+            return this._host.parseJSON(str);
+        }
+        return JSON.parse(str);
     }
 };
 
@@ -7936,7 +7950,7 @@ view.Metadata = class {
             } catch {
                 // continue regardless of error
             }
-            const types = JSON.parse(data);
+            const types = typeof context.parseJSON === 'function' ? context.parseJSON(data) : JSON.parse(data);
             metadata.set(name, new view.Metadata(types));
         }
         return metadata.get(name);
