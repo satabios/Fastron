@@ -525,6 +525,10 @@ view.View = class {
     }
 
     set model(value) {
+        if (this._model !== value) {
+            // New model loaded — stale cached graphs from prior model no longer valid.
+            this._renderCache = [];
+        }
         this._model = value;
     }
 
@@ -568,6 +572,15 @@ view.View = class {
             case 'mousewheel':
                 this._options.mousewheel = this._options.mousewheel === 'scroll' ? 'zoom' : 'scroll';
                 break;
+            case 'layout': {
+                // Cycle: dagre → elk → force → dagre
+                const engines = ['dagre', 'elk', 'force'];
+                const cur = this._options.layout || 'dagre';
+                const idx = engines.indexOf(cur);
+                this._options.layout = engines[(idx + 1) % engines.length];
+                this._reload();
+                break;
+            }
             default:
                 throw new view.Error(`Unsupported toggle '${name}'.`);
         }
@@ -938,13 +951,63 @@ view.View = class {
     }
 
     async render(target, signature) {
+        // Opt-3: Capture outgoing viewGraph before nulling this.target.
+        // The setter triggers unregister() (disconnects observers/events).
+        // We then detach its canvas from the DOM and store it in the render
+        // cache so that navigating back to this graph is instant.
+        const prevViewGraph = this._target;
         this.target = null;
         const element = this._element('target');
+
+        // Detach outgoing canvas and cache it (keyed by the graph it rendered).
+        if (prevViewGraph && prevViewGraph._canvasElement && prevViewGraph._renderTarget) {
+            const canvas = prevViewGraph._canvasElement;
+            if (canvas.parentElement) {
+                canvas.parentElement.removeChild(canvas);
+            }
+            if (!this._renderCache) {
+                this._renderCache = [];
+            }
+            // Keep at most 3 cached graphs to bound memory usage.
+            if (this._renderCache.length >= 3) {
+                this._renderCache.shift();
+            }
+            this._renderCache.push({
+                target: prevViewGraph._renderTarget,
+                signature: prevViewGraph._renderSignature,
+                viewGraph: prevViewGraph,
+                canvas
+            });
+        }
+
         while (element.lastChild) {
             element.removeChild(element.lastChild);
         }
+
         let status = '';
         if (target) {
+            // Check render cache — hit means the graph was rendered before.
+            // Reattach the cached canvas and restore scroll/zoom state instantly.
+            const cached = this._renderCache && this._renderCache.find(
+                (e) => e.target === target && e.signature === signature
+            );
+            if (cached) {
+                element.appendChild(cached.canvas);
+                this.target = cached.viewGraph; // triggers register()
+                const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
+                cached.viewGraph.restore(state);
+                if (cached.viewGraph.isViewportCullingEnabled()) {
+                    if (cached.viewGraph._deferredNodeBuild) {
+                        cached.viewGraph.markAllNeedsUpdate();
+                    } else {
+                        cached.viewGraph.hideAllNodes();
+                    }
+                    const viewport = cached.viewGraph._getViewportBounds();
+                    cached.viewGraph._onViewportChange(viewport);
+                }
+                return '';
+            }
+
             const document = this._host.document;
             const graph = target;
             const groups = graph.groups || false;
@@ -953,7 +1016,11 @@ view.View = class {
                 graph_node_count: nodes.length,
                 graph_skip: 0
             });
+            this.progress(10);
             const viewGraph = new view.Graph(this, groups);
+            // Tag the viewGraph so we can key the cache on next navigation.
+            viewGraph._renderTarget = target;
+            viewGraph._renderSignature = signature;
 
             // Enable viewport culling if lazy rendering is on
             if (this._options.lazyRender) {
@@ -971,9 +1038,13 @@ view.View = class {
             }
 
             viewGraph.add(graph, signature);
+            this.progress(25);
             viewGraph.build(document);
+            this.progress(45);
             await viewGraph.measure();
+            this.progress(65);
             status = await viewGraph.layout(this._worker);
+            this.progress(90);
             if (status === '') {
                 viewGraph.update();
 
@@ -983,6 +1054,7 @@ view.View = class {
                 }
 
                 this.target = viewGraph;
+                this.progress(100);
 
                 const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
                 // restore() uses getBBox()/getBoundingClientRect() so nodes must be visible.
