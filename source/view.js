@@ -60,6 +60,7 @@ view.View = class {
         this._modelFactoryService = new view.ModelFactoryService(this._host);
         this._modelFactoryService.import();
         this._worker = this._host.environment('serial') ? null : new view.Worker(this._host);
+        this._layoutCache = new view.LayoutCache();
     }
 
     static _classifyGPUVendor(renderer, vendor) {
@@ -622,6 +623,25 @@ view.View = class {
         }
     }
 
+    // Opt-1: Build an IndexedDB cache key for the given graph module.
+    // Key encodes model filename, module index, layout direction, and engine
+    // so that different models and layout settings never collide.
+    _layoutCacheKey(target) {
+        if (!this._model) {
+            return null;
+        }
+        const identifier = this._model.identifier || '';
+        let modules = Array.isArray(this._model.modules) ? this._model.modules : [];
+        if (Array.isArray(this._model.functions)) {
+            modules = modules.concat(this._model.functions);
+        }
+        const idx = modules.indexOf(target);
+        const moduleIdx = idx >= 0 ? idx : 0;
+        const direction = this._options.direction || 'vertical';
+        const engine = this._options.layout || 'dagre';
+        return `${identifier}::${moduleIdx}::${direction}::${engine}`;
+    }
+
     _timeout(delay) {
         return new Promise((resolve) => {
             setTimeout(resolve, delay);
@@ -1041,12 +1061,29 @@ view.View = class {
             this.progress(25);
             viewGraph.build(document);
             this.progress(45);
-            await viewGraph.measure();
-            this.progress(65);
-            status = await viewGraph.layout(this._worker);
+
+            // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
+            const idbKey = this._layoutCacheKey(target);
+            const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
+            if (idbHit) {
+                // Apply cached positions + edge routing directly — skip measure()+layout().
+                viewGraph.applyLayout(idbHit.nodes, idbHit.edges, idbHit.bounds);
+                status = '';
+            } else {
+                await viewGraph.measure();
+                this.progress(65);
+                status = await viewGraph.layout(this._worker);
+            }
+
             this.progress(90);
             if (status === '') {
                 viewGraph.update();
+
+                // Persist layout to IndexedDB (async, non-blocking) for future opens.
+                if (idbKey && !idbHit) {
+                    const snap = viewGraph.getLayoutSnapshot();
+                    this._layoutCache.set(idbKey, snap.nodes, snap.edges, snap.bounds).catch(() => {});
+                }
 
                 // Populate tiles after layout completes
                 if (viewGraph.isViewportCullingEnabled()) {
@@ -8111,6 +8148,112 @@ view.Error = class extends Error {
     constructor(message) {
         super(message);
         this.name = 'Error loading model.';
+    }
+};
+
+// Opt-1: Persistent layout cache backed by IndexedDB.
+// Stores dagre node positions + edge routing for previously opened models so
+// that repeated opens of the same model can skip measure() + layout().
+// Cache key: "<modelIdentifier>::<moduleIndex>::<direction>::<layoutEngine>"
+// LRU-like eviction: keeps at most 20 entries, removes oldest on overflow.
+view.LayoutCache = class {
+
+    static get DB_NAME() {
+        return 'fastron-layout-cache';
+    }
+
+    static get STORE_NAME() {
+        return 'layouts';
+    }
+
+    static get MAX_ENTRIES() {
+        return 20;
+    }
+
+    static get DB_VERSION() {
+        return 1;
+    }
+
+    constructor() {
+        this._db = null;
+        this._ready = this._open().catch(() => {
+            this._db = null;
+        });
+    }
+
+    _open() {
+        return new Promise((resolve, reject) => {
+            if (typeof indexedDB === 'undefined') {
+                reject(new Error('IndexedDB not available'));
+                return;
+            }
+            const req = indexedDB.open(view.LayoutCache.DB_NAME, view.LayoutCache.DB_VERSION);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(view.LayoutCache.STORE_NAME)) {
+                    const store = db.createObjectStore(view.LayoutCache.STORE_NAME, { keyPath: 'key' });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                }
+            };
+            req.onsuccess = (e) => {
+                this._db = e.target.result;
+                resolve();
+            };
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async get(key) {
+        await this._ready;
+        if (!this._db) {
+            return null;
+        }
+        return new Promise((resolve) => {
+            try {
+                const tx = this._db.transaction(view.LayoutCache.STORE_NAME, 'readonly');
+                const req = tx.objectStore(view.LayoutCache.STORE_NAME).get(key);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => resolve(null);
+            } catch {
+                resolve(null);
+            }
+        });
+    }
+
+    async set(key, nodes, edges, bounds) {
+        await this._ready;
+        if (!this._db) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            try {
+                const tx = this._db.transaction(view.LayoutCache.STORE_NAME, 'readwrite');
+                const store = tx.objectStore(view.LayoutCache.STORE_NAME);
+                store.put({ key, nodes, edges, bounds, createdAt: Date.now() });
+                // Evict oldest entries if over limit.
+                const countReq = store.count();
+                countReq.onsuccess = () => {
+                    const count = countReq.result;
+                    if (count > view.LayoutCache.MAX_ENTRIES) {
+                        const idx = store.index('createdAt');
+                        const cursorReq = idx.openCursor();
+                        let toDelete = count - view.LayoutCache.MAX_ENTRIES;
+                        cursorReq.onsuccess = (e) => {
+                            const cursor = e.target.result;
+                            if (cursor && toDelete > 0) {
+                                cursor.delete();
+                                toDelete--;
+                                cursor.continue();
+                            }
+                        };
+                    }
+                };
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+            } catch {
+                resolve();
+            }
+        });
     }
 };
 
