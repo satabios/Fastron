@@ -2993,6 +2993,10 @@ view.Node = class extends grapher.Node {
             content = `${begin}\u2026${end}`;
         }
         const styles = category ? ['node-item-type', `node-item-type-${category.toLowerCase()}`] : ['node-item-type'];
+        const dtypeKey = view.Node._getDtypeKey(node);
+        if (dtypeKey) {
+            styles.push(`node-dtype-${dtypeKey}`);
+        }
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => {
             this.context.activate(value);
@@ -3156,6 +3160,63 @@ view.Node = class extends grapher.Node {
             this._edges.set(to, new view.Edge(this, to));
         }
         return this._edges.get(to);
+    }
+
+    static _normalizeDtype(dt) {
+        if (!dt || dt === '?') {
+            return null;
+        }
+        const map = {
+            'float32': 'fp32', 'float': 'fp32',
+            'float16': 'fp16',
+            'bfloat16': 'bf16',
+            'float8e4m3fn': 'fp8', 'float8e4m3fnuz': 'fp8',
+            'float8e5m2': 'fp8', 'float8e5m2fnuz': 'fp8', 'float4e2m1': 'fp8',
+            'int4': 'int4',
+            'int8': 'int8', 'qint8': 'int8',
+            'int16': 'int16',
+            'int32': 'int32', 'qint32': 'int32',
+            'int64': 'int64',
+            'uint4': 'uint4',
+            'uint8': 'uint8', 'quint8': 'uint8',
+            'uint16': 'uint16',
+            'uint32': 'uint32'
+        };
+        return map[dt] || null;
+    }
+
+    static _getDtypeKey(node) {
+        const firstDtype = (argList, requireInitializer) => {
+            if (!Array.isArray(argList)) {
+                return null;
+            }
+            for (const arg of argList) {
+                if (!Array.isArray(arg.value)) {
+                    continue;
+                }
+                for (const val of arg.value) {
+                    if (!val || !val.type || !val.type.dataType) {
+                        continue;
+                    }
+                    if (requireInitializer && !val.initializer) {
+                        continue;
+                    }
+                    const norm = view.Node._normalizeDtype(val.type.dataType);
+                    if (norm) {
+                        return norm;
+                    }
+                }
+            }
+            return null;
+        };
+        const activationDtype = firstDtype(node.outputs, false);
+        const weightDtype = firstDtype(node.inputs, true);
+        if (!activationDtype && !weightDtype) {
+            return null;
+        }
+        const w = weightDtype || activationDtype;
+        const a = activationDtype || weightDtype;
+        return `${w}-${a}`;
     }
 };
 
