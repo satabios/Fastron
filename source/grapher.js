@@ -902,6 +902,7 @@ grapher.Graph = class {
         }
         const state = { /* log: true */ };
         const useForce = this.options && this.options.layout === 'force';
+        const useElk = this.options && this.options.layout === 'elk';
         const nodeCount = nodes.length;
         const edgeCount = edges.length;
         const edgeDensity = edgeCount / Math.max(1, nodeCount);
@@ -919,7 +920,25 @@ grapher.Graph = class {
         }
         if (useForce) {
             this._forceLayout(nodes, edges, rotate, layout);
-        } else if (!useForce && !worker && preferFastLayout) {
+        } else if (useElk && worker) {
+            // Opt-4: ELK layered layout via worker. Falls back to dagre on error.
+            try {
+                const timeoutMs = Math.max(20000, Math.min(60000, (nodeCount * 10) + (edgeCount * 2)));
+                const message = await worker.request({ type: 'elk.layout', nodes, edges, layout, state }, timeoutMs, 'ELK graph layout in progress...');
+                if (message.type === 'cancel' || message.type === 'terminate') {
+                    return message.type;
+                }
+                nodes = message.nodes;
+                edges = message.edges;
+            } catch {
+                if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                    this._fastLayout(nodes, edges, rotate, layout);
+                } else {
+                    const dagre = await import('./dagre.js');
+                    dagre.layout(nodes, edges, layout, state);
+                }
+            }
+        } else if (!useForce && !useElk && !worker && preferFastLayout) {
             this._fastLayout(nodes, edges, rotate, layout);
         } else if (worker) {
             if (preferFastLayout) {
