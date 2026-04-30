@@ -3,14 +3,14 @@
 // Saves examples as *-metadata-examples.json (keyed by type name, for lazy loading)
 // Run: node tools/slim-metadata.mjs
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
-import { join, dirname } from 'path';
+import { dirname, join } from 'path';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sourceDir = join(__dirname, '..', 'source');
 
-const files = readdirSync(sourceDir).filter(f => f.endsWith('-metadata.json'));
+const files = readdirSync(sourceDir).filter((f) => f.endsWith('-metadata.json'));
 let totalSaved = 0;
 
 for (const file of files) {
@@ -25,11 +25,12 @@ for (const file of files) {
     const examples = {};
     let hasExamples = false;
 
-    const slim = data.map(type => {
+    const slim = data.map((type) => {
         if (type.examples && type.examples.length > 0) {
             examples[type.name] = type.examples;
             hasExamples = true;
-            const { examples: _ex, ...rest } = type;
+            const rest = { ...type };
+            delete rest.examples;
             return rest;
         }
         return type;
@@ -51,4 +52,4 @@ for (const file of files) {
     process.stdout.write('\n');
 }
 
-console.log(`\nTotal saved: ${(totalSaved / 1024).toFixed(0)}KB`);
+process.stdout.write(`\nTotal saved: ${(totalSaved / 1024).toFixed(0)}KB\n`);
