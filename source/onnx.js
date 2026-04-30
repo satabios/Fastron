@@ -1284,11 +1284,21 @@ onnx.Metadata = class {
         if (!onnx.Metadata._metadata) {
             let data = null;
             try {
-                data = await context.request('onnx-metadata.json');
+                data = await context.request('onnx-metadata.slim.json');
+                onnx.Metadata._metadata = new onnx.Metadata(data);
+                context.request('onnx-metadata-examples.json').then((exData) => {
+                    if (exData) {
+                        onnx.Metadata._metadata.mergeExamples(JSON.parse(exData));
+                    }
+                }).catch(() => {});
             } catch {
-                // continue regardless of error
+                try {
+                    data = await context.request('onnx-metadata.json');
+                    onnx.Metadata._metadata = new onnx.Metadata(data);
+                } catch {
+                    onnx.Metadata._metadata = new onnx.Metadata(null);
+                }
             }
-            onnx.Metadata._metadata = new onnx.Metadata(data);
         }
         return onnx.Metadata._metadata;
     }
@@ -1306,6 +1316,19 @@ onnx.Metadata = class {
                     types.set(type.name, []);
                 }
                 types.get(type.name).push(type);
+            }
+        }
+    }
+
+    mergeExamples(examples) {
+        for (const [opName, opExamples] of Object.entries(examples)) {
+            for (const typesByName of this._types.values()) {
+                const versions = typesByName.get(opName);
+                if (versions) {
+                    for (const t of versions) {
+                        t.examples = opExamples;
+                    }
+                }
             }
         }
     }

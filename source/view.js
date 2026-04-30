@@ -7945,13 +7945,29 @@ view.Metadata = class {
         const metadata = view.Metadata._metadata;
         if (!metadata.has(name)) {
             let data = null;
+            let usingSlim = false;
+            const slimName = name.replace('-metadata.json', '-metadata.slim.json');
             try {
-                data = await context.request(name);
+                data = await context.request(slimName);
+                usingSlim = true;
             } catch {
-                // continue regardless of error
+                try {
+                    data = await context.request(name);
+                } catch {
+                    // continue regardless of error
+                }
             }
             const types = typeof context.parseJSON === 'function' ? context.parseJSON(data) : JSON.parse(data);
-            metadata.set(name, new view.Metadata(types));
+            const meta = new view.Metadata(types);
+            metadata.set(name, meta);
+            if (usingSlim) {
+                const examplesName = name.replace('-metadata.json', '-metadata-examples.json');
+                context.request(examplesName).then((exData) => {
+                    if (exData) {
+                        meta.mergeExamples(JSON.parse(exData));
+                    }
+                }).catch(() => {});
+            }
         }
         return metadata.get(name);
     }
@@ -7969,6 +7985,15 @@ view.Metadata = class {
                 if (type.identifier !== undefined) {
                     this._types.set(type.identifier, type);
                 }
+            }
+        }
+    }
+
+    mergeExamples(examples) {
+        for (const [name, typeExamples] of Object.entries(examples)) {
+            const type = this._types.get(name);
+            if (type) {
+                type.examples = typeExamples;
             }
         }
     }

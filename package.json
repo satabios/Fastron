@@ -29,6 +29,7 @@
         "analyze": "node package.js analyze",
         "update": "node package.js update",
         "pull": "node package.js pull",
+        "slim-metadata": "node tools/slim-metadata.mjs",
         "rebuild-native": "electron-rebuild -f -w simdjson"
     },
     "dependencies": {

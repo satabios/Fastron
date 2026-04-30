@@ -2616,9 +2616,13 @@ pytorch.Metadata = class {
         if (!pytorch.Metadata._metadata) {
             let data = null;
             try {
-                data = await context.request('pytorch-metadata.json');
+                data = await context.request('pytorch-metadata.slim.json');
             } catch {
-                // continue regardless of error
+                try {
+                    data = await context.request('pytorch-metadata.json');
+                } catch {
+                    // continue regardless of error
+                }
             }
             pytorch.Metadata._metadata = new pytorch.Metadata(data);
         }
