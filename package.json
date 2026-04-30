@@ -6,8 +6,8 @@
         "email": "satabios@users.noreply.github.com",
         "url": "https://www.satabios.com"
     },
-    "version": "8.8.1",
-    "date": "2026-01-03 04:00:58",
+    "version": "2026.4.30",
+    "date": "2026-04-30 08:34:00",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "satabios/netron",
@@ -22,18 +22,25 @@
         "build": "node package.js build",
         "publish": "node package.js publish",
         "version": "node package.js version",
+        "version:date": "node package.js sync-version",
         "test": "node package.js test",
         "validate": "node package.js validate",
         "coverage": "node package.js coverage",
         "analyze": "node package.js analyze",
         "update": "node package.js update",
-        "pull": "node package.js pull"
+        "pull": "node package.js pull",
+        "slim-metadata": "node tools/slim-metadata.mjs",
+        "rebuild-native": "electron-rebuild -f -w simdjson"
     },
     "dependencies": {
         "electron-updater": "6.6.8"
     },
+    "optionalDependencies": {
+        "simdjson": "0.9.2"
+    },
     "devDependencies": {
         "@electron/notarize": "3.1.1",
+        "@electron/rebuild": "4.0.4",
         "@playwright/test": "1.57.0",
         "electron": "39.2.7",
         "electron-builder": "26.0.20",
