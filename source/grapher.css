@@ -24,19 +24,63 @@
 .node-item-type-control text { fill: #000; }
 .node-item-type-control:hover path { fill: #fff; }
 
-.node-item-type-layer path { fill: rgb(51, 85, 136); }
-.node-item-type-activation path { fill: rgb(112, 41, 33); }
-.node-item-type-pool path { fill: rgb(51, 85, 51); }
-.node-item-type-normalization path { fill: rgb(51, 85, 68); }
-.node-item-type-dropout path { fill: rgb(69, 71, 112); }
-.node-item-type-shape path { fill: rgb(108, 79, 71); }
-.node-item-type-tensor path { fill: rgb(89, 66, 59); }
-.node-item-type-transform path { fill: rgb(51, 85, 68); }
-.node-item-type-data path { fill: rgb(85, 85, 85); }
-.node-item-type-quantization path { fill: rgb(80, 40, 0); }
-.node-item-type-attention path { fill: rgb(120, 60, 0); }
-/* FIX: added missing light-mode rule for custom node type */
-.node-item-type-custom path { fill: rgb(64, 64, 64); }
+/* === Category node colors (light mode) === */
+.node-item-type-layer        path { fill: #2563a8; }
+.node-item-type-layer        text { fill: #fff; }
+.node-item-type-layer:hover  path { fill: #3478cc; }
+
+.node-item-type-activation        path { fill: #b83248; }
+.node-item-type-activation        text { fill: #fff; }
+.node-item-type-activation:hover  path { fill: #d04060; }
+
+.node-item-type-pool        path { fill: #1e7a50; }
+.node-item-type-pool        text { fill: #fff; }
+.node-item-type-pool:hover  path { fill: #28a068; }
+
+.node-item-type-normalization        path { fill: #6838a8; }
+.node-item-type-normalization        text { fill: #fff; }
+.node-item-type-normalization:hover  path { fill: #8050c8; }
+
+.node-item-type-attention        path { fill: #b85c10; }
+.node-item-type-attention        text { fill: #fff; }
+.node-item-type-attention:hover  path { fill: #d87018; }
+
+.node-item-type-transform        path { fill: #0e7a98; }
+.node-item-type-transform        text { fill: #fff; }
+.node-item-type-transform:hover  path { fill: #1298be; }
+
+.node-item-type-tensor        path { fill: #384898; }
+.node-item-type-tensor        text { fill: #fff; }
+.node-item-type-tensor:hover  path { fill: #4860b8; }
+
+.node-item-type-shape        path { fill: #884020; }
+.node-item-type-shape        text { fill: #fff; }
+.node-item-type-shape:hover  path { fill: #a85028; }
+
+.node-item-type-dropout        path { fill: #504898; }
+.node-item-type-dropout        text { fill: #fff; }
+.node-item-type-dropout:hover  path { fill: #6860b8; }
+
+.node-item-type-data        path { fill: #305878; }
+.node-item-type-data        text { fill: #fff; }
+.node-item-type-data:hover  path { fill: #407098; }
+
+.node-item-type-quantization        path { fill: #984010; }
+.node-item-type-quantization        text { fill: #fff; }
+.node-item-type-quantization:hover  path { fill: #b85018; }
+
+.node-item-type-custom        path { fill: #3c4858; }
+.node-item-type-custom        text { fill: #fff; }
+.node-item-type-custom:hover  path { fill: #506070; }
+
+/* === Graph-level input / output nodes === */
+.graph-item-input        path { fill: #1a7868; }
+.graph-item-input        text { fill: #fff; }
+.graph-item-input:hover  path { fill: #239880; }
+
+.graph-item-output        path { fill: #a84820; }
+.graph-item-output        text { fill: #fff; }
+.graph-item-output:hover  path { fill: #c85828; }
 
 .node-item-input path { fill: #fff; }
 .node-item-input:hover { cursor: pointer; }
@@ -55,14 +99,6 @@
 .node-argument-list:hover > path { fill: #f6f6f6; }
 .node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 9px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
 .node-argument > rect { fill: transparent; }
-
-.graph-item-input path { fill: #eee; }
-.graph-item-input:hover { cursor: pointer; }
-.graph-item-input:hover path { fill: #fff; }
-
-.graph-item-output path { fill: #eee; }
-.graph-item-output:hover { cursor: pointer; }
-.graph-item-output:hover path { fill: #fff; }
 
 #arrowhead { fill: #000; }
 #arrowhead-hover { fill: rgba(220, 0, 0, 0.9); }
@@ -127,14 +163,8 @@
     .node-argument-list > path { fill: #2d2d2d; }
     .node-argument-list:hover > path { fill: #303030; }
 
-    .graph-item-input path { fill: #404040; }
     .graph-item-input:hover { cursor: pointer; }
-    .graph-item-input:hover path { fill: #666666; }
-
-    .graph-item-output path { fill: #404040; }
     .graph-item-output:hover { cursor: pointer; }
-    .graph-item-output:hover path { fill: #666666; }
-
     .node-item-input path { fill: #404040; }
     .node-item-input:hover path { fill: #666666; }
     .node-item-constant path { fill: #4b4b4b; }
@@ -144,20 +174,63 @@
     .node-item-undefined path { fill: #cc3333; }
     .node-item-undefined:hover path { fill: #ff6666; }
 
-    .node-item-type-layer path { fill: rgba(51, 85, 136, 0.7); }
-    /* FIX: removed duplicate .node-item-type-activation and .node-item-type-pool rules */
-    .node-item-type-activation path { fill: rgba(75, 27, 22, 0.7); }
-    .node-item-type-pool path { fill: rgba(51, 85, 51, 0.7); }
-    .node-item-type-normalization path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-dropout path { fill: rgba(69, 71, 112, 0.7); }
-    .node-item-type-shape path { fill: rgba(108, 79, 71, 0.7); }
-    .node-item-type-tensor path { fill: rgba(89, 66, 59, 0.7); }
-    .node-item-type-transform path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-data path { fill: rgba(85, 85, 85, 0.7); }
-    /* FIX: rgb() → rgba() — rgb() does not accept a 4th alpha argument */
-    .node-item-type-quantization path { fill: rgba(80, 40, 0, 0.7); }
-    .node-item-type-attention path { fill: rgba(100, 50, 0, 0.7); }
-    .node-item-type-custom path { fill: rgba(64, 64, 64, 0.7); }
+    /* === Category node colors (dark mode) === */
+    .node-item-type-layer        path { fill: #4080d8; }
+    .node-item-type-layer        text { fill: #d8ecff; }
+    .node-item-type-layer:hover  path { fill: #5898f0; }
+
+    .node-item-type-activation        path { fill: #d84860; }
+    .node-item-type-activation        text { fill: #ffd8e0; }
+    .node-item-type-activation:hover  path { fill: #f06080; }
+
+    .node-item-type-pool        path { fill: #28a868; }
+    .node-item-type-pool        text { fill: #c0f8e0; }
+    .node-item-type-pool:hover  path { fill: #38c880; }
+
+    .node-item-type-normalization        path { fill: #9058d0; }
+    .node-item-type-normalization        text { fill: #ecd8ff; }
+    .node-item-type-normalization:hover  path { fill: #a870e8; }
+
+    .node-item-type-attention        path { fill: #d87820; }
+    .node-item-type-attention        text { fill: #ffecd0; }
+    .node-item-type-attention:hover  path { fill: #f09030; }
+
+    .node-item-type-transform        path { fill: #18a8c8; }
+    .node-item-type-transform        text { fill: #c8f4ff; }
+    .node-item-type-transform:hover  path { fill: #28c0e0; }
+
+    .node-item-type-tensor        path { fill: #5068d0; }
+    .node-item-type-tensor        text { fill: #d0d8ff; }
+    .node-item-type-tensor:hover  path { fill: #6880e8; }
+
+    .node-item-type-shape        path { fill: #c06840; }
+    .node-item-type-shape        text { fill: #ffecd0; }
+    .node-item-type-shape:hover  path { fill: #d88058; }
+
+    .node-item-type-dropout        path { fill: #7068c8; }
+    .node-item-type-dropout        text { fill: #ddd8ff; }
+    .node-item-type-dropout:hover  path { fill: #8880e0; }
+
+    .node-item-type-data        path { fill: #4878a8; }
+    .node-item-type-data        text { fill: #d0e8ff; }
+    .node-item-type-data:hover  path { fill: #5890c0; }
+
+    .node-item-type-quantization        path { fill: #c86018; }
+    .node-item-type-quantization        text { fill: #fff0c8; }
+    .node-item-type-quantization:hover  path { fill: #e07828; }
+
+    .node-item-type-custom        path { fill: #586070; }
+    .node-item-type-custom        text { fill: #dde4f0; }
+    .node-item-type-custom:hover  path { fill: #708090; }
+
+    /* === Graph-level input / output nodes (dark mode) === */
+    .graph-item-input        path { fill: #20a888; }
+    .graph-item-input        text { fill: #c0fff0; }
+    .graph-item-input:hover  path { fill: #28c8a0; }
+
+    .graph-item-output        path { fill: #d06030; }
+    .graph-item-output        text { fill: #ffecd0; }
+    .graph-item-output:hover  path { fill: #e87840; }
 
     /* FIX: added dark mode for cluster borders (was near-invisible black on dark bg) */
     .cluster rect { stroke: #666; fill: #fff; fill-opacity: 0.03; stroke-opacity: 0.2; }
