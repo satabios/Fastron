@@ -16,14 +16,6 @@ import time
 import urllib.parse
 import webbrowser
 
-# If pysimdjson is installed, expose faster json.loads for future in-process parsing.
-# json.dumps always uses stdlib since pysimdjson is a parser-only library.
-try:
-    import simdjson as _simdjson
-    _fast_loads = _simdjson.loads
-except ImportError:
-    _fast_loads = json.loads
-
 __version__ = "0.0.0"
 
 logger = logging.getLogger(__name__)
