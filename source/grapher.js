@@ -832,20 +832,22 @@ grapher.Graph = class {
     }
 
     async measure() {
-        // Measure edge labels now that the SVG is in the DOM and visible.
-        // (Moved from build() so that view.Graph.measure() can ensure the
-        // container is not display:none before getBBox() calls.)
+        // Estimate edge label sizes from text length instead of calling
+        // getBBox() on each label element (Opt-5: avoids O(N) forced reflows).
+        // Average character width at 10px font ≈ 6px; line height ≈ 14px.
+        const AVG_CHAR_WIDTH = 6;
+        const LABEL_HEIGHT = 14;
         for (const edge of this.edges.values()) {
             const label = edge.label;
-            if (label.labelElement) {
-                const box = label.labelElement.getBBox();
-                label.width = box.width;
-                label.height = box.height;
-            } else if (label.label && !label.width) {
-                // Deferred edges: estimate label size so dagre reserves space.
-                // Average character width at 10px font ≈ 6px; height ≈ 14px.
-                label.width = label.label.length * 6;
-                label.height = 14;
+            if (!label.width) {
+                if (label.label) {
+                    label.width = label.label.length * AVG_CHAR_WIDTH;
+                    label.height = LABEL_HEIGHT;
+                } else if (label.labelElement) {
+                    const box = label.labelElement.getBBox();
+                    label.width = box.width;
+                    label.height = box.height;
+                }
             }
         }
         const useEstimatedNodeSizes = this.useEstimatedNodeSizes();
@@ -1035,6 +1037,64 @@ grapher.Graph = class {
             }
         }
         return '';
+    }
+
+    // Opt-1: Snapshot current node positions + edge routing for IndexedDB caching.
+    getLayoutSnapshot() {
+        const nodes = [];
+        for (const node of this.nodes.values()) {
+            const label = node.label;
+            if (label && typeof label.x === 'number') {
+                nodes.push({ v: node.v, x: label.x, y: label.y, width: label.width || 0, height: label.height || 0 });
+            }
+        }
+        const edges = [];
+        for (const edge of this.edges.values()) {
+            const label = edge.label;
+            if (label) {
+                const e = { v: edge.v, w: edge.w, points: label.points || [] };
+                if (typeof label.x === 'number') {
+                    e.x = label.x;
+                    e.y = label.y;
+                }
+                edges.push(e);
+            }
+        }
+        return { nodes, edges, bounds: this._layoutBounds || null };
+    }
+
+    // Opt-1: Apply cached node positions + edge routing, bypassing measure()+layout().
+    applyLayout(cachedNodes, cachedEdges, cachedBounds) {
+        for (const n of cachedNodes) {
+            const entry = this.node(n.v);
+            if (!entry || !entry.label) {
+                continue;
+            }
+            const label = entry.label;
+            label.x = n.x;
+            label.y = n.y;
+            label.width = n.width;
+            label.height = n.height;
+        }
+        for (const e of cachedEdges) {
+            const entry = this.edge(e.v, e.w);
+            if (!entry || !entry.label) {
+                continue;
+            }
+            const label = entry.label;
+            label.points = e.points;
+            if ('x' in e) {
+                label.x = e.x;
+                label.y = e.y;
+            }
+        }
+        for (const key of this.nodes.keys()) {
+            const entry = this.node(key);
+            if (this.children(key).length === 0) {
+                entry.label.layout();
+            }
+        }
+        this._layoutBounds = cachedBounds;
     }
 
     _fastLayout(nodes, edges, rotate, layout) {
