@@ -22762,7 +22762,16 @@ mlir.Metadata = class {
 
     static async open(context) {
         if (!mlir.Metadata._metadata) {
-            const data = await context.request('mlir-metadata.json');
+            let data = null;
+            try {
+                data = await context.request('mlir-metadata.slim.json');
+            } catch {
+                try {
+                    data = await context.request('mlir-metadata.json');
+                } catch {
+                    // continue regardless of error
+                }
+            }
             mlir.Metadata._metadata = new mlir.Metadata(data);
         }
         return mlir.Metadata._metadata;
