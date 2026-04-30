@@ -1,7 +1,7 @@
 {
     "appId": "com.satabios.fastron",
     "productName": "Fastron",
-    "files": [ "source/**/*" ],
+    "files": [ "source/**/*", "node_modules/simdjson/**/*" ],
     "directories": { "buildResources": "./publish" },
     "fileAssociations": [
         { "ext": "armnn",       "name": "Arm NN Model"             },
