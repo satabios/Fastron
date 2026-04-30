@@ -17,6 +17,13 @@ const read = (match) => {
 
 let configuration = null;
 
+const releaseInfo = (date = new Date()) => {
+    return {
+        version: `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}`,
+        date: date.toISOString().split('.').shift().split('T').join(' ')
+    };
+};
+
 const dirname = (...args) => {
     const file = url.fileURLToPath(import.meta.url);
     const dir = path.dirname(file);
@@ -98,6 +105,19 @@ const exec = async (command, encoding, cwd) => {
     }
     child_process.execSync(command, { cwd, stdio: [0,1,2] });
     return '';
+};
+
+const syncVersion = async () => {
+    const file = dirname('package.json');
+    const content = await fs.readFile(file, 'utf-8');
+    const packageData = JSON.parse(content);
+    const info = releaseInfo();
+    packageData.version = info.version;
+    packageData.date = info.date;
+    await fs.writeFile(file, JSON.stringify(packageData, null, 4) + os.EOL, 'utf-8');
+    await exec('npm install --package-lock-only');
+    await load();
+    return info;
 };
 
 const sleep = (delay) => {
@@ -207,7 +227,7 @@ const install = async () => {
     const node_modules = dirname('node_modules');
     let exists = await access(node_modules);
     if (exists) {
-        const dependencies = { ...configuration.dependencies, ...configuration.devDependencies };
+        const dependencies = { ...configuration.dependencies, ...configuration.optionalDependencies, ...configuration.devDependencies };
         const matches = await Promise.all(Object.entries(dependencies).map(async ([name, version]) => {
             const file = path.join('node_modules', name, 'package.json');
             const exists = await access(file);
@@ -703,19 +723,7 @@ const analyze = async () => {
 
 const version = async () => {
     await pull();
-    const file = dirname('package.json');
-    let content = await fs.readFile(file, 'utf-8');
-    content = content.replace(/(\s*"version":\s")(\d\.\d\.\d)(",)/m, (match, p1, p2, p3) => {
-        const version = Array.from((parseInt(p2.split('.').join(''), 10) + 1).toString()).join('.');
-        return p1 + version + p3;
-    });
-    content = content.replace(/(\s*"date":\s")(.*)(",)/m, (match, p1, p2, p3) => {
-        const date = new Date().toISOString().split('.').shift().split('T').join(' ');
-        return p1 + date + p3;
-    });
-    await fs.writeFile(file, content, 'utf-8');
-    await exec('npm install --package-lock-only');
-    await load();
+    await syncVersion();
     await exec('git add package.json');
     await exec('git add package-lock.json');
     await exec(`git commit -m "Update to ${configuration.version}"`);
@@ -734,6 +742,7 @@ const main = async () => {
             case 'install': await install(); break;
             case 'build': await build(); break;
             case 'publish': await publish(); break;
+            case 'sync-version': await syncVersion(); break;
             case 'version': await version(); break;
             case 'lint': await lint(); break;
             case 'test': await test(); break;
