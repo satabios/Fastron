@@ -10,25 +10,6 @@ import * as os from 'os';
 import * as path from 'path';
 import * as url from 'url';
 import * as view from './view.js';
-import { createRequire } from 'module';
-
-// Try to load the native simdjson addon (available in Electron with nodeIntegration).
-// Falls back to null so all call-sites can gracefully degrade to JSON.parse.
-const _require = createRequire(import.meta.url);
-let _simdjson = null;
-try {
-    _simdjson = _require('simdjson');
-} catch {
-    // simdjson native addon not available — fall back to JSON.parse
-}
-
-// Minimum string length (bytes) before using simdjson instead of JSON.parse.
-// Benchmark (Node.js, simdjson 0.9.2): full materialization via simdjson.parse()
-// is ~0.5x the speed of V8 JSON.parse for strings already in memory, due to the
-// JS→C++ crossing overhead. The real win is lazyParse() for selective key-path
-// access, which is not yet used here. Threshold set high to avoid regressions
-// until a lazy-access refactor is done.
-const SIMDJSON_MIN_LEN = 50 * 1024 * 1024; // 50 MB — effectively disabled for current files
 
 const desktop = {};
 
@@ -116,13 +97,6 @@ desktop.Host = class {
     }
 
     parseJSON(str) {
-        if (_simdjson && str.length >= SIMDJSON_MIN_LEN) {
-            try {
-                return _simdjson.parse(str);
-            } catch {
-                // fall through to JSON.parse
-            }
-        }
         return JSON.parse(str);
     }
 
@@ -733,13 +707,6 @@ desktop.ComparatorHost = class {
     }
 
     parseJSON(str) {
-        if (_simdjson && str.length >= SIMDJSON_MIN_LEN) {
-            try {
-                return _simdjson.parse(str);
-            } catch {
-                // fall through to JSON.parse
-            }
-        }
         return JSON.parse(str);
     }
 
