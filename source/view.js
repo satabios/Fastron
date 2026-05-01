@@ -2517,12 +2517,24 @@ view.Graph = class extends grapher.Graph {
                 return true;
             })();
             if (!scrolledToInputs) {
-                // Fallback: center the whole canvas
-                const canvasRect = canvas.getBoundingClientRect();
-                const graphRect = container.getBoundingClientRect();
-                const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
-                const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
-                container.scrollTo({ left, top, behavior: 'auto' });
+                // Fallback: scroll to the start (input side) of the graph using layout bounds.
+                // For vertical (TB) layout scroll to the top slice; for horizontal (LR) to the left slice.
+                // This ensures input nodes are visible even when not explicitly tracked.
+                if (this._layoutBounds) {
+                    const isHorizontal = this.options && this.options.direction !== 'vertical';
+                    const b = this._layoutBounds;
+                    const slice = isHorizontal
+                        ? { x: b.x, y: b.y, width: Math.min(400, b.width), height: b.height }
+                        : { x: b.x, y: b.y, width: b.width, height: Math.min(400, b.height) };
+                    this._scrollToGraphBounds(slice, 'auto');
+                } else {
+                    // Last resort: center the whole canvas element.
+                    const canvasRect = canvas.getBoundingClientRect();
+                    const graphRect = container.getBoundingClientRect();
+                    const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
+                    const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
+                    container.scrollTo({ left, top, behavior: 'auto' });
+                }
             }
         }
 
