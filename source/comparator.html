@@ -31,6 +31,17 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
 .legend-item { display: flex; align-items: center; gap: 5px; }
 .legend-swatch { width: 12px; height: 12px; border-radius: 2px; border: 2px solid; }
 
+.comparator-footer { display: flex; flex-direction: column; flex-shrink: 0; }
+.diff-summary { display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 4px 12px; font-size: 11px; background: #f0f0f0; border-top: 1px solid #ddd;
+    user-select: none; min-height: 22px; }
+.summary-count { font-weight: 500; }
+.summary-sep { color: #bbb; }
+.summary-identical { color: #888; }
+.summary-modified { color: #e67e22; }
+.summary-added { color: #27ae60; }
+.summary-removed { color: #e74c3c; }
+
 .comparator-spinner { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex;
     align-items: center; justify-content: center; background: rgba(236,236,236,0.85); z-index: 10; }
 .comparator-spinner.hidden { display: none; }
@@ -99,6 +110,7 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
     .comparator-divider { background: #666; }
     .comparator-target { background: #1e1e1e; }
     .comparator-legend { background: #252525; border-color: #444; color: #888; }
+    .diff-summary { background: #1a1a1a; border-color: #444; }
     .comparator-spinner { background: rgba(30,30,30,0.85); }
     .spinner-text { color: #aaa; }
     .titlebar { color: #949494; }
@@ -162,11 +174,15 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
         <div class="comparator-target" id="target-right" tabindex="0"></div>
     </div>
 </div>
-<div class="comparator-legend">
-    <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Identical</div>
-    <div class="legend-item"><div class="legend-swatch" style="border-color: #e67e22; background: rgba(230,126,34,0.15);"></div> Modified</div>
-    <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Added</div>
-    <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Removed</div>
+<svg id="connector-overlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:3;overflow:visible;"></svg>
+<div class="comparator-footer">
+    <div id="diff-summary" class="diff-summary"></div>
+    <div class="comparator-legend">
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Identical</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #e67e22; background: rgba(230,126,34,0.15);"></div> Modified</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Added</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Removed</div>
+    </div>
 </div>
 <div id="comparator-spinner" class="comparator-spinner">
     <span class="spinner-text">Loading models...</span>
