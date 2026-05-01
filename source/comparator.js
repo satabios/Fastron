@@ -211,6 +211,22 @@ comparator.Controller = class {
             this._graphA.register();
             this._graphB.register();
 
+            // Hook viewport culling on both graphs so connectors redraw after each culling pass.
+            // Without this, connectors drawn before culling runs (150ms debounce) become stale:
+            // newly-visible nodes are still display:none when the scroll handler fires, so
+            // _updateConnectors() skips them. Hooking _onViewportChange ensures a redraw happens
+            // right after culling shows/hides nodes.
+            const origVpcA = this._graphA._onViewportChange.bind(this._graphA);
+            this._graphA._onViewportChange = (viewport) => {
+                origVpcA(viewport);
+                this._updateConnectors();
+            };
+            const origVpcB = this._graphB._onViewportChange.bind(this._graphB);
+            this._graphB._onViewportChange = (viewport) => {
+                origVpcB(viewport);
+                this._updateConnectors();
+            };
+
             // Update summary bar with Phase 1 partial result
             this._updateSummaryBar(phase1Result);
 
