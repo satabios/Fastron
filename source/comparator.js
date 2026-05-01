@@ -173,6 +173,17 @@ comparator.Controller = class {
                 Promise.resolve(this._compareNodesPhase1(targetA, targetB))
             ]);
 
+            // Y-align matched node pairs before tile population
+            // Skip alignment if either model uses compound/grouped layout (group bounds not recomputed)
+            const { nodesA, nodesB, adjA, adjB, matchedA: matchedSetA, matchedB: matchedSetB } = phase1State;
+            const hasGroups = (targetA.groups && targetA.groups.length > 0) || (targetB.groups && targetB.groups.length > 0);
+            if (!hasGroups) {
+                const depthA = this._buildTopoOrder(nodesA, adjA);
+                const depthB = this._buildTopoOrder(nodesB, adjB);
+                const alignTable = this._buildAlignmentTable(nodesA, nodesB, depthA, depthB, matchedSetA, matchedSetB, phase1State.result.pairs);
+                this._applyYAlignment(this._graphA, this._graphB, nodesA, nodesB, alignTable);
+            }
+
             // Populate spatial tiles for viewport culling
             this._graphA.populateTiles();
             this._graphB.populateTiles();
@@ -200,6 +211,12 @@ comparator.Controller = class {
             this._graphA.register();
             this._graphB.register();
 
+            // Update summary bar with Phase 1 partial result
+            this._updateSummaryBar(phase1Result);
+
+            // Draw initial connector lines between matched nodes
+            this._updateConnectors();
+
             // Hide spinner — user can now interact
             const loadSpinner = document.getElementById('comparator-spinner');
             if (loadSpinner) {
@@ -211,6 +228,8 @@ comparator.Controller = class {
                 this._diffResult = fullResult;
                 this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, fullResult);
                 this._buildDiffLookup(targetA, targetB, fullResult);
+                this._updateSummaryBar(fullResult);
+                this._updateConnectors();
             });
 
         } catch (error) {
@@ -595,7 +614,103 @@ comparator.Controller = class {
         exactMatch(true);
         exactMatch(false);
 
-        return { result, matchedA, matchedB, ctxA, ctxB, nodesA, nodesB };
+        return { result, matchedA, matchedB, ctxA, ctxB, nodesA, nodesB, adjA, adjB };
+    }
+
+    _buildTopoOrder(nodes, adjacency) {
+        const { predecessors, successors } = adjacency;
+        const depth = new Array(nodes.length).fill(-1);
+        const queue = [];
+        for (let i = 0; i < nodes.length; i++) {
+            if ((predecessors.get(i) || []).length === 0) {
+                depth[i] = 0;
+                queue.push(i);
+            }
+        }
+        // BFS with iteration cap to guard against cyclic graphs
+        const maxIter = nodes.length * 4 + 1;
+        let head = 0;
+        let iter = 0;
+        while (head < queue.length && iter < maxIter) {
+            iter++;
+            const i = queue[head++];
+            const d = depth[i] + 1;
+            for (const j of (successors.get(i) || [])) {
+                if (depth[j] < d) {
+                    depth[j] = d;
+                    queue.push(j);
+                }
+            }
+        }
+        const maxDepth = depth.reduce((m, d) => (d > m ? d : m), 0);
+        for (let i = 0; i < nodes.length; i++) {
+            if (depth[i] < 0) {
+                depth[i] = maxDepth + 1;
+            }
+        }
+        return depth;
+    }
+
+    _buildAlignmentTable(nodesA, nodesB, depthA, depthB, matchedSetA, matchedSetB, phase1Pairs) {
+        const rows = [];
+        // Sort matched pairs by graph-A topological depth (preserves A's partial order)
+        for (const pair of phase1Pairs) {
+            rows.push({
+                indexA: pair.indexA,
+                indexB: pair.indexB,
+                sortKey: depthA[pair.indexA]
+            });
+        }
+        for (let i = 0; i < nodesA.length; i++) {
+            if (!matchedSetA.has(i)) {
+                rows.push({ indexA: i, indexB: null, sortKey: depthA[i] });
+            }
+        }
+        for (let j = 0; j < nodesB.length; j++) {
+            if (!matchedSetB.has(j)) {
+                rows.push({ indexA: null, indexB: j, sortKey: depthB[j] });
+            }
+        }
+        rows.sort((a, b) => a.sortKey - b.sortKey);
+        return rows;
+    }
+
+    _applyYAlignment(graphA, graphB, nodesA, nodesB, alignTable) {
+        const ROW_GAP = 20;
+        const MIN_ROW_H = 60;
+        let curY = 0;
+        for (const row of alignTable) {
+            const vnA = row.indexA === null ? null : graphA._table.get(nodesA[row.indexA]);
+            const vnB = row.indexB === null ? null : graphB._table.get(nodesB[row.indexB]);
+            const hA = vnA ? (vnA.height || MIN_ROW_H) : 0;
+            const hB = vnB ? (vnB.height || MIN_ROW_H) : 0;
+            const rowH = Math.max(hA, hB, MIN_ROW_H);
+            if (vnA) {
+                vnA.y = curY + rowH / 2;
+            }
+            if (vnB) {
+                vnB.y = curY + rowH / 2;
+            }
+            curY += rowH + ROW_GAP;
+        }
+        // Recompute edge points as straight lines between updated node centers
+        const straightenEdges = (graph) => {
+            for (const edge of graph.edges.values()) {
+                const from = edge.label && edge.label.from;
+                const to = edge.label && edge.label.to;
+                if (from && to && typeof from.x === 'number' && typeof to.x === 'number') {
+                    edge.label.points = [
+                        { x: from.x, y: from.y },
+                        { x: to.x, y: to.y }
+                    ];
+                }
+            }
+        };
+        straightenEdges(graphA);
+        straightenEdges(graphB);
+        // Invalidate layout bounds so restore() recomputes from actual SVG bbox
+        graphA._layoutBounds = null;
+        graphB._layoutBounds = null;
     }
 
     _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
@@ -870,9 +985,11 @@ comparator.Controller = class {
 
         containerLeft.addEventListener('scroll', () => {
             syncScroll(containerLeft, containerRight);
+            this._updateConnectors();
         });
         containerRight.addEventListener('scroll', () => {
             syncScroll(containerRight, containerLeft);
+            this._updateConnectors();
         });
 
         // Synchronized zooming — wrap _updateZoom on both graphs
@@ -894,6 +1011,7 @@ comparator.Controller = class {
                     this._syncing = false;
                 }
             }
+            this._updateConnectors();
         };
 
         this._graphB._updateZoom = (zoom, e) => {
@@ -908,6 +1026,7 @@ comparator.Controller = class {
                     this._syncing = false;
                 }
             }
+            this._updateConnectors();
         };
     }
 
@@ -979,6 +1098,24 @@ comparator.Controller = class {
                     this._hideDiffPanel();
                 }
             });
+        }
+
+        // Jump to match and pulse both nodes
+        if ((diffInfo.status === 'modified' || diffInfo.status === 'identical') && diffInfo.nodeA && diffInfo.nodeB) {
+            const isInA = diffInfo.nodeA === node;
+            const matchedModel = isInA ? diffInfo.nodeB : diffInfo.nodeA;
+            const matchedGraph = isInA ? this._graphB : this._graphA;
+            const clickedGraph = isInA ? this._graphA : this._graphB;
+            const matchedContainer = isInA
+                ? document.getElementById('target-right')
+                : document.getElementById('target-left');
+            const matchedVN = matchedGraph._table ? matchedGraph._table.get(matchedModel) : null;
+            const clickedVN = clickedGraph._table ? clickedGraph._table.get(node) : null;
+            if (matchedVN && matchedVN.element && matchedContainer) {
+                this._jumpToMatchNode(matchedVN, matchedContainer);
+            }
+            this._pulseNode(matchedVN);
+            this._pulseNode(clickedVN);
         }
     }
 
@@ -1212,6 +1349,107 @@ comparator.Controller = class {
             }).join(', ');
         }
         return connection.type || '';
+    }
+
+    _updateConnectors() {
+        const document = this._host.document;
+        const overlay = document.getElementById('connector-overlay');
+        if (!overlay || !this._diffResult || !this._graphA || !this._graphB) {
+            return;
+        }
+        while (overlay.firstChild) {
+            overlay.removeChild(overlay.firstChild);
+        }
+        const nodesA = this._targetA ? (this._targetA.nodes || []) : [];
+        const nodesB = this._targetB ? (this._targetB.nodes || []) : [];
+        const pairs = this._diffResult.pairs;
+        const MAX_CONNECTORS = 300;
+        let drawn = 0;
+        for (const pair of pairs) {
+            if (drawn >= MAX_CONNECTORS) {
+                break;
+            }
+            const vnA = this._graphA._table ? this._graphA._table.get(nodesA[pair.indexA]) : null;
+            const vnB = this._graphB._table ? this._graphB._table.get(nodesB[pair.indexB]) : null;
+            if (!vnA || !vnA.element || !vnB || !vnB.element) {
+                continue;
+            }
+            const rA = vnA.element.getBoundingClientRect();
+            const rB = vnB.element.getBoundingClientRect();
+            if (rA.width === 0 || rB.width === 0) {
+                continue;
+            }
+            const vh = window.innerHeight;
+            const vw = window.innerWidth;
+            if (rA.bottom < 0 || rA.top > vh || rA.right < 0 || rA.left > vw) {
+                continue;
+            }
+            if (rB.bottom < 0 || rB.top > vh || rB.right < 0 || rB.left > vw) {
+                continue;
+            }
+            const x1 = rA.right;
+            const y1 = rA.top + rA.height / 2;
+            const x2 = rB.left;
+            const y2 = rB.top + rB.height / 2;
+            const dx = Math.abs(x2 - x1) * 0.4;
+            const color = pair.status === 'modified'
+                ? 'rgba(230,126,34,0.55)'
+                : 'rgba(150,150,150,0.22)';
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', color);
+            path.setAttribute('stroke-width', '1.5');
+            overlay.appendChild(path);
+            drawn++;
+        }
+    }
+
+    _updateSummaryBar(diffResult) {
+        const document = this._host.document;
+        const bar = document.getElementById('diff-summary');
+        if (!bar) {
+            return;
+        }
+        const identical = diffResult.pairs.filter((p) => p.status === 'identical').length;
+        const modified = diffResult.pairs.filter((p) => p.status === 'modified').length;
+        const added = (diffResult.onlyInB || []).length;
+        const removed = (diffResult.onlyInA || []).length;
+        bar.innerHTML = [
+            `<span class="summary-count summary-identical">${identical} identical</span>`,
+            `<span class="summary-sep">|</span>`,
+            `<span class="summary-count summary-modified">${modified} modified</span>`,
+            `<span class="summary-sep">|</span>`,
+            `<span class="summary-count summary-added">${added} added</span>`,
+            `<span class="summary-sep">|</span>`,
+            `<span class="summary-count summary-removed">${removed} removed</span>`
+        ].join('');
+    }
+
+    _jumpToMatchNode(matchedViewNode, container) {
+        if (!matchedViewNode || !matchedViewNode.element || !container) {
+            return;
+        }
+        const rect = matchedViewNode.element.getBoundingClientRect();
+        const cRect = container.getBoundingClientRect();
+        const desired = container.scrollTop + (rect.top - cRect.top) - (cRect.height - rect.height) / 2;
+        this._syncing = true;
+        container.scrollTo({ top: Math.max(0, desired), behavior: 'smooth' });
+        setTimeout(() => {
+            this._syncing = false;
+        }, 700);
+    }
+
+    _pulseNode(viewNode) {
+        if (!viewNode || !viewNode.element) {
+            return;
+        }
+        viewNode.element.classList.add('node-diff-selected');
+        setTimeout(() => {
+            if (viewNode.element) {
+                viewNode.element.classList.remove('node-diff-selected');
+            }
+        }, 1500);
     }
 };
 
