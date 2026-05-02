@@ -459,6 +459,41 @@
 .node-item-type.node-dtype-uint8-fp16:hover path { fill: #ddf6fb; }
 .node-item-type.node-dtype-uint8-fp16:hover text { fill: #000; }
 
+.node-item-type.node-dtype-uint8-bf16 path { fill: #b4f0cc; }
+.node-item-type.node-dtype-uint8-bf16 text { fill: #0d2c1a; }
+.node-item-type.node-dtype-uint8-bf16:hover path { fill: #cdfade; }
+.node-item-type.node-dtype-uint8-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int8-bf16 path  { fill: #bce8dc; }
+.node-item-type.node-dtype-int8-bf16 text  { fill: #0d2c24; }
+.node-item-type.node-dtype-int8-bf16:hover path { fill: #d4f4ec; }
+.node-item-type.node-dtype-int8-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp8-bf16 path   { fill: #a4f2e8; }
+.node-item-type.node-dtype-fp8-bf16 text   { fill: #0d2c28; }
+.node-item-type.node-dtype-fp8-bf16:hover path  { fill: #c4fbf4; }
+.node-item-type.node-dtype-fp8-bf16:hover text  { fill: #000; }
+
+.node-item-type.node-dtype-fp16-bf16 path  { fill: #a0eef0; }
+.node-item-type.node-dtype-fp16-bf16 text  { fill: #0d2c30; }
+.node-item-type.node-dtype-fp16-bf16:hover path { fill: #c0f8fb; }
+.node-item-type.node-dtype-fp16-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-fp32 path { fill: #ccd8f0; }
+.node-item-type.node-dtype-uint4-fp32 text { fill: #1a1040; }
+.node-item-type.node-dtype-uint4-fp32:hover path { fill: #e0eafb; }
+.node-item-type.node-dtype-uint4-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-fp16 path { fill: #d0dff8; }
+.node-item-type.node-dtype-uint4-fp16 text { fill: #18103a; }
+.node-item-type.node-dtype-uint4-fp16:hover path { fill: #e4edfb; }
+.node-item-type.node-dtype-uint4-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-bf16 path { fill: #d4e8d4; }
+.node-item-type.node-dtype-uint4-bf16 text { fill: #18301a; }
+.node-item-type.node-dtype-uint4-bf16:hover path { fill: #e8f5e8; }
+.node-item-type.node-dtype-uint4-bf16:hover text { fill: #000; }
+
 /* ── Dark mode ────────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
     .node-item-type.node-dtype-fp32-fp32 path  { fill: #1e4a7a; }
@@ -605,4 +640,39 @@
     .node-item-type.node-dtype-uint8-fp16 text { fill: #b8ecf8; }
     .node-item-type.node-dtype-uint8-fp16:hover path { fill: #286268; }
     .node-item-type.node-dtype-uint8-fp16:hover text { fill: #d0f6ff; }
+
+    .node-item-type.node-dtype-uint8-bf16 path { fill: #1e4e36; }
+    .node-item-type.node-dtype-uint8-bf16 text { fill: #a8f0cc; }
+    .node-item-type.node-dtype-uint8-bf16:hover path { fill: #286848; }
+    .node-item-type.node-dtype-uint8-bf16:hover text { fill: #c8fae0; }
+
+    .node-item-type.node-dtype-int8-bf16 path  { fill: #204840; }
+    .node-item-type.node-dtype-int8-bf16 text  { fill: #a8f0dc; }
+    .node-item-type.node-dtype-int8-bf16:hover path { fill: #286055; }
+    .node-item-type.node-dtype-int8-bf16:hover text { fill: #c8faed; }
+
+    .node-item-type.node-dtype-fp8-bf16 path   { fill: #1a5050; }
+    .node-item-type.node-dtype-fp8-bf16 text   { fill: #a0f8ec; }
+    .node-item-type.node-dtype-fp8-bf16:hover path  { fill: #226a6a; }
+    .node-item-type.node-dtype-fp8-bf16:hover text  { fill: #c0fff5; }
+
+    .node-item-type.node-dtype-fp16-bf16 path  { fill: #184c50; }
+    .node-item-type.node-dtype-fp16-bf16 text  { fill: #98f8fc; }
+    .node-item-type.node-dtype-fp16-bf16:hover path { fill: #206468; }
+    .node-item-type.node-dtype-fp16-bf16:hover text { fill: #c0ffff; }
+
+    .node-item-type.node-dtype-uint4-fp32 path { fill: #2e2858; }
+    .node-item-type.node-dtype-uint4-fp32 text { fill: #ccd8ff; }
+    .node-item-type.node-dtype-uint4-fp32:hover path { fill: #3e3878; }
+    .node-item-type.node-dtype-uint4-fp32:hover text { fill: #e4eeff; }
+
+    .node-item-type.node-dtype-uint4-fp16 path { fill: #3a2c60; }
+    .node-item-type.node-dtype-uint4-fp16 text { fill: #d0dcff; }
+    .node-item-type.node-dtype-uint4-fp16:hover path { fill: #4e3c80; }
+    .node-item-type.node-dtype-uint4-fp16:hover text { fill: #e8eeff; }
+
+    .node-item-type.node-dtype-uint4-bf16 path { fill: #382840; }
+    .node-item-type.node-dtype-uint4-bf16 text { fill: #d4e8d4; }
+    .node-item-type.node-dtype-uint4-bf16:hover path { fill: #4e3858; }
+    .node-item-type.node-dtype-uint4-bf16:hover text { fill: #eaf5ea; }
 }

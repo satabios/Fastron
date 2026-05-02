@@ -353,6 +353,28 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .sidebar { transition: none; }
 .welcome.spinner .logo-spinner { animation: none; -webkit-animation: none; }
 }
+.dtype-legend {
+    position: fixed; bottom: 56px; left: 10px;
+    background: rgba(255,255,255,0.92); border-radius: 6px;
+    padding: 6px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    user-select: none; -webkit-user-select: none; -webkit-app-region: no-drag;
+    font-size: 10px; z-index: 10; display: none;
+    max-height: calc(100vh - 80px); overflow-y: auto;
+}
+.dtype-legend-title {
+    font-size: 9px; font-weight: 600; color: #666;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+.dtype-legend-item {
+    display: flex; align-items: center; gap: 5px;
+    margin-bottom: 2px; white-space: nowrap;
+}
+.dtype-legend-item:last-child { margin-bottom: 0; }
+.dtype-legend-swatch { border-radius: 2px; pointer-events: none; flex-shrink: 0; }
+@media (prefers-color-scheme: dark) {
+    .dtype-legend { background: rgba(40,40,40,0.92); color: #ddd; }
+    .dtype-legend-title { color: #aaa; }
+}
 </style>
 </head>
 <body class="welcome spinner">
@@ -384,6 +406,10 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
           </symbol>
         </defs>
     </svg>
+</div>
+<div id="dtype-legend" class="dtype-legend">
+    <div class="dtype-legend-title">Precision</div>
+    <div class="dtype-legend-items"></div>
 </div>
 <div id="toolbar" class="toolbar">
     <button id="zoom-in-button" class="toolbar-button" title="Zoom In">
