@@ -652,6 +652,53 @@ view.View = class {
         return this._host.document.getElementById(id);
     }
 
+    _updateDtypeLegend(activeTarget) {
+        const DTYPE_LABELS = {
+            'fp32-fp32': 'FP32', 'fp16-fp16': 'FP16', 'bf16-bf16': 'BF16', 'fp8-fp8': 'FP8',
+            'int8-int8': 'W8A8', 'int4-int4': 'W4A4', 'int16-int16': 'INT16',
+            'int32-int32': 'INT32', 'int64-int64': 'INT64',
+            'uint8-uint8': 'UINT8', 'uint4-uint4': 'UINT4',
+            'int8-fp16': 'W8A16', 'int8-bf16': 'W8ABF16', 'int8-fp32': 'W8A32',
+            'int4-fp16': 'W4A16', 'int4-bf16': 'W4ABF16', 'int4-fp32': 'W4A32', 'int4-int8': 'W4A8',
+            'fp32-fp16': 'F32/F16', 'fp32-bf16': 'F32/BF16', 'fp32-int8': 'F32/INT8',
+            'fp16-fp32': 'F16/F32', 'fp16-bf16': 'F16/BF16',
+            'bf16-fp32': 'BF16/F32', 'bf16-fp16': 'BF16/F16',
+            'fp8-fp32': 'FP8/F32', 'fp8-fp16': 'FP8/F16', 'fp8-bf16': 'FP8/BF16',
+            'uint8-fp32': 'U8/F32', 'uint8-fp16': 'U8/F16', 'uint8-bf16': 'U8/BF16',
+            'uint4-fp32': 'U4/F32', 'uint4-fp16': 'U4/F16', 'uint4-bf16': 'U4/BF16',
+        };
+        const legendEl = this._host.document.getElementById('dtype-legend');
+        if (!legendEl) {
+            return;
+        }
+        if (!activeTarget || !Array.isArray(activeTarget.nodes) || activeTarget.nodes.length === 0) {
+            legendEl.style.display = 'none';
+            return;
+        }
+        const dtypeSet = new Set();
+        for (const node of activeTarget.nodes) {
+            const key = view.Node._getDtypeKey(node);
+            if (key) {
+                dtypeSet.add(key);
+            }
+        }
+        if (dtypeSet.size === 0) {
+            legendEl.style.display = 'none';
+            return;
+        }
+        const sortedKeys = Array.from(dtypeSet).sort();
+        const items = legendEl.querySelector('.dtype-legend-items');
+        items.innerHTML = '';
+        for (const key of sortedKeys) {
+            const label = DTYPE_LABELS[key] || key;
+            const item = this._host.document.createElement('div');
+            item.className = 'dtype-legend-item';
+            item.innerHTML = `<svg width="14" height="10" viewBox="0 0 14 10" class="dtype-legend-swatch"><g class="node-item-type node-dtype-${key}"><path d="M0,0h14v10h-14z"/></g></svg><span>${label}</span>`;
+            items.appendChild(item);
+        }
+        legendEl.style.display = '';
+    }
+
     zoomIn() {
         this._target.zoom *= 1.1;
     }
@@ -876,7 +923,7 @@ view.View = class {
             this._activeTarget = null;
         }
         this.show(null);
-        // Re-apply zoom after the container becomes visible to ensure correct scaling.
+        this._updateDtypeLegend(this.activeTarget);
         // restore() may have computed zoom/centering while the container was still hidden
         // (opacity:0), so clientHeight/clientWidth could be zero or stale at that point.
         if (this._target) {
