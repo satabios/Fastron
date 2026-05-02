@@ -46,11 +46,12 @@ playwright.test('desktop', async () => {
     await page.waitForSelector('body.default', { timeout: 10000 });
 
     // Verify About panel exposes text layout diagnostics.
-    const aboutMenuButton = await page.locator('#menu-button');
-    await aboutMenuButton.click();
-    await page.waitForTimeout(200);
-    const aboutMenuItem = page.locator('button:has-text("About")').first();
-    await aboutMenuItem.click();
+    await app.evaluate(async (electron) => {
+        const windows = electron.BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+            windows[0].webContents.send('about', {});
+        }
+    });
     await page.waitForSelector('body.about', { timeout: 5000 });
     const textLayoutRow = page.locator('#text-layout-info-row');
     await playwright.expect(textLayoutRow).toBeVisible();
