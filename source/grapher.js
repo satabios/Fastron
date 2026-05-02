@@ -1481,11 +1481,11 @@ grapher.Graph = class {
             // opaque black mass at the center of the graph.
             if (rankDiff > 1) {
                 if (rankDiff <= 3) {
-                    edge._strokeOpacity = 0.35;
+                    edge._strokeOpacity = 0.55;
                 } else if (rankDiff <= 8) {
-                    edge._strokeOpacity = 0.15;
+                    edge._strokeOpacity = 0.35;
                 } else {
-                    edge._strokeOpacity = 0.06;
+                    edge._strokeOpacity = 0.25;
                 }
                 edge._strokeWidth = 0.5;
             }
