@@ -2083,6 +2083,7 @@ view.Graph = class extends grapher.Graph {
         this._zoom = 1;
         this._viewportObserver = null;
         this._originTranslate = null; // cached origin translate; invalidated on layout change
+        this._pendingViewportUpdate = false;
     }
 
     get model() {
@@ -2705,8 +2706,7 @@ view.Graph = class extends grapher.Graph {
 
         // Trigger viewport observer on zoom
         if (this._viewportObserver) {
-            const viewport = this._getViewportBounds();
-            this._viewportObserver.observe(viewport);
+            this._scheduleViewportUpdate();
         }
     }
 
@@ -2838,8 +2838,7 @@ view.Graph = class extends grapher.Graph {
 
         // Trigger viewport observer
         if (this._viewportObserver) {
-            const viewport = this._getViewportBounds();
-            this._viewportObserver.observe(viewport);
+            this._scheduleViewportUpdate();
         }
     }
 
@@ -2897,6 +2896,20 @@ view.Graph = class extends grapher.Graph {
             height: viewportHeight,
             zoom: this._zoom
         };
+    }
+
+    _scheduleViewportUpdate() {
+        if (this._pendingViewportUpdate) {
+            return;
+        }
+        this._pendingViewportUpdate = true;
+        requestAnimationFrame(() => {
+            this._pendingViewportUpdate = false;
+            if (this._viewportObserver) {
+                const viewport = this._getViewportBounds();
+                this._viewportObserver.observe(viewport);
+            }
+        });
     }
 
     _onViewportChange(viewport) {
