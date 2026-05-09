@@ -1,6 +1,7 @@
 """ Python Server implementation """
 
 import errno
+import gzip
 import http.server
 import importlib
 import importlib.metadata
@@ -19,6 +20,19 @@ import webbrowser
 __version__ = "0.0.0"
 
 logger = logging.getLogger(__name__)
+
+# Static asset cache: path -> bytes. Populated on first request, reused thereafter.
+_static_cache = {}
+_static_cache_lock = threading.Lock()
+
+# MIME types that benefit from gzip compression.
+_GZIP_TYPES = {
+    "text/html", "text/javascript", "text/css",
+    "application/json", "image/svg+xml"
+}
+
+# Static assets are immutable for the lifetime of the server process.
+_CACHE_CONTROL_STATIC = "public, max-age=3600"
 
 class _ContentProvider:
     data = bytearray()
@@ -70,6 +84,8 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         status_code = 404
         content = None
         content_type = None
+        gzipped = False
+        is_static = False
         if path.startswith("/data/"):
             path = urllib.parse.unquote(path[len("/data/"):])
             content = self.content.read(path)
@@ -84,8 +100,20 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 os.path.exists(filename) and not os.path.isdir(filename) and \
                 extension in self.mime_types:
                 content_type = self.mime_types[extension]
-                with open(filename, "rb") as file:
-                    content = file.read()
+                if path == "/index.html":
+                    # index.html has dynamic meta injection — never cache on disk or in memory.
+                    with open(filename, "rb") as file:
+                        content = file.read()
+                else:
+                    # Static assets are immutable per server session — cache in memory.
+                    with _static_cache_lock:
+                        content = _static_cache.get(filename)
+                    if content is None:
+                        with open(filename, "rb") as file:
+                            content = file.read()
+                        with _static_cache_lock:
+                            _static_cache[filename] = content
+                    is_static = True
                 if path == "/index.html":
                     content = content.decode("utf-8")
                     meta = [
@@ -105,15 +133,24 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                     regex = r'<meta name="version" content=".*">'
                     content = re.sub(regex, lambda _: meta, content)
                     content = content.encode("utf-8")
+                # Compress text assets when the client supports it and content is worth it.
+                accept_encoding = self.headers.get("Accept-Encoding", "")
+                if "gzip" in accept_encoding and content_type in _GZIP_TYPES and len(content) > 1024:
+                    content = gzip.compress(content, compresslevel=6)
+                    gzipped = True
                 status_code = 200
-        self._write(status_code, content_type, content)
+        self._write(status_code, content_type, content, gzipped=gzipped, is_static=is_static)
     def log_message(self, format, *args):
         logger.debug(" ".join(args))
-    def _write(self, status_code, content_type, content):
+    def _write(self, status_code, content_type, content, gzipped=False, is_static=False):
         self.send_response(status_code)
         if content:
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", len(content))
+            if gzipped:
+                self.send_header("Content-Encoding", "gzip")
+            if is_static:
+                self.send_header("Cache-Control", _CACHE_CONTROL_STATIC)
         self.end_headers()
         if self.command != "HEAD":
             if status_code == 404 and content is None:
