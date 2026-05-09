@@ -8,14 +8,20 @@ const require = async () => {
     return self;
 };
 
+// Module-level import cache — populated on first use, reused on subsequent messages.
+let _dagre = null;
+let _elk = null;
+
 require().then((self) => {
     self.addEventListener('message', async (e) => {
         const message = e.data;
         switch (message.type) {
             case 'dagre.layout': {
                 try {
-                    const dagre = await import('./dagre.js');
-                    dagre.layout(message.nodes, message.edges, message.layout, message.state);
+                    if (!_dagre) {
+                        _dagre = await import('./dagre.js');
+                    }
+                    _dagre.layout(message.nodes, message.edges, message.layout, message.state);
                     self.postMessage(message);
                 } catch (error) {
                     self.postMessage({ type: 'error', message: error.message });
@@ -24,8 +30,10 @@ require().then((self) => {
             }
             case 'elk.layout': {
                 try {
-                    const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
-                    const elk = new ELK();
+                    if (!_elk) {
+                        const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+                        _elk = new ELK();
+                    }
                     const rankdir = message.layout && message.layout.rankdir;
                     const elkGraph = {
                         id: 'root',
@@ -39,7 +47,7 @@ require().then((self) => {
                         children: message.nodes.map((n) => ({ id: n.v, width: n.width || 150, height: n.height || 65 })),
                         edges: message.edges.map((e, i) => ({ id: `e${i}`, sources: [e.v], targets: [e.w] }))
                     };
-                    const result = await elk.layout(elkGraph);
+                    const result = await _elk.layout(elkGraph);
                     const nodeMap = new Map(result.children.map((n) => [n.id, n]));
                     const outNodes = message.nodes.map((n) => {
                         const e = nodeMap.get(n.v);

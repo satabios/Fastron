@@ -87,8 +87,11 @@ view.View = class {
     }
 
     static async detectGPU() {
+        if (view.View._cachedGPUInfo) {
+            return view.View._cachedGPUInfo;
+        }
         if (typeof window === 'undefined') {
-            return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU)', cudaAvailable: false, adrenoAvailable: false };
+            return (view.View._cachedGPUInfo = { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU)', cudaAvailable: false, adrenoAvailable: false });
         }
 
         // Try WebGPU first — richest adapter info, works on CUDA (via Vulkan/D3D12) and Adreno
@@ -112,7 +115,7 @@ view.View = class {
                     }
                     const classified = view.View._classifyGPUVendor(adapterDevice || adapterDescription, adapterVendor);
                     const label = view.View._buildGPULabel('webgpu', adapterVendor, adapterDevice || adapterDescription, adapterArchitecture, classified);
-                    return { backend: 'webgpu', vendor: classified.vendor, device: adapterDevice || adapterDescription, architecture: adapterArchitecture, label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
+                    return (view.View._cachedGPUInfo = { backend: 'webgpu', vendor: classified.vendor, device: adapterDevice || adapterDescription, architecture: adapterArchitecture, label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable });
                 }
             } catch {
                 // fall through to WebGL detection
@@ -141,13 +144,13 @@ view.View = class {
                 }
                 const classified = view.View._classifyGPUVendor(renderer, glVendor);
                 const label = view.View._buildGPULabel(backend, glVendor, renderer, '', classified);
-                return { backend, vendor: classified.vendor, device: renderer, architecture: '', label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
+                return (view.View._cachedGPUInfo = { backend, vendor: classified.vendor, device: renderer, architecture: '', label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable });
             }
         } catch {
             // continue with cpu
         }
 
-        return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU acceleration)', cudaAvailable: false, adrenoAvailable: false };
+        return (view.View._cachedGPUInfo = { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU acceleration)', cudaAvailable: false, adrenoAvailable: false });
     }
 
     static _buildGPULabel(backend, vendor, device, architecture, classified) {
@@ -1168,17 +1171,25 @@ view.View = class {
             const clone = canvas.cloneNode(true);
             const document = this._host.document;
             const applyStyleSheet = (element, name) => {
-                let rules = [];
-                for (const styleSheet of document.styleSheets) {
-                    if (styleSheet && styleSheet.href && styleSheet.href.endsWith(`/${name}`)) {
-                        rules = styleSheet.cssRules;
-                        break;
+                let ruleMap = view.View._exportCSSCache.get(name);
+                if (!ruleMap) {
+                    ruleMap = [];
+                    for (const styleSheet of document.styleSheets) {
+                        if (styleSheet && styleSheet.href && styleSheet.href.endsWith(`/${name}`)) {
+                            for (const rule of styleSheet.cssRules) {
+                                if (rule.selectorText) {
+                                    ruleMap.push({ selector: rule.selectorText, style: rule.style });
+                                }
+                            }
+                            break;
+                        }
                     }
+                    view.View._exportCSSCache.set(name, ruleMap);
                 }
                 const nodes = element.getElementsByTagName('*');
                 for (const node of nodes) {
-                    for (const rule of rules) {
-                        if (node.matches(rule.selectorText)) {
+                    for (const rule of ruleMap) {
+                        if (node.matches(rule.selector)) {
                             for (const item of rule.style) {
                                 node.style[item] = rule.style[item];
                             }
@@ -1451,6 +1462,9 @@ view.View = class {
         this._host.document.body.classList.add('about');
     }
 };
+
+view.View._cachedGPUInfo = null;
+view.View._exportCSSCache = new Map();
 
 view.Menu = class {
 
