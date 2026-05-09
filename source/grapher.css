@@ -409,10 +409,17 @@
 .node-item-type.node-dtype-int8-fp16:hover path { fill: #dcf2fb; }
 .node-item-type.node-dtype-int8-fp16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-int8-int16 path { fill: #e0f0c0; }
-.node-item-type.node-dtype-int8-int16 text { fill: #1a2e00; }
-.node-item-type.node-dtype-int8-int16:hover path { fill: #f0fad8; }
+/* W8A16: int8 weight + int16 activation — amber family, lighter than W8A8 */
+.node-item-type.node-dtype-int8-int16 path { fill: #e8dcb0; }
+.node-item-type.node-dtype-int8-int16 text { fill: #2e2000; }
+.node-item-type.node-dtype-int8-int16:hover path { fill: #f5ecd0; }
 .node-item-type.node-dtype-int8-int16:hover text { fill: #000; }
+
+/* W4A16: int4 weight + int16 activation — amber-orange, between W8A16 and W4A4 */
+.node-item-type.node-dtype-int4-int16 path { fill: #e8cca0; }
+.node-item-type.node-dtype-int4-int16 text { fill: #2e1800; }
+.node-item-type.node-dtype-int4-int16:hover path { fill: #f5dfbc; }
+.node-item-type.node-dtype-int4-int16:hover text { fill: #000; }
 
 .node-item-type.node-dtype-int4-fp32 path  { fill: #f8d0d8; }
 .node-item-type.node-dtype-int4-fp32 text  { fill: #3a0810; }
@@ -433,11 +440,6 @@
 .node-item-type.node-dtype-int4-int8 text  { fill: #382800; }
 .node-item-type.node-dtype-int4-int8:hover path { fill: #fbf5d8; }
 .node-item-type.node-dtype-int4-int8:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-int16 path { fill: #f8f4b0; }
-.node-item-type.node-dtype-int4-int16 text { fill: #302c00; }
-.node-item-type.node-dtype-int4-int16:hover path { fill: #fbf9cc; }
-.node-item-type.node-dtype-int4-int16:hover text { fill: #000; }
 
 .node-item-type.node-dtype-fp8-fp32 path   { fill: #c8f0d0; }
 .node-item-type.node-dtype-fp8-fp32 text   { fill: #0d2c14; }
@@ -591,10 +593,11 @@
     .node-item-type.node-dtype-int8-fp16:hover path { fill: #204e6a; }
     .node-item-type.node-dtype-int8-fp16:hover text { fill: #c8ecff; }
 
-    .node-item-type.node-dtype-int8-int16 path { fill: #305018; }
-    .node-item-type.node-dtype-int8-int16 text { fill: #c8f0a0; }
-    .node-item-type.node-dtype-int8-int16:hover path { fill: #406a20; }
-    .node-item-type.node-dtype-int8-int16:hover text { fill: #e0fac8; }
+    /* W8A16: int8 weight + int16 activation — dark amber, distinct from W8A8 */
+    .node-item-type.node-dtype-int8-int16 path { fill: #5a4818; }
+    .node-item-type.node-dtype-int8-int16 text { fill: #f8eca8; }
+    .node-item-type.node-dtype-int8-int16:hover path { fill: #756020; }
+    .node-item-type.node-dtype-int8-int16:hover text { fill: #fbf5cc; }
 
     .node-item-type.node-dtype-int4-fp32 path  { fill: #60202a; }
     .node-item-type.node-dtype-int4-fp32 text  { fill: #f8c0c8; }
@@ -616,10 +619,11 @@
     .node-item-type.node-dtype-int4-int8:hover path { fill: #6a5510; }
     .node-item-type.node-dtype-int4-int8:hover text { fill: #fbf7cc; }
 
-    .node-item-type.node-dtype-int4-int16 path { fill: #484008; }
-    .node-item-type.node-dtype-int4-int16 text { fill: #f8f4a0; }
-    .node-item-type.node-dtype-int4-int16:hover path { fill: #605510; }
-    .node-item-type.node-dtype-int4-int16:hover text { fill: #fbfac0; }
+    /* W4A16: int4 weight + int16 activation — dark orange-amber */
+    .node-item-type.node-dtype-int4-int16 path { fill: #5a3818; }
+    .node-item-type.node-dtype-int4-int16 text { fill: #f8dca0; }
+    .node-item-type.node-dtype-int4-int16:hover path { fill: #754a20; }
+    .node-item-type.node-dtype-int4-int16:hover text { fill: #fbeccc; }
 
     .node-item-type.node-dtype-fp8-fp32 path   { fill: #1e5030; }
     .node-item-type.node-dtype-fp8-fp32 text   { fill: #b8f0c8; }
