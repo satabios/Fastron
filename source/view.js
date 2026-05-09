@@ -86,12 +86,16 @@ view.View = class {
         return { vendor: 'unknown', cudaAvailable: false, adrenoAvailable: false };
     }
 
-    static async detectGPU() {
-        if (view.View._cachedGPUInfo) {
-            return view.View._cachedGPUInfo;
+    static detectGPU() {
+        if (!view.View._cachedGPUInfo) {
+            view.View._cachedGPUInfo = view.View._detectGPUImpl();
         }
+        return view.View._cachedGPUInfo;
+    }
+
+    static async _detectGPUImpl() {
         if (typeof window === 'undefined') {
-            return (view.View._cachedGPUInfo = { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU)', cudaAvailable: false, adrenoAvailable: false });
+            return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU)', cudaAvailable: false, adrenoAvailable: false };
         }
 
         // Try WebGPU first — richest adapter info, works on CUDA (via Vulkan/D3D12) and Adreno
@@ -115,7 +119,7 @@ view.View = class {
                     }
                     const classified = view.View._classifyGPUVendor(adapterDevice || adapterDescription, adapterVendor);
                     const label = view.View._buildGPULabel('webgpu', adapterVendor, adapterDevice || adapterDescription, adapterArchitecture, classified);
-                    return (view.View._cachedGPUInfo = { backend: 'webgpu', vendor: classified.vendor, device: adapterDevice || adapterDescription, architecture: adapterArchitecture, label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable });
+                    return { backend: 'webgpu', vendor: classified.vendor, device: adapterDevice || adapterDescription, architecture: adapterArchitecture, label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
                 }
             } catch {
                 // fall through to WebGL detection
@@ -144,13 +148,13 @@ view.View = class {
                 }
                 const classified = view.View._classifyGPUVendor(renderer, glVendor);
                 const label = view.View._buildGPULabel(backend, glVendor, renderer, '', classified);
-                return (view.View._cachedGPUInfo = { backend, vendor: classified.vendor, device: renderer, architecture: '', label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable });
+                return { backend, vendor: classified.vendor, device: renderer, architecture: '', label, cudaAvailable: classified.cudaAvailable, adrenoAvailable: classified.adrenoAvailable };
             }
         } catch {
             // continue with cpu
         }
 
-        return (view.View._cachedGPUInfo = { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU acceleration)', cudaAvailable: false, adrenoAvailable: false });
+        return { backend: 'cpu', vendor: 'none', device: '', architecture: '', label: 'CPU (no GPU acceleration)', cudaAvailable: false, adrenoAvailable: false };
     }
 
     static _buildGPULabel(backend, vendor, device, architecture, classified) {

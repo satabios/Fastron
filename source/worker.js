@@ -19,9 +19,10 @@ require().then((self) => {
             case 'dagre.layout': {
                 try {
                     if (!_dagre) {
-                        _dagre = await import('./dagre.js');
+                        _dagre = import('./dagre.js');
                     }
-                    _dagre.layout(message.nodes, message.edges, message.layout, message.state);
+                    const dagre = await _dagre;
+                    dagre.layout(message.nodes, message.edges, message.layout, message.state);
                     self.postMessage(message);
                 } catch (error) {
                     self.postMessage({ type: 'error', message: error.message });
@@ -31,9 +32,9 @@ require().then((self) => {
             case 'elk.layout': {
                 try {
                     if (!_elk) {
-                        const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
-                        _elk = new ELK();
+                        _elk = import('elkjs/lib/elk.bundled.js').then(({ default: ELK }) => new ELK());
                     }
+                    const elk = await _elk;
                     const rankdir = message.layout && message.layout.rankdir;
                     const elkGraph = {
                         id: 'root',
@@ -47,7 +48,7 @@ require().then((self) => {
                         children: message.nodes.map((n) => ({ id: n.v, width: n.width || 150, height: n.height || 65 })),
                         edges: message.edges.map((e, i) => ({ id: `e${i}`, sources: [e.v], targets: [e.w] }))
                     };
-                    const result = await _elk.layout(elkGraph);
+                    const result = await elk.layout(elkGraph);
                     const nodeMap = new Map(result.children.map((n) => [n.id, n]));
                     const outNodes = message.nodes.map((n) => {
                         const e = nodeMap.get(n.v);
