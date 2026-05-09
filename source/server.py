@@ -101,7 +101,8 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 extension in self.mime_types:
                 content_type = self.mime_types[extension]
                 if path == "/index.html":
-                    # index.html has dynamic meta injection — never cache on disk or in memory.
+                    # index.html has dynamic meta injection —
+                    # never cache on disk or in memory.
                     with open(filename, "rb") as file:
                         content = file.read()
                 else:
@@ -133,16 +134,27 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                     regex = r'<meta name="version" content=".*">'
                     content = re.sub(regex, lambda _: meta, content)
                     content = content.encode("utf-8")
-                # Compress text assets when the client supports it and content is worth it.
+                # Compress text assets when client supports it and content is large.
                 accept_encoding = self.headers.get("Accept-Encoding", "")
-                if "gzip" in accept_encoding and content_type in _GZIP_TYPES and len(content) > 1024:
+                gzip_ok = (
+                    "gzip" in accept_encoding
+                    and content_type in _GZIP_TYPES
+                    and len(content) > 1024
+                )
+                if gzip_ok:
                     content = gzip.compress(content, compresslevel=6)
                     gzipped = True
                 status_code = 200
-        self._write(status_code, content_type, content, gzipped=gzipped, is_static=is_static)
+        self._write(
+            status_code, content_type, content,
+            gzipped=gzipped, is_static=is_static,
+        )
     def log_message(self, format, *args):
         logger.debug(" ".join(args))
-    def _write(self, status_code, content_type, content, gzipped=False, is_static=False):
+    def _write(
+        self, status_code, content_type, content,
+        gzipped=False, is_static=False,
+    ):
         self.send_response(status_code)
         if content:
             self.send_header("Content-Type", content_type)
