@@ -8,7 +8,7 @@ export const CacheManager = class {
 
     constructor(maxMemoryMB = 500) {
         this._memoryCache = new Map();
-        this._cacheKeys = []; // LRU tracking
+        this._cacheKeys = new Map(); // LRU tracking — Map preserves insertion order, O(1) delete+reinsert
         this._maxMemoryBytes = maxMemoryMB * 1024 * 1024;
         this._currentMemoryBytes = 0;
         this._stats = {
@@ -30,12 +30,9 @@ export const CacheManager = class {
 
         const entry = this._memoryCache.get(key);
         if (entry) {
-            // Update LRU - move to end
-            const index = this._cacheKeys.indexOf(key);
-            if (index > -1) {
-                this._cacheKeys.splice(index, 1);
-            }
-            this._cacheKeys.push(key);
+            // Update LRU - move to end (delete + reinsert = O(1))
+            this._cacheKeys.delete(key);
+            this._cacheKeys.set(key, 1);
 
             // Update stats
             this._stats.hits++;
@@ -64,7 +61,7 @@ export const CacheManager = class {
         }
 
         // Evict items if necessary
-        while (this._currentMemoryBytes + size > this._maxMemoryBytes && this._cacheKeys.length > 0) {
+        while (this._currentMemoryBytes + size > this._maxMemoryBytes && this._cacheKeys.size > 0) {
             this._evictOldest();
         }
 
@@ -72,10 +69,7 @@ export const CacheManager = class {
         if (this._memoryCache.has(key)) {
             const oldEntry = this._memoryCache.get(key);
             this._currentMemoryBytes -= oldEntry.size;
-            const index = this._cacheKeys.indexOf(key);
-            if (index > -1) {
-                this._cacheKeys.splice(index, 1);
-            }
+            this._cacheKeys.delete(key);
         }
 
         // Add new entry
@@ -84,7 +78,7 @@ export const CacheManager = class {
             size,
             timestamp: Date.now()
         });
-        this._cacheKeys.push(key);
+        this._cacheKeys.set(key, 1);
         this._currentMemoryBytes += size;
     }
 
@@ -103,11 +97,7 @@ export const CacheManager = class {
             const entry = this._memoryCache.get(key);
             this._currentMemoryBytes -= entry.size;
             this._memoryCache.delete(key);
-
-            const index = this._cacheKeys.indexOf(key);
-            if (index > -1) {
-                this._cacheKeys.splice(index, 1);
-            }
+            this._cacheKeys.delete(key);
         }
     }
 
@@ -116,7 +106,7 @@ export const CacheManager = class {
      */
     clear() {
         this._memoryCache.clear();
-        this._cacheKeys = [];
+        this._cacheKeys.clear();
         this._currentMemoryBytes = 0;
     }
 
@@ -159,7 +149,7 @@ export const CacheManager = class {
         this._maxMemoryBytes = maxMemoryMB * 1024 * 1024;
 
         // Evict if over limit
-        while (this._currentMemoryBytes > this._maxMemoryBytes && this._cacheKeys.length > 0) {
+        while (this._currentMemoryBytes > this._maxMemoryBytes && this._cacheKeys.size > 0) {
             this._evictOldest();
         }
     }
@@ -168,11 +158,12 @@ export const CacheManager = class {
      * Evict oldest (LRU) item
      */
     _evictOldest() {
-        if (this._cacheKeys.length === 0) {
+        if (this._cacheKeys.size === 0) {
             return;
         }
 
-        const oldestKey = this._cacheKeys.shift();
+        const oldestKey = this._cacheKeys.keys().next().value;
+        this._cacheKeys.delete(oldestKey);
         const entry = this._memoryCache.get(oldestKey);
 
         if (entry) {
