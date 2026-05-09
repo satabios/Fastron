@@ -99,9 +99,14 @@ grapher.Graph = class {
             this._focusable.set(label.hitTest, label);
         }
         if (label.labelElement) {
-            const box = label.labelElement.getBBox();
-            label.width = box.width;
-            label.height = box.height;
+            if (label.label) {
+                label.width = label.label.length * 6;
+                label.height = 14;
+            } else {
+                const box = label.labelElement.getBBox();
+                label.width = box.width;
+                label.height = box.height;
+            }
         }
         this._renderedEdges.add(edgeKey);
         return label;
@@ -392,12 +397,17 @@ grapher.Graph = class {
                 }
                 builtEdges.push({ label, wasBuilt });
             }
-            // Pass 2: Measure all newly built edge labels (batched getBBox reads).
+            // Pass 2: Measure all newly built edge labels (batched reads — estimate from text when possible).
             for (const { label } of builtEdges) {
                 if (label.labelElement && label.width === undefined) {
-                    const box = label.labelElement.getBBox();
-                    label.width = box.width;
-                    label.height = box.height;
+                    if (label.label) {
+                        label.width = label.label.length * 6;
+                        label.height = 14;
+                    } else {
+                        const box = label.labelElement.getBBox();
+                        label.width = box.width;
+                        label.height = box.height;
+                    }
                 }
             }
             // Pass 3: Show and update (writes only).
