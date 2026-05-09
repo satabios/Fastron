@@ -2903,13 +2903,18 @@ view.Graph = class extends grapher.Graph {
             return;
         }
         this._pendingViewportUpdate = true;
-        requestAnimationFrame(() => {
+        const callback = () => {
             this._pendingViewportUpdate = false;
             if (this._viewportObserver) {
                 const viewport = this._getViewportBounds();
                 this._viewportObserver.observe(viewport);
             }
-        });
+        };
+        if (typeof requestAnimationFrame === 'undefined') {
+            setTimeout(callback, 0);
+        } else {
+            requestAnimationFrame(callback);
+        }
     }
 
     _onViewportChange(viewport) {
