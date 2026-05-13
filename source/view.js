@@ -544,6 +544,17 @@ view.View = class {
         return this._options;
     }
 
+    applyConfiguration(config) {
+        if (!config) {
+            return;
+        }
+        const get = (key, def) => {
+            const val = config.get ? config.get(key, def) : (config[key] !== undefined ? config[key] : def);
+            return val;
+        };
+        this._options.lazyRender = get('rendering.viewportCulling', this._options.lazyRender);
+    }
+
     get target() {
         return this._target;
     }

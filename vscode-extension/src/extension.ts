@@ -71,12 +71,6 @@ export function activate(context: vscode.ExtensionContext) {
 			const iconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'icon.png'));
 			const faviconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'favicon.ico'));
 			const grapherSheetUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'grapher.css'));
-			const spatialUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'spatial.js'));
-			const streamingParserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'streaming-parser.js'));
-			const stringInternUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'string-intern.js'));
-			const cacheUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'cache.js'));
-			const lodUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'lod.js'));
-			const hybridRendererUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'hybrid-renderer.js'));
 			const viewUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'view.js'));
 			const browserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'browser.js'));
 
@@ -85,12 +79,6 @@ export function activate(context: vscode.ExtensionContext) {
 			html = html.replace(new RegExp("%iconPath%", 'g'), iconUri.toString());
 			html = html.replace(new RegExp("%faviconPath%", 'g'), faviconUri.toString());
 			html = html.replace(new RegExp("%grapherSheetPath%", 'g'), grapherSheetUri.toString());
-			html = html.replace(new RegExp("%spatialPath%", 'g'), spatialUri.toString());
-			html = html.replace(new RegExp("%streamingParserPath%", 'g'), streamingParserUri.toString());
-			html = html.replace(new RegExp("%stringInternPath%", 'g'), stringInternUri.toString());
-			html = html.replace(new RegExp("%cachePath%", 'g'), cacheUri.toString());
-			html = html.replace(new RegExp("%lodPath%", 'g'), lodUri.toString());
-			html = html.replace(new RegExp("%hybridRendererPath%", 'g'), hybridRendererUri.toString());
 			html = html.replace(new RegExp("%viewPath%", 'g'), viewUri.toString());
 			html = html.replace(new RegExp("%browserPath%", 'g'), browserUri.toString());
 
