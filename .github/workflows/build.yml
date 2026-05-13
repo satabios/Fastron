@@ -13,7 +13,7 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -29,41 +29,23 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      # - name: Install Python
-      #   uses: actions/setup-python@v5
-      #   with:
-      #     python-version: 3.x
-
       - name: Install Packages
         run: npm run install
 
       - name: Validate
         run: npm run validate
 
-      # - name: Build Web
-      #   run: npm run build web
-
-      # - name: Build Python Server
-      #   run: npm run build python
-
       - name: Build Electron
         shell: bash
         env:
-          # Required for Linux publishing
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npx electron-builder install-app-deps
           case "${{ matrix.os }}" in
-            macos*)
-              npm run build electron mac
-              ;;
-            ubuntu*)
-              npm run build electron linux
-              ;;
-            windows*)
-              npm run build electron windows
-              ;;
+            macos*)  npm run build electron mac     ;;
+            ubuntu*) npm run build electron linux   ;;
+            windows*) npm run build electron windows ;;
           esac
 
       - name: Upload Artifacts (macOS)
@@ -96,24 +78,53 @@ jobs:
             dist/*.msi
           retention-days: 30
 
-      # - name: Upload Web Build Artifacts
-      #   if: runner.os == 'macOS'
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: build-web
-      #     path: dist/web
-      #     retention-days: 30
+  vscode-extension:
+    name: VS Code Extension
+    runs-on: ubuntu-latest
 
-      # - name: Upload Python Wheel
-      #   if: runner.os == 'Linux'
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: build-python
-      #     path: dist/pypi/*.whl
-      #     retention-days: 30
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install extension dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Lint
+        working-directory: vscode-extension
+        run: npm run lint
+
+      - name: Sync shared assets from source/
+        working-directory: vscode-extension
+        run: npm run sync
+
+      - name: Compile TypeScript
+        working-directory: vscode-extension
+        run: npx tsc -p ./
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Package extension
+        working-directory: vscode-extension
+        run: vsce package --no-dependencies
+
+      - name: Upload VS Code extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-vscode-extension
+          path: vscode-extension/*.vsix
+          retention-days: 30
 
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
 
     permissions:
