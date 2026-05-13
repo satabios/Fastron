@@ -6,6 +6,7 @@ export default [
         ignores: [
             'dist/**',
             'third_party/**',
+            'vscode-extension/**',
         ]
     },
     {
