@@ -1961,16 +1961,23 @@ view.Graph = class extends grapher.Graph {
             return;
         }
         
-        // Throttle viewport updates for performance
-        let updateTimeout = null;
+        // Throttle viewport updates using requestAnimationFrame (falls back to
+        // setTimeout in Node.js environments where RAF is not defined).
+        let _pendingViewportUpdate = false;
         const scheduleViewportUpdate = () => {
-            if (updateTimeout) {
-                clearTimeout(updateTimeout);
+            if (_pendingViewportUpdate) {
+                return;
             }
-            updateTimeout = setTimeout(() => {
+            _pendingViewportUpdate = true;
+            const callback = () => {
+                _pendingViewportUpdate = false;
                 this._updateViewport();
-                updateTimeout = null;
-            }, 16); // ~60fps
+            };
+            if (typeof requestAnimationFrame === 'undefined') {
+                setTimeout(callback, 0);
+            } else {
+                requestAnimationFrame(callback);
+            }
         };
         
         // Add scroll listener
