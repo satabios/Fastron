@@ -2,7 +2,7 @@
   "name": "vscode-netron",
   "displayName": "vscode-netron",
   "description": "Visualize machine learning models with Netron in VSCode",
-  "version": "1.1.5",
+  "version": "2026.4.30",
   "engines": {
     "vscode": "^1.86.0"
   },
@@ -267,7 +267,7 @@
     "type": "git",
     "url": "https://github.com/vtemplier/vscode-netron"
   },
-  "publisher": "vincent-templier",
+  "publisher": "satabios",
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "npm run sync && tsc -p ./",
