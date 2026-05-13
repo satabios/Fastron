@@ -1,0 +1,17 @@
+# Generated assets (populated by `npm run sync` from ../source/)
+webview/netron/
+# Exception: extension-specific CSS is committed, not synced from source/
+!webview/netron/grapher.css
+
+# Compiled TypeScript output
+out/
+
+# Dependencies
+node_modules/
+
+# VS Code test runner
+.vscode-test/
+
+# Packaging artifacts
+*.vsix
+dist/
