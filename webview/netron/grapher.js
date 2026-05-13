@@ -3,8 +3,9 @@ const grapher = {};
 
 grapher.Graph = class {
 
-    constructor(compound) {
+    constructor(compound, options) {
         this._compound = compound;
+        options = options || {};
         this._nodes = new Map();
         this._edges = new Map();
         this._focusable = new Map();
@@ -13,10 +14,13 @@ grapher.Graph = class {
         this._children.set('\x00', new Map());
         this._parent = new Map();
         this._quadTree = null;
-        this._viewportCullingEnabled = true;
+        this._viewportCullingEnabled = options.viewportCulling !== false;
         this._viewportMargin = 200; // Extra margin around viewport
         this._visibleNodes = new Set();
         this._visibleEdges = new Set();
+        this._progressiveRenderingEnabled = options.progressiveRendering !== false;
+        this._chunkSize = options.chunkSize || 100; // Nodes to render per frame
+        this._renderCancelled = false;
     }
 
     setNode(node) {
@@ -109,7 +113,14 @@ grapher.Graph = class {
     }
 
     build(document) {
+        // Use progressive rendering for large graphs
+        if (this._progressiveRenderingEnabled && this.nodes.size > 200) {
+            return this._buildProgressive(document);
+        }
+        return this._buildImmediate(document);
+    }
 
+    _buildImmediate(document) {
         const origin = document.getElementById('origin');
 
         const createGroup = (name) => {
@@ -119,14 +130,14 @@ grapher.Graph = class {
             return element;
         };
 
-        const clusterGroup = createGroup('clusters');
-        const edgePathGroup = createGroup('edge-paths');
-        const edgePathHitTestGroup = createGroup('edge-paths-hit-test');
-        const edgeLabelGroup = createGroup('edge-labels');
-        const nodeGroup = createGroup('nodes');
+        this._clusterGroup = createGroup('clusters');
+        this._edgePathGroup = createGroup('edge-paths');
+        this._edgePathHitTestGroup = createGroup('edge-paths-hit-test');
+        this._edgeLabelGroup = createGroup('edge-labels');
+        this._nodeGroup = createGroup('nodes');
 
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        edgePathGroup.appendChild(edgePathGroupDefs);
+        this._edgePathGroup.appendChild(edgePathGroupDefs);
         const marker = (id) => {
             const element = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
             element.setAttribute('id', id);
@@ -143,7 +154,7 @@ grapher.Graph = class {
             element.appendChild(markerPath);
             return element;
         };
-        edgePathHitTestGroup.addEventListener('pointerover', (e) => {
+        this._edgePathHitTestGroup.addEventListener('pointerover', (e) => {
             if (this._focused) {
                 this._focused.blur();
                 this._focused = null;
@@ -155,14 +166,14 @@ grapher.Graph = class {
                 e.stopPropagation();
             }
         });
-        edgePathHitTestGroup.addEventListener('pointerleave', (e) => {
+        this._edgePathHitTestGroup.addEventListener('pointerleave', (e) => {
             if (this._focused) {
                 this._focused.blur();
                 this._focused = null;
                 e.stopPropagation();
             }
         });
-        edgePathHitTestGroup.addEventListener('click', (e) => {
+        this._edgePathHitTestGroup.addEventListener('click', (e) => {
             const edge = this._focusable.get(e.target);
             if (edge && edge.activate) {
                 edge.activate();
@@ -176,7 +187,10 @@ grapher.Graph = class {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this.children(nodeId).length === 0) {
-                node.build(document, nodeGroup);
+                node.build(document);
+                if (node.element) {
+                    this._nodeGroup.appendChild(node.element);
+                }
             } else {
                 // cluster
                 node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -189,29 +203,237 @@ grapher.Graph = class {
                 node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 node.element.setAttribute('class', 'cluster');
                 node.element.appendChild(node.rectangle);
-                clusterGroup.appendChild(node.element);
+                this._clusterGroup.appendChild(node.element);
             }
         }
 
         this._focusable.clear();
         this._focused = null;
         for (const edge of this.edges.values()) {
-            edge.label.build(document, edgePathGroup, edgePathHitTestGroup, edgeLabelGroup);
+            edge.label.build(document);
             this._focusable.set(edge.label.hitTest, edge.label);
         }
-        origin.appendChild(clusterGroup);
-        origin.appendChild(edgePathGroup);
-        origin.appendChild(edgePathHitTestGroup);
-        origin.appendChild(edgeLabelGroup);
-        origin.appendChild(nodeGroup);
+        origin.appendChild(this._clusterGroup);
+        origin.appendChild(this._edgePathGroup);
+        origin.appendChild(this._edgePathHitTestGroup);
+        origin.appendChild(this._edgeLabelGroup);
+        origin.appendChild(this._nodeGroup);
         for (const edge of this.edges.values()) {
             if (edge.label.labelElement) {
                 const label = edge.label;
-                const box = label.labelElement.getBBox();
-                label.width = box.width;
-                label.height = box.height;
+                if (label.label) {
+                    label.width = label.label.length * 6;
+                    label.height = 14;
+                } else {
+                    this._edgeLabelGroup.appendChild(label.labelElement);
+                    const box = label.labelElement.getBBox();
+                    this._edgeLabelGroup.removeChild(label.labelElement);
+                    label.width = box.width;
+                    label.height = box.height;
+                }
             }
         }
+    }
+
+    /**
+     * Progressive rendering for large graphs
+     * Renders nodes in chunks, yielding to browser between chunks
+     * Shows progress and keeps UI responsive
+     */
+    async _buildProgressive(document) {
+        const origin = document.getElementById('origin');
+        this._renderCancelled = false;
+
+        const createGroup = (name) => {
+            const element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            element.setAttribute('id', name);
+            element.setAttribute('class', name);
+            return element;
+        };
+
+        this._clusterGroup = createGroup('clusters');
+        this._edgePathGroup = createGroup('edge-paths');
+        this._edgePathHitTestGroup = createGroup('edge-paths-hit-test');
+        this._edgeLabelGroup = createGroup('edge-labels');
+        this._nodeGroup = createGroup('nodes');
+
+        origin.appendChild(this._clusterGroup);
+        origin.appendChild(this._edgePathGroup);
+        origin.appendChild(this._edgePathHitTestGroup);
+        origin.appendChild(this._edgeLabelGroup);
+        origin.appendChild(this._nodeGroup);
+
+        const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        this._edgePathGroup.appendChild(edgePathGroupDefs);
+        
+        const marker = (id) => {
+            const element = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            element.setAttribute('id', id);
+            element.setAttribute('viewBox', '0 0 10 10');
+            element.setAttribute('refX', 9);
+            element.setAttribute('refY', 5);
+            element.setAttribute('markerUnits', 'strokeWidth');
+            element.setAttribute('markerWidth', 8);
+            element.setAttribute('markerHeight', 6);
+            element.setAttribute('orient', 'auto');
+            const markerPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 L 4 5 z');
+            markerPath.style.setProperty('stroke-width', 1);
+            element.appendChild(markerPath);
+            return element;
+        };
+        
+        this._edgePathHitTestGroup.addEventListener('pointerover', (e) => {
+            if (this._focused) {
+                this._focused.blur();
+                this._focused = null;
+            }
+            const edge = this._focusable.get(e.target);
+            if (edge && edge.focus) {
+                edge.focus();
+                this._focused = edge;
+                e.stopPropagation();
+            }
+        });
+        this._edgePathHitTestGroup.addEventListener('pointerleave', (e) => {
+            if (this._focused) {
+                this._focused.blur();
+                this._focused = null;
+                e.stopPropagation();
+            }
+        });
+        this._edgePathHitTestGroup.addEventListener('click', (e) => {
+            const edge = this._focusable.get(e.target);
+            if (edge && edge.activate) {
+                edge.activate();
+                e.stopPropagation();
+            }
+        });
+        
+        edgePathGroupDefs.appendChild(marker("arrowhead"));
+        edgePathGroupDefs.appendChild(marker("arrowhead-select"));
+        edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
+
+        // Render nodes in chunks
+        const nodeIds = Array.from(this.nodes.keys());
+        const totalNodes = nodeIds.length;
+        const chunkSize = this._chunkSize;
+        
+        // Show progress indicator
+        this._showProgress(0, totalNodes);
+        
+        for (let i = 0; i < totalNodes; i += chunkSize) {
+            if (this._renderCancelled) {
+                this._hideProgress();
+                return;
+            }
+            
+            const chunkEnd = Math.min(i + chunkSize, totalNodes);
+            const chunk = nodeIds.slice(i, chunkEnd);
+            
+            // Build nodes in this chunk
+            for (const nodeId of chunk) {
+                const entry = this.node(nodeId);
+                const node = entry.label;
+                if (this.children(nodeId).length === 0) {
+                    node.build(document);
+                    if (node.element) {
+                        this._nodeGroup.appendChild(node.element);
+                    }
+                } else {
+                    // cluster
+                    node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    if (node.rx) {
+                        node.rectangle.setAttribute('rx', entry.rx);
+                    }
+                    if (node.ry) {
+                        node.rectangle.setAttribute('ry', entry.ry);
+                    }
+                    node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    node.element.setAttribute('class', 'cluster');
+                    node.element.appendChild(node.rectangle);
+                    this._clusterGroup.appendChild(node.element);
+                }
+            }
+            
+            // Update progress
+            this._showProgress(chunkEnd, totalNodes);
+            
+            // Yield to browser (allows UI to stay responsive)
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+
+        // Build edges (less expensive, can do in larger chunks)
+        this._focusable.clear();
+        this._focused = null;
+        
+        const edges = Array.from(this.edges.values());
+        const edgeChunkSize = this._chunkSize * 2;
+        
+        for (let i = 0; i < edges.length; i += edgeChunkSize) {
+            if (this._renderCancelled) {
+                this._hideProgress();
+                return;
+            }
+            
+            const chunkEnd = Math.min(i + edgeChunkSize, edges.length);
+            const chunk = edges.slice(i, chunkEnd);
+            
+            for (const edge of chunk) {
+                edge.label.build(document);
+                this._focusable.set(edge.label.hitTest, edge.label);
+            }
+            
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        
+        // Append all groups to origin
+        origin.appendChild(this._clusterGroup);
+        origin.appendChild(this._edgePathGroup);
+        origin.appendChild(this._edgePathHitTestGroup);
+        origin.appendChild(this._edgeLabelGroup);
+        origin.appendChild(this._nodeGroup);
+        
+        // Measure edge labels
+        for (const edge of this.edges.values()) {
+            if (edge.label.labelElement) {
+                const label = edge.label;
+                if (label.label) {
+                    label.width = label.label.length * 6;
+                    label.height = 14;
+                } else {
+                    this._edgeLabelGroup.appendChild(label.labelElement);
+                    const box = label.labelElement.getBBox();
+                    this._edgeLabelGroup.removeChild(label.labelElement);
+                    label.width = box.width;
+                    label.height = box.height;
+                }
+            }
+        }
+        
+        this._hideProgress();
+    }
+
+    _showProgress(current, total) {
+        // Notify host about rendering progress
+        if (this.view && this.view.host && this.view.host.event) {
+            const percent = Math.round((current / total) * 100);
+            this.view.host.event('graph_render_progress', {
+                current,
+                total,
+                percent
+            });
+        }
+    }
+
+    _hideProgress() {
+        if (this.view && this.view.host && this.view.host.event) {
+            this.view.host.event('graph_render_complete', {});
+        }
+    }
+
+    cancelRender() {
+        this._renderCancelled = true;
     }
 
     async measure() {
@@ -273,6 +495,7 @@ grapher.Graph = class {
             const dagre = await import('./dagre.js');
             dagre.layout(nodes, edges, layout, state);
         }
+        this._layoutData = { nodes, edges };
         if (state.log) {
             const fs = await import('fs');
             fs.writeFileSync(`dist/test/${this.identifier}.log`, state.log);
@@ -312,6 +535,45 @@ grapher.Graph = class {
         return '';
     }
 
+    getLayout() {
+        return this._layoutData;
+    }
+
+    loadLayout(layoutData) {
+        const { nodes, edges } = layoutData;
+        for (const node of nodes) {
+            const label = this.node(node.v).label;
+            label.x = node.x;
+            label.y = node.y;
+            if (this.children(node.v).length) {
+                label.width = node.width;
+                label.height = node.height;
+            }
+        }
+        for (const edge of edges) {
+            const label = this.edge(edge.v, edge.w).label;
+            label.points = edge.points;
+            if ('x' in edge) {
+                label.x = edge.x;
+                label.y = edge.y;
+            }
+        }
+        for (const key of this.nodes.keys()) {
+            const entry = this.node(key);
+            if (this.children(key).length === 0) {
+                const node = entry.label;
+                node.layout();
+            }
+        }
+        
+        // Build QuadTree for spatial indexing after layout
+        if (this._viewportCullingEnabled && this.nodes.size > 100) {
+            if (typeof spatial !== 'undefined') {
+                this._quadTree = spatial.buildQuadTree(this.nodes, this._viewportMargin);
+            }
+        }
+    }
+
     update(viewport) {
         // Use viewport culling for large graphs
         if (this._viewportCullingEnabled && this._quadTree && viewport) {
@@ -327,11 +589,17 @@ grapher.Graph = class {
                 // node
                 const entry = this.node(nodeId);
                 const node = entry.label;
+                if (node.element && !node.element.parentNode) {
+                    this._nodeGroup.appendChild(node.element);
+                }
                 node.update();
             } else {
                 // cluster
                 const entry = this.node(nodeId);
                 const node = entry.label;
+                if (node.element && !node.element.parentNode) {
+                    this._clusterGroup.appendChild(node.element);
+                }
                 node.element.setAttribute('transform', `translate(${node.x},${node.y})`);
                 node.rectangle.setAttribute('x', - node.width / 2);
                 node.rectangle.setAttribute('y', - node.height / 2);
@@ -340,7 +608,11 @@ grapher.Graph = class {
             }
         }
         for (const edge of this.edges.values()) {
-            edge.label.update();
+            const label = edge.label;
+            if (label.element && !label.element.parentNode) {
+                this._edgePathGroup.appendChild(label.element);
+            }
+            label.update();
         }
     }
 
@@ -359,23 +631,19 @@ grapher.Graph = class {
         // Update nodes that are now visible
         for (const nodeData of visibleNodeData) {
             const nodeId = nodeData.id;
+            const entry = this.node(nodeId);
+            const node = entry.label;
             if (this.children(nodeId).length === 0) {
-                const entry = this.node(nodeId);
-                const node = entry.label;
-                
                 // Attach to DOM if not already attached
-                if (!this._visibleNodes.has(nodeId) && node.element) {
-                    const nodeGroup = node.element.ownerSVGElement.getElementById('nodes');
-                    if (nodeGroup && !node.element.parentNode) {
-                        nodeGroup.appendChild(node.element);
-                    }
+                if (node.element && !node.element.parentNode) {
+                    this._nodeGroup.appendChild(node.element);
                 }
-                
                 node.update();
             } else {
                 // cluster
-                const entry = this.node(nodeId);
-                const node = entry.label;
+                if (node.element && !node.element.parentNode) {
+                    this._clusterGroup.appendChild(node.element);
+                }
                 node.element.setAttribute('transform', `translate(${node.x},${node.y})`);
                 node.rectangle.setAttribute('x', - node.width / 2);
                 node.rectangle.setAttribute('y', - node.height / 2);
@@ -386,7 +654,7 @@ grapher.Graph = class {
 
         // Detach nodes that are no longer visible
         for (const nodeId of this._visibleNodes) {
-            if (!newVisibleNodes.has(nodeId) && this.children(nodeId).length === 0) {
+            if (!newVisibleNodes.has(nodeId)) {
                 const entry = this.node(nodeId);
                 const node = entry.label;
                 if (node.element && node.element.parentNode) {
@@ -407,25 +675,16 @@ grapher.Graph = class {
                 newVisibleEdges.add(edge);
                 
                 // Attach edge elements if not already attached
+                const label = edge.label;
                 if (!this._visibleEdges.has(edge)) {
-                    const label = edge.label;
                     if (label.element && !label.element.parentNode) {
-                        const edgePathGroup = label.element.ownerSVGElement.getElementById('edge-paths');
-                        if (edgePathGroup) {
-                            edgePathGroup.appendChild(label.element);
-                        }
+                        this._edgePathGroup.appendChild(label.element);
                     }
                     if (label.hitTest && !label.hitTest.parentNode) {
-                        const hitTestGroup = label.hitTest.ownerSVGElement.getElementById('edge-paths-hit-test');
-                        if (hitTestGroup) {
-                            hitTestGroup.appendChild(label.hitTest);
-                        }
+                        this._edgePathHitTestGroup.appendChild(label.hitTest);
                     }
                     if (label.labelElement && !label.labelElement.parentNode) {
-                        const labelGroup = label.labelElement.ownerSVGElement.getElementById('edge-labels');
-                        if (labelGroup) {
-                            labelGroup.appendChild(label.labelElement);
-                        }
+                        this._edgeLabelGroup.appendChild(label.labelElement);
                     }
                 }
                 
@@ -457,6 +716,7 @@ grapher.Node = class {
 
     constructor() {
         this._blocks = [];
+        this._lodLevel = -1; // -1 indicates no level has been set yet
     }
 
     header() {
@@ -477,14 +737,13 @@ grapher.Node = class {
         return block;
     }
 
-    build(document, parent) {
+    build(document) {
         this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         if (this.id) {
             this.element.setAttribute('id', this.id);
         }
         this.element.setAttribute('class', this.class ? `node ${this.class}` : 'node');
         this.element.style.opacity = 0;
-        parent.appendChild(this.element);
         this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         this.border.setAttribute('class', 'node node-border');
         for (let i = 0; i < this._blocks.length; i++) {
@@ -494,6 +753,10 @@ grapher.Node = class {
             block.build(document, this.element);
         }
         this.element.appendChild(this.border);
+        this.point = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        this.point.setAttribute('r', '4');
+        this.point.setAttribute('class', 'node-lod-point');
+        this.element.appendChild(this.point);
     }
 
     measure() {
@@ -520,6 +783,14 @@ grapher.Node = class {
     }
 
     update() {
+        if (typeof lod !== 'undefined' && this.context && this.context.zoom) {
+            const level = lod.getDetailLevel(this.context.zoom);
+            if (level !== this._lodLevel) {
+                lod.apply(this.element, level, this._lodLevel);
+                this._lodLevel = level;
+            }
+        }
+
         for (const block of this._blocks) {
             block.update();
         }
@@ -873,8 +1144,12 @@ grapher.Argument = class {
                 const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
                 tspan.textContent = (this.separator || '') + this.content;
                 this.text.appendChild(tspan);
+                this.contentElement = tspan;
                 break;
             }
+        }
+        if (this.onBuild) {
+            this.onBuild(this);
         }
     }
 
@@ -976,7 +1251,7 @@ grapher.Edge = class {
         this.to = to;
     }
 
-    build(document, edgePathGroupElement, edgePathHitTestGroupElement, edgeLabelGroupElement) {
+    build(document) {
         const createElement = (name) => {
             return document.createElementNS('http://www.w3.org/2000/svg', name);
         };
@@ -985,9 +1260,7 @@ grapher.Edge = class {
             this.element.setAttribute('id', this.id);
         }
         this.element.setAttribute('class', this.class ? `edge-path ${this.class}` : 'edge-path');
-        edgePathGroupElement.appendChild(this.element);
         this.hitTest = createElement('path');
-        edgePathHitTestGroupElement.appendChild(this.hitTest);
         if (this.label) {
             const tspan = createElement('tspan');
             tspan.setAttribute('xml:space', 'preserve');
@@ -1001,7 +1274,6 @@ grapher.Edge = class {
             if (this.id) {
                 this.labelElement.setAttribute('id', `edge-label-${this.id}`);
             }
-            edgeLabelGroupElement.appendChild(this.labelElement);
         }
     }
 
