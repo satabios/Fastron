@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src %webview_cspSource%; style-src %webview_cspSource% 'unsafe-inline'; img-src %webview_cspSource% https:; script-src %webview_cspSource% 'nonce-%nonce%'; script-src-elem %webview_cspSource% 'nonce-%nonce%';">
+<title>Compare Models</title>
+<link rel="stylesheet" nonce="%nonce%" href="%grapherSheetPath%">
+<style>
+html { touch-action: none; overflow: hidden; width: 100%; height: 100%; }
+body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif;
+    font-size: 12px; display: flex; flex-direction: column; background: #ececec; color: #242424; }
+
+.comparator-container { display: flex; flex: 1; overflow: hidden; }
+
+.comparator-pane { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.comparator-pane-header { height: 28px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #666; background: #e0e0e0;
+    border-bottom: 1px solid #ccc; user-select: none; flex-shrink: 0; padding: 0 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.comparator-divider { width: 3px; background: #999; flex-shrink: 0; cursor: col-resize; }
+
+.comparator-target { flex: 1; display: flex; overflow: auto; outline: none; touch-action: pan-x pan-y; }
+.comparator-target .canvas { margin: auto; flex-shrink: 0; text-rendering: geometricPrecision;
+    user-select: none; -webkit-user-select: none; }
+
+.comparator-legend { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 5px 12px;
+    font-size: 10px; color: #888; background: #e8e8e8; border-top: 1px solid #ddd; flex-shrink: 0; user-select: none; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; border: 2px solid; }
+
+.comparator-footer { display: flex; flex-direction: column; flex-shrink: 0; }
+.diff-summary { display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 4px 12px; font-size: 11px; background: #f0f0f0; border-top: 1px solid #ddd;
+    user-select: none; min-height: 22px; }
+.summary-count { font-weight: 500; }
+.summary-sep { color: #bbb; }
+.summary-identical { color: #888; }
+.summary-modified { color: #e67e22; }
+.summary-added { color: #27ae60; }
+.summary-removed { color: #e74c3c; }
+
+.comparator-spinner { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex;
+    align-items: center; justify-content: center; background: rgba(236,236,236,0.85); z-index: 10; }
+.comparator-spinner.hidden { display: none; }
+.spinner-text { font-size: 14px; color: #666; }
+
+/* Diff panel */
+.diff-panel-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.25); z-index: 20; }
+.diff-panel-backdrop.hidden { display: none; }
+.diff-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 520px; max-width: 90vw; max-height: 70vh; display: flex; flex-direction: column;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18); z-index: 21;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif;
+    font-size: 12px; color: #242424; }
+.diff-panel.hidden { display: none; }
+.diff-panel-header { display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
+.diff-panel-title { font-weight: 600; font-size: 13px; }
+.diff-panel-close { background: none; border: none; font-size: 18px; cursor: pointer;
+    color: #888; padding: 0 4px; line-height: 1; }
+.diff-panel-close:hover { color: #333; }
+.diff-panel-content { overflow-y: auto; padding: 12px 14px; flex: 1; }
+.diff-section { margin-bottom: 10px; }
+.diff-section-title { font-weight: 600; font-size: 11px; color: #666;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+    padding-bottom: 3px; border-bottom: 1px solid #eee; }
+.diff-row { display: flex; gap: 8px; padding: 3px 0; font-size: 11px; align-items: baseline; }
+.diff-label { width: 90px; flex-shrink: 0; color: #888; text-align: right; }
+.diff-value-a { flex: 1; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+.diff-value-b { flex: 1; padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+.diff-arrow { flex-shrink: 0; color: #888; }
+.diff-changed .diff-value-a { background: rgba(231,76,60,0.1); color: #c0392b; }
+.diff-changed .diff-value-b { background: rgba(39,174,96,0.1); color: #27ae60; }
+.diff-added .diff-value-b { background: rgba(39,174,96,0.1); color: #27ae60; }
+.diff-removed .diff-value-a { background: rgba(231,76,60,0.1); color: #c0392b; }
+.diff-identical .diff-value-a { color: #888; }
+.diff-status { text-align: center; padding: 20px; color: #888; font-size: 13px; }
+.diff-status-badge { display: inline-block; padding: 3px 10px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+.diff-status-identical { background: rgba(136,136,136,0.15); color: #888; }
+.diff-status-added { background: rgba(39,174,96,0.15); color: #27ae60; }
+.diff-status-removed { background: rgba(231,76,60,0.15); color: #e74c3c; }
+.diff-status-modified { background: rgba(230,126,34,0.15); color: #e67e22; }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #dfdfdf; }
+    .comparator-pane-header { background: #2a2a2a; color: #aaa; border-color: #444; }
+    .comparator-divider { background: #666; }
+    .comparator-target { background: #1e1e1e; }
+    .comparator-legend { background: #252525; border-color: #444; color: #888; }
+    .diff-summary { background: #1a1a1a; border-color: #444; }
+    .comparator-spinner { background: rgba(30,30,30,0.85); }
+    .spinner-text { color: #aaa; }
+    .diff-panel { background: #2a2a2a; border-color: #444; color: #dfdfdf;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .diff-panel-header { border-color: #444; }
+    .diff-panel-close { color: #888; }
+    .diff-panel-close:hover { color: #ddd; }
+    .diff-section-title { color: #aaa; border-color: #444; }
+    .diff-label { color: #888; }
+    .diff-changed .diff-value-a { background: rgba(231,76,60,0.15); color: #e74c3c; }
+    .diff-changed .diff-value-b { background: rgba(39,174,96,0.15); color: #2ecc71; }
+    .diff-added .diff-value-b { background: rgba(39,174,96,0.15); color: #2ecc71; }
+    .diff-removed .diff-value-a { background: rgba(231,76,60,0.15); color: #e74c3c; }
+    .diff-identical .diff-value-a { color: #888; }
+    .diff-panel-backdrop { background: rgba(0,0,0,0.4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="comparator-container">
+    <div class="comparator-pane" id="pane-left">
+        <div class="comparator-pane-header" id="pane-left-header">Model A</div>
+        <div class="comparator-target" id="target-left" tabindex="0"></div>
+    </div>
+    <div class="comparator-divider" id="comparator-divider"></div>
+    <div class="comparator-pane" id="pane-right">
+        <div class="comparator-pane-header" id="pane-right-header">Model B</div>
+        <div class="comparator-target" id="target-right" tabindex="0"></div>
+    </div>
+</div>
+<svg id="connector-overlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:3;overflow:visible;"></svg>
+<div class="comparator-footer">
+    <div id="diff-summary" class="diff-summary"></div>
+    <div class="comparator-legend">
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Identical</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #e67e22; background: rgba(230,126,34,0.15);"></div> Modified</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Added</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Removed</div>
+    </div>
+</div>
+<div id="comparator-spinner" class="comparator-spinner">
+    <span class="spinner-text">Loading models...</span>
+</div>
+<div id="diff-panel-backdrop" class="diff-panel-backdrop hidden"></div>
+<div id="diff-panel" class="diff-panel hidden">
+    <div class="diff-panel-header">
+        <span class="diff-panel-title" id="diff-panel-title">Node Diff</span>
+        <button class="diff-panel-close" id="diff-panel-close">&times;</button>
+    </div>
+    <div class="diff-panel-content" id="diff-panel-content"></div>
+</div>
+<!-- Font preload workaround for Chrome SVG layout -->
+<div style="font-weight: normal; color: rgba(0,0,0,0.01); user-select: none;">.</div>
+<div style="font-weight: bold; color: rgba(0,0,0,0.01); user-select: none;">.</div>
+<script type="module" nonce="%nonce%">
+    import { BinaryStream } from '%basePath%/base.js';
+    import { Controller } from '%comparatorPath%';
+
+    const vscode = acquireVsCodeApi();
+
+    class ComparatorBrowserHost {
+
+        constructor() {
+            this._document = window.document;
+            this._modelStore = new Map();
+            this._fetchCache = new Map();
+        }
+
+        get document() {
+            return this._document;
+        }
+
+        environment(name) {
+            switch (name) {
+                case 'type': return 'Browser';
+                case 'platform': return '';
+                case 'agent': return '';
+                case 'serial': return false;
+                default: return null;
+            }
+        }
+
+        exception(error) {
+            console.error(error);
+        }
+
+        event() {}
+
+        message() {
+            return new Promise(() => {});
+        }
+
+        async request(file, encoding, base) {
+            const url = base !== undefined ? (base + '/' + file) : ('%netronPath%/' + file);
+            const key = (encoding || 'binary') + '|' + url;
+            if (!this._fetchCache.has(key)) {
+                const promise = fetch(url).then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status} fetching '${file}'.`);
+                    }
+                    if (encoding) {
+                        return response.text();
+                    }
+                    const buffer = await response.arrayBuffer();
+                    return new BinaryStream(new Uint8Array(buffer));
+                });
+                this._fetchCache.set(key, promise);
+            }
+            return this._fetchCache.get(key);
+        }
+
+        require(id) {
+            return import('%netronPath%/' + id + '.js');
+        }
+
+        import(id) {
+            return import('%netronPath%/' + id + '.js');
+        }
+
+        storeModel(key, name, uint8) {
+            const stream = new BinaryStream(uint8);
+            this._modelStore.set(key, { _identifier: name, _stream: stream, _host: this });
+        }
+
+        async _context(key) {
+            const entry = this._modelStore.get(key);
+            if (!entry) {
+                throw new Error(`Model data for '${key}' not loaded.`);
+            }
+            const host = this;
+            return {
+                get identifier() { return entry._identifier; },
+                get stream() { return entry._stream; },
+                async request(file, encoding, base) { return host.request(file, encoding, base); },
+                require(id) { return host.require(id); },
+                error(e, fatal) { host.exception(e, fatal); }
+            };
+        }
+    }
+
+    const host = new ComparatorBrowserHost();
+    const controller = new Controller(host);
+    let _aReady = false;
+    let _bReady = false;
+    let _labelA = '';
+    let _labelB = '';
+
+    function _tryCompare() {
+        if (_aReady && _bReady) {
+            controller.compare(
+                { path: 'modelA', label: _labelA },
+                { path: 'modelB', label: _labelB }
+            ).catch((e) => {
+                console.error('Comparison failed:', e);
+                vscode.postMessage({ command: 'alert', text: 'Comparison failed: ' + e.message });
+            });
+        }
+    }
+
+    window.addEventListener('message', (event) => {
+        const msg = event.data;
+        switch (msg.command) {
+            case 'transmit_model_a':
+                host.storeModel('modelA', msg.name, new Uint8Array(msg.value));
+                _labelA = msg.label || msg.name;
+                _aReady = true;
+                _tryCompare();
+                break;
+            case 'transmit_model_b':
+                host.storeModel('modelB', msg.name, new Uint8Array(msg.value));
+                _labelB = msg.label || msg.name;
+                _bReady = true;
+                _tryCompare();
+                break;
+        }
+    });
+
+    vscode.postMessage({ command: 'comparator_ready' });
+</script>
+</body>
+</html>
