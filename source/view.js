@@ -552,7 +552,7 @@ view.View = class {
             if (config.get) {
                 return config.get(key, def);
             }
-            return config[key] !== undefined ? config[key] : def;
+            return config[key] === undefined ? def : config[key];
         };
         this._options.lazyRender = get('rendering.viewportCulling', this._options.lazyRender);
     }
