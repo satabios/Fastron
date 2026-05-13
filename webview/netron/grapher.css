@@ -416,3 +416,21 @@
     .node-item-type.node-dtype-uint4-bf16:hover path { fill: #4e3858; }
     .node-item-type.node-dtype-uint4-bf16:hover text { fill: #eaf5ea; }
 }
+
+/* ── Model comparison diff highlights ───────────────────────────────────────── */
+.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
+.node-diff-added    .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
+.node-diff-removed  .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }
+.node-diff-selected .node-border { stroke: #4a90d9 !important; stroke-width: 3px !important;
+    animation: diff-pulse 0.6s ease-out 2; }
+@keyframes diff-pulse {
+    0%   { stroke-opacity: 1; }
+    50%  { stroke-opacity: 0.2; }
+    100% { stroke-opacity: 1; }
+}
+
+@media (prefers-color-scheme: dark) {
+    .node-diff-modified .node-border { stroke: #f0a050 !important; }
+    .node-diff-added    .node-border { stroke: #3dcc7a !important; }
+    .node-diff-removed  .node-border { stroke: #f06060 !important; }
+}

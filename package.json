@@ -65,6 +65,11 @@
 					"command": "vscode-netron.open",
 					"group": "YourGroup@1",
 					"when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
+				},
+				{
+					"command": "vscode-netron.compare",
+					"group": "YourGroup@2",
+					"when": "resourceExtname =~ /(.onnx|.pb|.tflite|.pt|.pth|.h5|.keras|.mlmodel|.mlpackage|.caffemodel|.bin|.param|.ncnn)$/"
 				}
 			]
 		},
@@ -76,6 +81,18 @@
       {
         "command": "vscode-netron.open_webbrowser",
         "title": "Start Netron Web"
+      },
+      {
+        "command": "vscode-netron.clearCache",
+        "title": "Netron: Clear Cache"
+      },
+      {
+        "command": "vscode-netron.showCacheStats",
+        "title": "Netron: Show Cache Statistics"
+      },
+      {
+        "command": "vscode-netron.compare",
+        "title": "Netron: Compare Models"
       }
     ],
     "configuration": {
@@ -90,6 +107,36 @@
           "type": "string",
           "default": "python3",
           "description": "Path to Python executable (must have onnx and onnxsim packages installed)"
+        },
+        "vscode-netron.onnxSimplification.thresholdMB": {
+          "type": "number",
+          "default": 50,
+          "description": "Minimum file size (MB) to trigger simplification"
+        },
+        "vscode-netron.rendering.viewportCulling": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable viewport culling (only render visible nodes)"
+        },
+        "vscode-netron.rendering.progressive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable progressive rendering (render in chunks)"
+        },
+        "vscode-netron.rendering.chunkSize": {
+          "type": "number",
+          "default": 100,
+          "description": "Number of nodes to render per frame"
+        },
+        "vscode-netron.caching.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable IndexedDB caching for parsed models"
+        },
+        "vscode-netron.caching.maxSizeGB": {
+          "type": "number",
+          "default": 1,
+          "description": "Maximum cache size in GB"
         },
         "vscode-netron.onnxSimplification.sizeThresholdMB": {
           "type": "number",
@@ -120,10 +167,97 @@
           "type": "boolean",
           "default": true,
           "description": "Skip loading tensor weight data (reduces memory usage by 90-95%)"
+        },
+        "vscode-netron.rendering.progressiveRendering": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable progressive rendering for large graphs (renders in chunks to keep UI responsive)"
+        },
+        "vscode-netron.rendering.chunkSize": {
+          "type": "number",
+          "default": 100,
+          "description": "Number of nodes to render per frame in progressive mode"
+        },
+        "vscode-netron.rendering.stringInterning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable string interning to reduce memory usage (saves 20-30% memory)"
+        },
+        "vscode-netron.caching.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable caching of parsed models for instant reloading"
+        },
+        "vscode-netron.caching.maxEntries": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of models to cache"
+        },
+        "vscode-netron.caching.maxSizeMB": {
+          "type": "number",
+          "default": 1024,
+          "description": "Maximum total cache size in megabytes"
+        },
+        "vscode-netron.advanced.webWorkerParsing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Web Worker for ONNX parsing (experimental - keeps UI responsive during parsing)"
+        },
+        "vscode-netron.advanced.lazyAttributeLoading": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load node attributes only when expanded (reduces memory and initial render time)"
+        },
+        "vscode-netron.streaming.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable streaming parser for large models (Google Maps style loading)"
+        },
+        "vscode-netron.streaming.sizeThresholdMB": {
+          "type": "number",
+          "default": 500,
+          "description": "Enable streaming for models above this size in MB"
+        },
+        "vscode-netron.streaming.chunkSize": {
+          "type": "number",
+          "default": 50,
+          "description": "Nodes per chunk (smaller = less memory, more frequent loading)"
+        },
+        "vscode-netron.streaming.maxLoadedChunks": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum chunks to keep in memory (controls peak memory usage)"
+        },
+        "vscode-netron.streaming.prefetchDistance": {
+          "type": "number",
+          "default": 2,
+          "description": "Number of chunks to prefetch ahead for smooth scrolling"
         }
       }
     }
   },
+  "commands": [
+    {
+      "command": "vscode-netron.open",
+      "title": "Open in Netron"
+    },
+    {
+      "command": "vscode-netron.open_webbrowser",
+      "title": "Start Netron Web"
+    },
+    {
+      "command": "vscode-netron.clearCache",
+      "title": "Netron: Clear Cache"
+    },
+    {
+      "command": "vscode-netron.showCacheStats",
+      "title": "Netron: Show Cache Statistics"
+    },
+    {
+      "command": "vscode-netron.compare",
+      "title": "Netron: Compare Models"
+    }
+  ],
   "icon": "docs/netron-logo_128x128px.png",
   "repository": {
     "type": "git",
