@@ -387,6 +387,54 @@ view.View = class {
         return this._host.document.getElementById(id);
     }
 
+    _updateDtypeLegend(activeTarget) {
+        const DTYPE_LABELS = {
+            'fp32-fp32': 'FP32', 'fp16-fp16': 'FP16', 'bf16-bf16': 'BF16', 'fp8-fp8': 'FP8',
+            'int8-int8': 'W8A8', 'int4-int4': 'W4A4', 'int16-int16': 'INT16',
+            'int32-int32': 'INT32', 'int64-int64': 'INT64',
+            'uint8-uint8': 'UINT8', 'uint4-uint4': 'UINT4',
+            'int8-int16': 'W8A16', 'int4-int16': 'W4A16',
+            'int8-fp16': 'W8AF16', 'int8-bf16': 'W8ABF16', 'int8-fp32': 'W8A32',
+            'int4-fp16': 'W4AF16', 'int4-bf16': 'W4ABF16', 'int4-fp32': 'W4A32', 'int4-int8': 'W4A8',
+            'fp32-fp16': 'F32/F16', 'fp32-bf16': 'F32/BF16', 'fp32-int8': 'F32/INT8',
+            'fp16-fp32': 'F16/F32', 'fp16-bf16': 'F16/BF16',
+            'bf16-fp32': 'BF16/F32', 'bf16-fp16': 'BF16/F16',
+            'fp8-fp32': 'FP8/F32', 'fp8-fp16': 'FP8/F16', 'fp8-bf16': 'FP8/BF16',
+            'uint8-fp32': 'U8/F32', 'uint8-fp16': 'U8/F16', 'uint8-bf16': 'U8/BF16',
+            'uint4-fp32': 'U4/F32', 'uint4-fp16': 'U4/F16', 'uint4-bf16': 'U4/BF16',
+        };
+        const legendEl = this._host.document.getElementById('dtype-legend');
+        if (!legendEl) {
+            return;
+        }
+        if (!activeTarget || !Array.isArray(activeTarget.nodes) || activeTarget.nodes.length === 0) {
+            legendEl.style.display = 'none';
+            return;
+        }
+        const dtypeSet = new Set();
+        for (const node of activeTarget.nodes) {
+            const key = view.Node._getDtypeKey(node);
+            if (key) {
+                dtypeSet.add(key);
+            }
+        }
+        if (dtypeSet.size === 0) {
+            legendEl.style.display = 'none';
+            return;
+        }
+        const sortedKeys = Array.from(dtypeSet).sort();
+        const items = legendEl.querySelector('.dtype-legend-items');
+        items.innerHTML = '';
+        for (const key of sortedKeys) {
+            const label = DTYPE_LABELS[key] || key;
+            const item = this._host.document.createElement('div');
+            item.className = 'dtype-legend-item';
+            item.innerHTML = `<svg width="14" height="10" viewBox="0 0 14 10" class="dtype-legend-swatch"><g class="node-item-type node-dtype-${key}"><path d="M0,0h14v10h-14z"/></g></svg><span>${label}</span>`;
+            items.appendChild(item);
+        }
+        legendEl.style.display = '';
+    }
+
     zoomIn() {
         this._target.zoom *= 1.1;
     }
@@ -443,7 +491,15 @@ view.View = class {
         this._sidebar.close();
         await this._timeout(2);
         try {
-            const model = await this._modelFactoryService.open(context);
+            const model = await this._modelFactoryService.open(context, this._options);
+            if (context._file && typeof cache !== 'undefined' && cache.init) {
+                const file = context._file;
+                try {
+                    model.cacheKey = await cache.generateKey(file.name, file.size, file.lastModified);
+                } catch (error) {
+                    console.error('Failed to generate cache key.', error);
+                }
+            }
             const format = [];
             if (model.format) {
                 format.push(model.format);
@@ -624,25 +680,52 @@ view.View = class {
             element.removeChild(element.lastChild);
         }
         let status = '';
-        if (target) {
-            const document = this._host.document;
-            const graph = target;
-            const groups = graph.groups || false;
-            const nodes = graph.nodes;
-            this._host.event('graph_view', {
-                graph_node_count: nodes.length,
-                graph_skip: 0
-            });
-            const viewGraph = new view.Graph(this, groups);
-            viewGraph.add(graph, signature);
-            viewGraph.build(document);
-            await viewGraph.measure();
-            status = await viewGraph.layout(this._worker);
-            if (status === '') {
+
+        const cacheKey = this.model ? this.model.cacheKey : null;
+        if (cacheKey && typeof cache !== 'undefined' && cache._config.enabled) {
+            const cachedData = await cache.get(cacheKey);
+            if (cachedData && cachedData.graph && cachedData.layout) {
+                const viewGraph = new view.Graph(this, cachedData.graph.groups || false);
+                viewGraph.add(cachedData.graph, signature);
+                await viewGraph.build(this.host.document);
+                await viewGraph.measure();
+                viewGraph.loadLayout(cachedData.layout);
                 viewGraph.update();
                 const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
                 viewGraph.restore(state);
                 this.target = viewGraph;
+                this._updateDtypeLegend(viewGraph);
+                return ''; // Success
+            }
+        }
+
+        if (target) {
+            const document = this._host.document;
+            const graph = target;
+            const groups = graph.groups || false;
+            this._host.event('graph_view', {
+                graph_node_count: graph.nodes.length,
+                graph_skip: 0
+            });
+            const viewGraph = new view.Graph(this, groups);
+            viewGraph.add(graph, signature);
+            await viewGraph.build(document);
+            await viewGraph.measure();
+            status = await viewGraph.layout(this._worker);
+            if (status === '') {
+
+                if (cacheKey && typeof cache !== 'undefined' && cache._config.enabled) {
+                    const layoutData = viewGraph.getLayout();
+                    if (layoutData) {
+                        await cache.set({ key: cacheKey, graph: target, layout: layoutData });
+                    }
+                }
+
+                viewGraph.update();
+                const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
+                viewGraph.restore(state);
+                this.target = viewGraph;
+                this._updateDtypeLegend(viewGraph);
             }
         }
         return status;
@@ -917,6 +1000,32 @@ view.View = class {
         this._host.window.addEventListener('keydown', handler);
         this._host.document.body.addEventListener('click', handler);
         this._host.document.body.classList.add('about');
+    }
+
+    applyConfiguration(config) {
+        if (typeof cache !== 'undefined' && cache.configure) {
+            cache.configure({
+                enabled: config.get('caching.enabled'),
+                maxEntries: config.get('caching.maxEntries'),
+                maxSizeBytes: config.get('caching.maxSizeMB') * 1024 * 1024
+            });
+        }
+
+        this._options.rendering = {
+            viewportCulling: config.get('rendering.viewportCulling'),
+            skipWeightData: config.get('rendering.skipWeightData'),
+            progressiveRendering: config.get('rendering.progressiveRendering'),
+            chunkSize: config.get('rendering.chunkSize'),
+            stringInterning: config.get('rendering.stringInterning')
+        };
+
+        // Also update other top-level options if they exist in config
+        for (const key of ['weights', 'attributes', 'names', 'direction', 'mousewheel']) {
+            const value = config.get(key);
+            if (value !== undefined) {
+                this._options[key] = value;
+            }
+        }
     }
 };
 
@@ -1505,7 +1614,7 @@ view.Worker = class {
 view.Graph = class extends grapher.Graph {
 
     constructor(view, compound) {
-        super(compound);
+        super(compound, view.options.rendering);
         this.view = view;
         this.counter = 0;
         this._nodeKey = 0;
@@ -1514,6 +1623,9 @@ view.Graph = class extends grapher.Graph {
         this._table = new Map();
         this._selection = new Set();
         this._zoom = 1;
+        if (typeof hybrid !== 'undefined') {
+            this._hybridRenderer = new hybrid.Renderer(this);
+        }
     }
 
     get model() {
@@ -1712,7 +1824,7 @@ view.Graph = class extends grapher.Graph {
         for (const value of this._values.values()) {
             value.build();
         }
-        super.build(document);
+        return super.build(document);
     }
 
     async measure() {
@@ -1798,6 +1910,44 @@ view.Graph = class extends grapher.Graph {
         }
         const size = canvas.getBBox();
         const margin = 100;
+        const width = Math.ceil(margin + size.width + margin);
+        const height = Math.ceil(margin + size.height + margin);
+        origin.setAttribute('transform', `translate(${margin - size.x}, ${margin - size.y}) scale(1)`);
+        background.setAttribute('width', width);
+        background.setAttribute('height', height);
+        this._width = width;
+        this._height = height;
+        delete this._scrollLeft;
+        delete this._scrollRight;
+        canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        canvas.setAttribute('width', width);
+        canvas.setAttribute('height', height);
+        this._zoom = state ? state.zoom : 1;
+        this._updateZoom(this._zoom);
+        const container = document.getElementById('target');
+        const context = state ? this.select([state.context]) : [];
+        if (context.length > 0) {
+            this.scrollTo(context, 'instant');
+        } else if (elements && elements.length > 0) {
+            // Center view based on input elements
+            const bounds = container.getBoundingClientRect();
+            const xs = [];
+            const ys = [];
+            for (let i = 0; i < elements.length; i++) {
+                const element = elements[i];
+                const rect = element.getBoundingClientRect();
+                const width = Math.min(rect.width, bounds.width);
+                const height = Math.min(rect.width, bounds.width);
+                xs.push(rect.left + (width / 2));
+                ys.push(rect.top + (height / 2));
+            }
+            let x = xs.reduce((a, b) => a + b, 0) / xs.length;
+            let y = ys.reduce((a, b) => a + b, 0) / ys.length;
+            const target = container.getBoundingClientRect();
+            x -= target.left + (target.width / 2);
+            y -= target.top + (target.height / 2);
+            container.scrollBy(x, y);
+        }
         
         // Setup viewport culling event listeners
         this._setupViewportTracking();
@@ -1868,52 +2018,9 @@ view.Graph = class extends grapher.Graph {
         
         // Update graph with viewport info
         super.update(viewport);
-    }
-        const width = Math.ceil(margin + size.width + margin);
-        const height = Math.ceil(margin + size.height + margin);
-        origin.setAttribute('transform', `translate(${margin - size.x}, ${margin - size.y}) scale(1)`);
-        background.setAttribute('width', width);
-        background.setAttribute('height', height);
-        this._width = width;
-        this._height = height;
-        delete this._scrollLeft;
-        delete this._scrollRight;
-        canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        canvas.setAttribute('width', width);
-        canvas.setAttribute('height', height);
-        this._zoom = state ? state.zoom : 1;
-        this._updateZoom(this._zoom);
-        const container = document.getElementById('target');
-        const context = state ? this.select([state.context]) : [];
-        if (context.length > 0) {
-            this.scrollTo(context, 'instant');
-        } else if (elements && elements.length > 0) {
-            // Center view based on input elements
-            const bounds = container.getBoundingClientRect();
-            const xs = [];
-            const ys = [];
-            for (let i = 0; i < elements.length; i++) {
-                const element = elements[i];
-                const rect = element.getBoundingClientRect();
-                const width = Math.min(rect.width, bounds.width);
-                const height = Math.min(rect.width, bounds.width);
-                xs.push(rect.left + (width / 2));
-                ys.push(rect.top + (height / 2));
-            }
-            let [x] = xs;
-            const [y] = ys;
-            if (ys.every((y) => y === ys[0])) {
-                x = xs.reduce((a, b) => a + b, 0) / xs.length;
-            }
-            const left = (container.scrollLeft + x - bounds.left) - (bounds.width / 2);
-            const top = (container.scrollTop + y - bounds.top) - (bounds.height / 2);
-            container.scrollTo({ left, top, behavior: 'auto' });
-        } else {
-            const canvasRect = canvas.getBoundingClientRect();
-            const graphRect = container.getBoundingClientRect();
-            const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
-            const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
-            container.scrollTo({ left, top, behavior: 'auto' });
+
+        if (this._hybridRenderer) {
+            this._hybridRenderer.update(viewport, zoom);
         }
     }
 
@@ -2276,6 +2383,10 @@ view.Node = class extends grapher.Node {
             content = `${begin}\u2026${end}`;
         }
         const styles = category ? ['node-item-type', `node-item-type-${category.toLowerCase()}`] : ['node-item-type'];
+        const dtypeKey = view.Node._getDtypeKey(node);
+        if (dtypeKey) {
+            styles.push(`node-dtype-${dtypeKey}`);
+        }
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => {
             this.context.activate(value);
@@ -2308,15 +2419,31 @@ view.Node = class extends grapher.Node {
         let hiddenTensors = false;
         const objects = [];
         const attribute = (argument) => {
-            let content = new view.Formatter(argument.value, argument.type).toString();
-            if (content && content.length > 12) {
-                content = `${content.substring(0, 12)}\u2026`;
-            }
-            const item = list().argument(argument.name, content);
+            // Lazy load attribute value
+            const item = list().argument(argument.name, '\u2026');
             item.tooltip = argument.type;
-            if (!content.startsWith('\u3008')) {
-                item.separator = ' = ';
-            }
+            item.separator = ' = ';
+            
+            item.onBuild = (argumentItem) => {
+                argumentItem.element.addEventListener('pointerenter', () => {
+                    if (argumentItem.content === '\u2026') {
+                        let content = new view.Formatter(argument.value, argument.type).toString();
+                        const fullContent = content;
+                        if (content && content.length > 12) {
+                            content = `${content.substring(0, 12)}\u2026`;
+                        }
+                        argumentItem.content = content;
+                        if (argumentItem.contentElement) {
+                            argumentItem.contentElement.textContent = (argumentItem.separator || '') + content;
+                        }
+                        // Update tooltip with full content
+                        const title = argumentItem.text.querySelector('title');
+                        if (title) {
+                            title.textContent = fullContent;
+                        }
+                    }
+                });
+            };
             return item;
         };
         const isObject = (node) => {
@@ -2426,6 +2553,59 @@ view.Node = class extends grapher.Node {
             this._edges.set(to, new view.Edge(this, to));
         }
         return this._edges.get(to);
+    }
+
+    static _normalizeDtype(dt) {
+        if (!dt || dt === '?') {
+            return null;
+        }
+        const map = {
+            'float32': 'fp32', 'float': 'fp32',
+            'float16': 'fp16',
+            'bfloat16': 'bf16',
+            'float8e4m3fn': 'fp8', 'float8e4m3fnuz': 'fp8',
+            'float8e5m2': 'fp8', 'float8e5m2fnuz': 'fp8', 'float4e2m1': 'fp8',
+            'int4': 'int4', 'int8': 'int8', 'qint8': 'int8',
+            'int16': 'int16', 'int32': 'int32', 'qint32': 'int32',
+            'int64': 'int64',
+            'uint4': 'uint4', 'uint8': 'uint8', 'quint8': 'uint8',
+            'uint16': 'uint16', 'uint32': 'uint32'
+        };
+        return map[dt] || null;
+    }
+
+    static _getDtypeKey(node) {
+        const firstDtype = (argList, requireInitializer) => {
+            if (!Array.isArray(argList)) {
+                return null;
+            }
+            for (const arg of argList) {
+                if (!Array.isArray(arg.value)) {
+                    continue;
+                }
+                for (const val of arg.value) {
+                    if (!val || !val.type || !val.type.dataType) {
+                        continue;
+                    }
+                    if (requireInitializer && !val.initializer) {
+                        continue;
+                    }
+                    const norm = view.Node._normalizeDtype(val.type.dataType);
+                    if (norm) {
+                        return norm;
+                    }
+                }
+            }
+            return null;
+        };
+        const activationDtype = firstDtype(node.outputs, false);
+        const weightDtype = firstDtype(node.inputs, true);
+        if (!activationDtype && !weightDtype) {
+            return null;
+        }
+        const w = weightDtype || activationDtype;
+        const a = activationDtype || weightDtype;
+        return `${w}-${a}`;
     }
 };
 
@@ -3247,13 +3427,29 @@ view.PrimitiveView = class extends view.Expander {
 
     constructor(context, argument) {
         super(context);
+        this._argument = argument;
+        this._expanded = false;
+        this.enable();
+        const line = this.createElement('div', 'sidebar-item-value-line');
+        line.innerHTML = '<i>Click to show value...</i>';
+        this.add(line);
+    }
+
+    expand() {
+        if (this._expanded) {
+            return;
+        }
         try {
-            this._argument = argument;
-            const type = argument.type === 'attribute' ? null : argument.type;
-            const value = argument.value;
-            if (type) {
-                this.enable();
+            // Clear placeholder
+            while (this.element.childElementCount > 1) {
+                this.element.removeChild(this.element.lastChild);
             }
+            if (this.element.lastChild) {
+                this.element.removeChild(this.element.lastChild);
+            }
+
+            const type = this._argument.type === 'attribute' ? null : this._argument.type;
+            const value = this._argument.value;
             switch (type) {
                 case 'graph': {
                     const line = this.createElement('div', 'sidebar-item-value-line-link');
@@ -3270,7 +3466,7 @@ view.PrimitiveView = class extends view.Expander {
                     break;
                 }
                 case 'object[]': {
-                    for (const obj of argument.value) {
+                    for (const obj of this._argument.value) {
                         const line = this.createElement('div', 'sidebar-item-value-line');
                         line.textContent = obj.type ? obj.type.name : '?';
                         this.add(line);
@@ -3294,30 +3490,21 @@ view.PrimitiveView = class extends view.Expander {
                     this.add(line);
                 }
             }
-        } catch (error) {
-            super.error(error, false);
-            this._info('ERROR', error.message);
-        }
-    }
-
-    expand() {
-        try {
-            const type = this._argument.type;
-            const value = this._argument.value;
-            const content = type === 'tensor' && value && value.type ? value.type.toString() : this._argument.type;
+            const contentType = type === 'tensor' && value && value.type ? value.type.toString() : this._argument.type;
             const line = this.createElement('div', 'sidebar-item-value-line-border');
-            line.innerHTML = `type: <code><b>${content}</b></code>`;
+            line.innerHTML = `type: <code><b>${contentType}</b></code>`;
             this.add(line);
             const description = this._argument.description;
             if (description) {
-                const line = this.createElement('div', 'sidebar-item-value-line-border');
-                line.innerHTML = description;
-                this.add(line);
+                const lineDesc = this.createElement('div', 'sidebar-item-value-line-border');
+                lineDesc.innerHTML = description;
+                this.add(lineDesc);
             }
         } catch (error) {
             super.error(error, false);
             this._info('ERROR', error.message);
         }
+        this._expanded = true;
     }
 
     _info(name, value) {
@@ -4343,7 +4530,13 @@ view.FindSidebar = class extends view.Control {
         this._query.addEventListener('input', (e) => {
             this._state.query = e.target.value;
             this.emit('state-changed', this._state);
-            this._update();
+            if (this._updateTimer) {
+                clearTimeout(this._updateTimer);
+            }
+            this._updateTimer = setTimeout(() => {
+                this._updateTimer = null;
+                this._update();
+            }, 250);
         });
         this._query.addEventListener('keydown', (e) => {
             if (e.keyCode === 0x08 && !e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
@@ -6399,11 +6592,11 @@ view.ModelFactoryService = class {
         }
     }
 
-    async open(context) {
+    async open(context, options) {
         try {
             await this._openSignature(context);
             const content = new view.Context(context);
-            const model = await this._openContext(content);
+            const model = await this._openContext(content, options);
             if (!model) {
                 const check = (obj) => {
                     if (obj instanceof Error) {
@@ -6428,7 +6621,7 @@ view.ModelFactoryService = class {
                 if (!entryContext) {
                     await this._unsupported(content);
                 }
-                return this._openContext(entryContext);
+                return this._openContext(entryContext, options);
             }
             return model;
         } catch (error) {
@@ -6756,7 +6949,7 @@ view.ModelFactoryService = class {
         return new module.ModelFactory();
     }
 
-    async _openContext(context) {
+    async _openContext(context, options) {
         const modules = this._filter(context).filter((module) => module && module.length > 0);
         const errors = [];
         for (const module of modules) {
@@ -6770,7 +6963,7 @@ view.ModelFactoryService = class {
             if (type) {
                 try {
                     /* eslint-disable no-await-in-loop */
-                    const model = await factory.open(context);
+                    const model = await factory.open(context, options);
                     /* eslint-enable no-await-in-loop */
                     if (!model.identifier) {
                         model.identifier = context.identifier;
@@ -6979,26 +7172,8 @@ view.ModelFactoryService = class {
     }
 
     async import() {
-        if (this._host.type === 'Browser' || this._host.type === 'Python') {
-            const files = [
-                './message', './onnx', './pytorch', './tflite', './mlnet',
-                './onnx-proto', './onnx-schema', './tflite-schema',
-                'onnx-metadata.json', 'pytorch-metadata.json', 'tflite-metadata.json'
-            ];
-            for (const file of files) {
-                /* eslint-disable no-await-in-loop */
-                try {
-                    if (file.startsWith('./')) {
-                        await this._host.require(file);
-                    } else if (file.endsWith('.json')) {
-                        await this._host.request(file, 'utf-8', null);
-                    }
-                } catch {
-                    // continue regardless of error
-                }
-                /* eslint-enable no-await-in-loop */
-            }
-        }
+        // This method is intentionally left empty to enable lazy loading of parsers.
+        // Parsers are now loaded on-demand by _openContext when a model is opened.
     }
 };
 
