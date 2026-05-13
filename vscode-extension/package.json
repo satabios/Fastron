@@ -1,7 +1,7 @@
 {
   "name": "fastron",
   "displayName": "Fastron",
-  "description": "Visualize machine learning models with Netron in VSCode",
+  "description": "Visualize machine learning models with Fastron in VSCode",
   "version": "2026.4.30",
   "engines": {
     "vscode": "^1.86.0"
@@ -24,7 +24,7 @@
   "contributes": {
     "languages": [
       {
-        "id": "netron",
+        "id": "fastron",
         "extensions": [
           ".onnx",
           ".h5",
@@ -54,39 +54,39 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "vscode-netron.open",
+          "command": "fastron.open",
           "when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
         }
       ],
       "editor/context": [
         {
-          "command": "vscode-netron.open",
+          "command": "fastron.open",
           "group": "YourGroup@1",
           "when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
         }
       ],
       "editor/title": [
         {
-          "command": "vscode-netron.open",
+          "command": "fastron.open",
           "group": "navigation",
           "when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
         }
       ],
       "editor/title/context": [
         {
-          "command": "vscode-netron.open",
+          "command": "fastron.open",
           "group": "YourGroup@1",
           "when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
         }
       ],
       "explorer/context": [
         {
-          "command": "vscode-netron.open",
+          "command": "fastron.open",
           "group": "YourGroup@1",
           "when": "editorLangId == json || editorLangId == jsonc || resourceLangId == json || resourceLangId == jsonc || resourceExtname =~ /(.armnn|.bin|.bin.index.json|.bigdl|.bson|.caffemodel|.cambricon|.cbm|.cfg|.cfg.ncnn|.chkpt|.circle|.cmf|.cntk|.ckpt|.dms|.dnn|.dlc|.engine|.ff|.featuredescriptions.json|.gguf|.graphdef|.h5|.hdf5|.hd5|.hkl|.hnn|.joblib|.json|.keras|.kmodel|.lasagne|.lite|.manifest.json|.mar|.maxviz|.metadata.json|.mgc|.mge|.mlir|.mlmodel|.mlpackage|.model|.model2|.model.weights.npz|.model.weights.txt|.msgpack|.ms|.nnef|.nn|.nb|.nntxt|.npz|.npy|.om|.onnx|.onn|.onnxtxt|.ot|.paddle|.params|.pb|.pbmm|.pbtxt|.pickle|.pickle.dat|.pdiparams|.pdmodel|.pdopt|.pdparams|.pkl|.plan|.protobuf|.prototxt|.pte|.ptmf|.ptl|.pt|.pt2|.pth|.pyt|.pyth|.python|.rknn|.safetensors|.sentencepiece|.tm|.tmfile|.tckpt|.t7|.tf|.tfl|.tflite|.tgz|.tmfile|.tnn|.tnnmodel|.torchmodel|.torchscript|.trt|.trtmodel|.tckpt|.txt|.uff|.uff.txt|.xgb|.xml|.xmodel|.zip|.zlib)$/"
         },
         {
-          "command": "vscode-netron.compare",
+          "command": "fastron.compare",
           "group": "YourGroup@2",
           "when": "resourceExtname =~ /(.onnx|.pb|.tflite|.pt|.pth|.h5|.keras|.mlmodel|.mlpackage|.caffemodel|.bin|.param|.ncnn)$/"
         }
@@ -94,145 +94,145 @@
     },
     "commands": [
       {
-        "command": "vscode-netron.open",
-        "title": "Open in Netron"
+        "command": "fastron.open",
+        "title": "Open in Fastron"
       },
       {
-        "command": "vscode-netron.open_webbrowser",
-        "title": "Start Netron Web"
+        "command": "fastron.open_webbrowser",
+        "title": "Start Fastron Web"
       },
       {
-        "command": "vscode-netron.clearCache",
-        "title": "Netron: Clear Cache"
+        "command": "fastron.clearCache",
+        "title": "Fastron: Clear Cache"
       },
       {
-        "command": "vscode-netron.showCacheStats",
-        "title": "Netron: Show Cache Statistics"
+        "command": "fastron.showCacheStats",
+        "title": "Fastron: Show Cache Statistics"
       },
       {
-        "command": "vscode-netron.compare",
-        "title": "Netron: Compare Models"
+        "command": "fastron.compare",
+        "title": "Fastron: Compare Models"
       }
     ],
     "configuration": {
-      "title": "Netron",
+      "title": "Fastron",
       "properties": {
-        "vscode-netron.onnxSimplification.enabled": {
+        "fastron.onnxSimplification.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable ONNX model simplification before viewing (reduces nodes and memory usage)"
         },
-        "vscode-netron.onnxSimplification.pythonPath": {
+        "fastron.onnxSimplification.pythonPath": {
           "type": "string",
           "default": "python3",
           "description": "Path to Python executable (must have onnx and onnxsim packages installed)"
         },
-        "vscode-netron.onnxSimplification.thresholdMB": {
+        "fastron.onnxSimplification.thresholdMB": {
           "type": "number",
           "default": 50,
           "description": "Minimum file size (MB) to trigger simplification"
         },
-        "vscode-netron.rendering.viewportCulling": {
+        "fastron.rendering.viewportCulling": {
           "type": "boolean",
           "default": true,
           "description": "Enable viewport culling to render only visible nodes (improves performance for large graphs)"
         },
-        "vscode-netron.rendering.progressive": {
+        "fastron.rendering.progressive": {
           "type": "boolean",
           "default": true,
           "description": "Enable progressive rendering (render in chunks)"
         },
-        "vscode-netron.rendering.chunkSize": {
+        "fastron.rendering.chunkSize": {
           "type": "number",
           "default": 100,
           "description": "Number of nodes to render per frame in progressive mode"
         },
-        "vscode-netron.caching.enabled": {
+        "fastron.caching.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable caching of parsed models for instant reloading"
         },
-        "vscode-netron.caching.maxSizeGB": {
+        "fastron.caching.maxSizeGB": {
           "type": "number",
           "default": 1,
           "description": "Maximum cache size in GB"
         },
-        "vscode-netron.onnxSimplification.sizeThresholdMB": {
+        "fastron.onnxSimplification.sizeThresholdMB": {
           "type": "number",
           "default": 50,
           "description": "Minimum model size in MB to trigger simplification"
         },
-        "vscode-netron.onnxSimplification.largeModelThresholdGB": {
+        "fastron.onnxSimplification.largeModelThresholdGB": {
           "type": "number",
           "default": 2,
           "description": "Size in GB above which to use large model simplification strategy"
         },
-        "vscode-netron.onnxSimplification.inputShapes": {
+        "fastron.onnxSimplification.inputShapes": {
           "type": "object",
           "default": {},
           "description": "Optional input shapes for simplification (e.g., {\"input\": [1, 3, 224, 224]})"
         },
-        "vscode-netron.onnxSimplification.skipOptimizers": {
+        "fastron.onnxSimplification.skipOptimizers": {
           "type": "array",
           "default": [],
           "description": "List of optimizers to skip during simplification"
         },
-        "vscode-netron.rendering.skipWeightData": {
+        "fastron.rendering.skipWeightData": {
           "type": "boolean",
           "default": true,
           "description": "Skip loading tensor weight data (reduces memory usage by 90-95%)"
         },
-        "vscode-netron.rendering.progressiveRendering": {
+        "fastron.rendering.progressiveRendering": {
           "type": "boolean",
           "default": true,
           "description": "Enable progressive rendering for large graphs (renders in chunks to keep UI responsive)"
         },
-        "vscode-netron.rendering.stringInterning": {
+        "fastron.rendering.stringInterning": {
           "type": "boolean",
           "default": true,
           "description": "Enable string interning to reduce memory usage (saves 20-30% memory)"
         },
-        "vscode-netron.caching.maxEntries": {
+        "fastron.caching.maxEntries": {
           "type": "number",
           "default": 5,
           "description": "Maximum number of models to cache"
         },
-        "vscode-netron.caching.maxSizeMB": {
+        "fastron.caching.maxSizeMB": {
           "type": "number",
           "default": 1024,
           "description": "Maximum total cache size in megabytes"
         },
-        "vscode-netron.advanced.webWorkerParsing": {
+        "fastron.advanced.webWorkerParsing": {
           "type": "boolean",
           "default": false,
           "description": "Enable Web Worker for ONNX parsing (experimental - keeps UI responsive during parsing)"
         },
-        "vscode-netron.advanced.lazyAttributeLoading": {
+        "fastron.advanced.lazyAttributeLoading": {
           "type": "boolean",
           "default": true,
           "description": "Load node attributes only when expanded (reduces memory and initial render time)"
         },
-        "vscode-netron.streaming.enabled": {
+        "fastron.streaming.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable streaming parser for large models (Google Maps style loading)"
         },
-        "vscode-netron.streaming.sizeThresholdMB": {
+        "fastron.streaming.sizeThresholdMB": {
           "type": "number",
           "default": 500,
           "description": "Enable streaming for models above this size in MB"
         },
-        "vscode-netron.streaming.chunkSize": {
+        "fastron.streaming.chunkSize": {
           "type": "number",
           "default": 50,
           "description": "Nodes per chunk (smaller = less memory, more frequent loading)"
         },
-        "vscode-netron.streaming.maxLoadedChunks": {
+        "fastron.streaming.maxLoadedChunks": {
           "type": "number",
           "default": 20,
           "description": "Maximum chunks to keep in memory (controls peak memory usage)"
         },
-        "vscode-netron.streaming.prefetchDistance": {
+        "fastron.streaming.prefetchDistance": {
           "type": "number",
           "default": 2,
           "description": "Number of chunks to prefetch ahead for smooth scrolling"
@@ -242,30 +242,30 @@
   },
   "commands": [
     {
-      "command": "vscode-netron.open",
-      "title": "Open in Netron"
+      "command": "fastron.open",
+      "title": "Open in Fastron"
     },
     {
-      "command": "vscode-netron.open_webbrowser",
-      "title": "Start Netron Web"
+      "command": "fastron.open_webbrowser",
+      "title": "Start Fastron Web"
     },
     {
-      "command": "vscode-netron.clearCache",
-      "title": "Netron: Clear Cache"
+      "command": "fastron.clearCache",
+      "title": "Fastron: Clear Cache"
     },
     {
-      "command": "vscode-netron.showCacheStats",
-      "title": "Netron: Show Cache Statistics"
+      "command": "fastron.showCacheStats",
+      "title": "Fastron: Show Cache Statistics"
     },
     {
-      "command": "vscode-netron.compare",
-      "title": "Netron: Compare Models"
+      "command": "fastron.compare",
+      "title": "Fastron: Compare Models"
     }
   ],
   "icon": "docs/netron-logo_128x128px.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vtemplier/vscode-netron"
+    "url": "https://github.com/satabios/Fastron"
   },
   "publisher": "satabios",
   "scripts": {

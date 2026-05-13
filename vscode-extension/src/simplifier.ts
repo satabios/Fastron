@@ -19,7 +19,7 @@ export class OnnxSimplifier {
         
         try {
             const originalSize = fs.statSync(modelPath).size;
-            const threshold = vscode.workspace.getConfiguration('vscode-netron').get('onnxSimplification.thresholdMB', 50) * 1024 * 1024;
+            const threshold = vscode.workspace.getConfiguration('fastron').get('onnxSimplification.thresholdMB', 50) * 1024 * 1024;
 
             if (originalSize < threshold) {
                 return { success: false, error: 'Model size is below the simplification threshold.' };
@@ -27,12 +27,12 @@ export class OnnxSimplifier {
 
             progress.report({ message: "Starting ONNX simplification..." });
 
-            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-netron-simplify-'));
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-simplify-'));
             const simplifiedFileName = path.basename(modelPath).replace('.onnx', '_simplified.onnx');
             const simplifiedPath = path.join(tempDir, simplifiedFileName);
 
             const sizeGB = originalSize / (1024 * 1024 * 1024);
-            const pythonPath = vscode.workspace.getConfiguration('vscode-netron').get('onnxSimplification.pythonPath', 'python3');
+            const pythonPath = vscode.workspace.getConfiguration('fastron').get('onnxSimplification.pythonPath', 'python3');
             
             const scriptPath = path.join(this.extensionPath, 'onnxsim_large_model', 'simplify_large_onnx.py');
             const args = [scriptPath, modelPath, simplifiedPath];

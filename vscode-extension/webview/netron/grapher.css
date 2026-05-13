@@ -1,3 +1,262 @@
+.node path { stroke: #333; fill: none; stroke-width: 1px; }
+.node rect.node-border { stroke: #333; fill: none; stroke-width: 1px; }
+.node line { stroke: #333; fill: none; stroke-width: 1px; }
+
+.node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
+.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; text-rendering: geometricPrecision; user-select: none; }
+
+.node-item-function path { fill: #fff; }
+.node-item-function text { fill: #000; }
+.node-item-function:hover { cursor: pointer; }
+.node-item-function:hover path { fill: #eee; }
+
+.node-item-type path { fill: #333; }
+.node-item-type text { fill: #fff; }
+.node-item-type:hover { cursor: pointer; }
+.node-item-type:hover path { fill: #fff; }
+.node-item-type:hover text { fill: #000; }
+
+.node-item-type-constant path { fill: #eee; }
+.node-item-type-constant text { fill: #000; }
+.node-item-type-constant:hover path { fill: #fff; }
+
+.node-item-type-control path { fill: #eee; }
+.node-item-type-control text { fill: #000; }
+.node-item-type-control:hover path { fill: #fff; }
+
+/* === Category node colors (light mode) === */
+.node-item-type-layer        path { fill: #2563a8; }
+.node-item-type-layer        text { fill: #fff; }
+.node-item-type-layer:hover  path { fill: #3478cc; }
+
+.node-item-type-activation        path { fill: #b83248; }
+.node-item-type-activation        text { fill: #fff; }
+.node-item-type-activation:hover  path { fill: #d04060; }
+
+.node-item-type-pool        path { fill: #1e7a50; }
+.node-item-type-pool        text { fill: #fff; }
+.node-item-type-pool:hover  path { fill: #28a068; }
+
+.node-item-type-normalization        path { fill: #6838a8; }
+.node-item-type-normalization        text { fill: #fff; }
+.node-item-type-normalization:hover  path { fill: #8050c8; }
+
+.node-item-type-attention        path { fill: #b85c10; }
+.node-item-type-attention        text { fill: #fff; }
+.node-item-type-attention:hover  path { fill: #d87018; }
+
+.node-item-type-transform        path { fill: #0e7a98; }
+.node-item-type-transform        text { fill: #fff; }
+.node-item-type-transform:hover  path { fill: #1298be; }
+
+.node-item-type-tensor        path { fill: #384898; }
+.node-item-type-tensor        text { fill: #fff; }
+.node-item-type-tensor:hover  path { fill: #4860b8; }
+
+.node-item-type-shape        path { fill: #884020; }
+.node-item-type-shape        text { fill: #fff; }
+.node-item-type-shape:hover  path { fill: #a85028; }
+
+.node-item-type-dropout        path { fill: #504898; }
+.node-item-type-dropout        text { fill: #fff; }
+.node-item-type-dropout:hover  path { fill: #6860b8; }
+
+.node-item-type-data        path { fill: #305878; }
+.node-item-type-data        text { fill: #fff; }
+.node-item-type-data:hover  path { fill: #407098; }
+
+.node-item-type-quantization        path { fill: #984010; }
+.node-item-type-quantization        text { fill: #fff; }
+.node-item-type-quantization:hover  path { fill: #b85018; }
+
+.node-item-type-custom        path { fill: #3c4858; }
+.node-item-type-custom        text { fill: #fff; }
+.node-item-type-custom:hover  path { fill: #506070; }
+
+/* === Graph-level input / output nodes === */
+.graph-item-input        path { fill: #1a7868; }
+.graph-item-input        text { fill: #fff; }
+.graph-item-input:hover  path { fill: #239880; }
+
+.graph-item-output        path { fill: #a84820; }
+.graph-item-output        text { fill: #fff; }
+.graph-item-output:hover  path { fill: #c85828; }
+
+.node-item-input path { fill: #fff; }
+.node-item-input:hover { cursor: pointer; }
+.node-item-input:hover path { fill: #fff; }
+
+.node-item-constant path { fill: #eee; }
+.node-item-constant:hover { cursor: pointer; }
+.node-item-constant:hover path { fill: #fff; }
+
+.node-item-undefined path { fill: #f00; }
+.node-item-undefined:hover { cursor: pointer; }
+.node-item-undefined:hover path { fill: #fff; }
+
+.node-argument-list > path { fill: #fff; stroke-width: 0; stroke: #000; }
+.node-argument-list:hover { cursor: pointer; }
+.node-argument-list:hover > path { fill: #f6f6f6; }
+.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 9px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
+.node-argument > rect { fill: transparent; }
+
+#arrowhead { fill: #000; }
+#arrowhead-hover { fill: rgba(220, 0, 0, 0.9); }
+#arrowhead-select { fill: rgba(220, 0, 0, 0.9); }
+
+.edge-paths { pointer-events: none; }
+.edge-path { stroke: #000; stroke-width: 1px; fill: none; marker-end: url("#arrowhead"); }
+.edge-paths-hit-test { pointer-events: stroke; stroke-width: 0.5em; fill: none; stroke: #000; stroke-opacity: 0.001; }
+
+.select > .node.node-border { stroke: rgba(220, 0, 0, 0.9); stroke-width: 2px; }
+.select.edge-path { stroke: rgba(220, 0, 0, 0.9); stroke-width: 1px; marker-end: url("#arrowhead-select"); }
+.select.node-argument > rect { fill: transparent; stroke: rgba(220, 0, 0, 0.9); }
+
+.edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 10px; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.edge-path-control-dependency { stroke-dasharray: 3, 2; }
+
+.cluster rect { stroke: #000; fill: #000; fill-opacity: 0.02; stroke-opacity: 0.06; stroke-width: 1px; }
+
+/* Used by JavaScript for animated selection highlight; duration/iteration set at call site. */
+@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; }  }
+
+/* Model comparison diff highlights */
+.node-diff-modified .node-border { stroke: #e67e22 !important; stroke-width: 2.5px !important; }
+.node-diff-added .node-border { stroke: #27ae60 !important; stroke-width: 2.5px !important; }
+.node-diff-removed .node-border { stroke: #e74c3c !important; stroke-width: 2.5px !important; }
+.node-diff-selected .node-border { stroke: #4a90d9 !important; stroke-width: 3px !important;
+    animation: diff-pulse 0.6s ease-out 2; }
+@keyframes diff-pulse {
+    0%   { stroke-opacity: 1; }
+    50%  { stroke-opacity: 0.2; }
+    100% { stroke-opacity: 1; }
+}
+
+@media (prefers-color-scheme: dark) {
+
+    .edge-path { stroke: #888; }
+
+    .node path { stroke: #242424; }
+    .node rect.node-border { stroke: #242424; fill: none; stroke-width: 1px; }
+    .node line { stroke: #242424; }
+
+    .select > .node.node-border { stroke: rgba(192, 0, 0, 0.8); }
+    .select.edge-path { stroke: rgba(192, 0, 0, 0.8); }
+    .select.node-argument > rect { fill: transparent; stroke: rgba(192, 0, 0, 0.8); }
+    #arrowhead { fill: #888; }
+    #arrowhead-hover { fill: rgba(192, 0, 0, 0.8); }
+    #arrowhead-select { fill: rgba(192, 0, 0, 0.8); }
+
+    /* FIX: improved contrast from #b2b2b2 (~4.5:1) to #c8c8c8 (~5.7:1) on #404040 background */
+    .edge-label { fill: #c8c8c8; stroke: #1e1e1e; }
+
+    /* FIX: corrected 8-digit hex typo #dfdfdfdf → #dfdfdf */
+    .node-item-function path { fill: #404040; }
+    .node-item-function text { fill: #dfdfdf; }
+    .node-item-function:hover { cursor: pointer; }
+    .node-item-function:hover path { fill: #666666; }
+
+    .node-item-type path { fill: #303030; }
+    .node-item-type text { fill: #dfdfdf; }
+    .node-item-type:hover { cursor: pointer; }
+    .node-item-type:hover path { fill: #808080; }
+    .node-item-type:hover text { fill: #dfdfdf; }
+
+    .node-item path { stroke: #fff; }
+    .node-item text { fill: #dfdfdf; }
+
+    /* FIX: improved contrast from #b2b2b2 to #c8c8c8 */
+    .node-argument > text { fill: #c8c8c8; }
+    .node-argument-list > path { fill: #2d2d2d; }
+    .node-argument-list:hover > path { fill: #303030; }
+
+    .graph-item-input:hover { cursor: pointer; }
+    .graph-item-output:hover { cursor: pointer; }
+    .node-item-input path { fill: #404040; }
+    .node-item-input:hover path { fill: #666666; }
+    .node-item-constant path { fill: #4b4b4b; }
+    .node-item-constant:hover path { fill: #666666; }
+
+    /* FIX: added dark mode for undefined nodes (was harsh pure red #f00 on dark bg) */
+    .node-item-undefined path { fill: #cc3333; }
+    .node-item-undefined:hover path { fill: #ff6666; }
+
+    /* === Category node colors (dark mode) === */
+    .node-item-type-layer        path { fill: #4080d8; }
+    .node-item-type-layer        text { fill: #d8ecff; }
+    .node-item-type-layer:hover  path { fill: #5898f0; }
+
+    .node-item-type-activation        path { fill: #d84860; }
+    .node-item-type-activation        text { fill: #ffd8e0; }
+    .node-item-type-activation:hover  path { fill: #f06080; }
+
+    .node-item-type-pool        path { fill: #28a868; }
+    .node-item-type-pool        text { fill: #c0f8e0; }
+    .node-item-type-pool:hover  path { fill: #38c880; }
+
+    .node-item-type-normalization        path { fill: #9058d0; }
+    .node-item-type-normalization        text { fill: #ecd8ff; }
+    .node-item-type-normalization:hover  path { fill: #a870e8; }
+
+    .node-item-type-attention        path { fill: #d87820; }
+    .node-item-type-attention        text { fill: #ffecd0; }
+    .node-item-type-attention:hover  path { fill: #f09030; }
+
+    .node-item-type-transform        path { fill: #18a8c8; }
+    .node-item-type-transform        text { fill: #c8f4ff; }
+    .node-item-type-transform:hover  path { fill: #28c0e0; }
+
+    .node-item-type-tensor        path { fill: #5068d0; }
+    .node-item-type-tensor        text { fill: #d0d8ff; }
+    .node-item-type-tensor:hover  path { fill: #6880e8; }
+
+    .node-item-type-shape        path { fill: #c06840; }
+    .node-item-type-shape        text { fill: #ffecd0; }
+    .node-item-type-shape:hover  path { fill: #d88058; }
+
+    .node-item-type-dropout        path { fill: #7068c8; }
+    .node-item-type-dropout        text { fill: #ddd8ff; }
+    .node-item-type-dropout:hover  path { fill: #8880e0; }
+
+    .node-item-type-data        path { fill: #4878a8; }
+    .node-item-type-data        text { fill: #d0e8ff; }
+    .node-item-type-data:hover  path { fill: #5890c0; }
+
+    .node-item-type-quantization        path { fill: #c86018; }
+    .node-item-type-quantization        text { fill: #fff0c8; }
+    .node-item-type-quantization:hover  path { fill: #e07828; }
+
+    .node-item-type-custom        path { fill: #586070; }
+    .node-item-type-custom        text { fill: #dde4f0; }
+    .node-item-type-custom:hover  path { fill: #708090; }
+
+    /* === Graph-level input / output nodes (dark mode) === */
+    .graph-item-input        path { fill: #20a888; }
+    .graph-item-input        text { fill: #c0fff0; }
+    .graph-item-input:hover  path { fill: #28c8a0; }
+
+    .graph-item-output        path { fill: #d06030; }
+    .graph-item-output        text { fill: #ffecd0; }
+    .graph-item-output:hover  path { fill: #e87840; }
+
+    /* FIX: added dark mode for cluster borders (was near-invisible black on dark bg) */
+    .cluster rect { stroke: #666; fill: #fff; fill-opacity: 0.03; stroke-opacity: 0.2; }
+
+    /* FIX: dark-mode overrides for diff highlights (light-mode colors were too harsh on dark bg) */
+    .node-diff-modified .node-border { stroke: #f0a050 !important; }
+    .node-diff-added    .node-border { stroke: #3dcc7a !important; }
+    .node-diff-removed  .node-border { stroke: #f06060 !important; }
+
+    /* Tunnel edges in dark mode */
+    .edge-path-tunnel { stroke: #888; }
+
+    /* Node block edge paths in dark mode */
+    .node-block .edge-path { stroke: #666; }
+    .node-block .select.edge-path { stroke: #fff; }
+}
+
+/* ── Fastron extension additions ─────────────────────────────────────────── */
+
 /* General LOD setup */
 .node-lod-point {
     display: none; /* Hidden by default */
