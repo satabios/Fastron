@@ -1,145 +1,418 @@
+/* General LOD setup */
+.node-lod-point {
+    display: none; /* Hidden by default */
+    fill: #808080;
+}
 
-.node path { stroke: #333; fill: none; stroke-width: 1px; }
-.node line { stroke: #333; fill: none; stroke-width: 1px; }
+/* Full detail (default) - no changes needed, but class is for consistency */
+.lod-full {
+    /* All elements are visible by default */
+}
 
-.node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
-.node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; text-rendering: geometricPrecision; user-select: none; }
+/* Simple LOD: Hide node arguments/attributes */
+.lod-simple .node-argument-list {
+    display: none;
+}
 
-.node-item-function path { fill: #fff; }
-.node-item-function text { fill: #000; }
-.node-item-function:hover { cursor: pointer; }
-.node-item-function:hover path { fill: #eee; }
+/* Rectangle LOD: Hide all text and internal content, show only border */
+.lod-rect .node-item-type,
+.lod-rect .node-argument-list,
+.lod-rect text {
+    display: none !important; /* Use important to override other styles if necessary */
+}
 
-.node-item-type path { fill: #000; }
-.node-item-type text { fill: #fff; }
-.node-item-type:hover { cursor: pointer; }
-.node-item-type:hover path { fill: #fff; }
-.node-item-type:hover text { fill: #000; }
+/* Point LOD: Hide everything except the point representation */
+.lod-point .node-border,
+.lod-point .node-item,
+.lod-point .node-argument-list {
+    display: none !important;
+}
 
-.node-item-type-constant path { fill: #eee; }
-.node-item-type-constant text { fill: #000; }
-.node-item-type-constant:hover path { fill: #fff; }
+.lod-point .node-lod-point {
+    display: block;
+}
 
-.node-item-type-control path { fill: #eee; }
-.node-item-type-control text { fill: #000; }
-.node-item-type-control:hover path { fill: #fff; }
-
-.node-item-type-layer path { fill: rgb(51, 85, 136); }
-.node-item-type-activation path { fill: rgb(112, 41, 33); }
-.node-item-type-pool path { fill: rgb(51, 85, 51); }
-.node-item-type-normalization path { fill: rgb(51, 85, 68); }
-.node-item-type-dropout path { fill: rgb(69, 71, 112); }
-.node-item-type-shape path { fill: rgb(108, 79, 71); }
-.node-item-type-tensor path { fill: rgb(89, 66, 59); }
-.node-item-type-transform path { fill: rgb(51, 85, 68); }
-.node-item-type-data path { fill: rgb(85, 85, 85); }
-.node-item-type-quantization path { fill: rgb(80, 40, 0); }
-.node-item-type-attention path { fill: rgb(120, 60, 0); }
-
-.node-item-input path { fill: #fff; }
-.node-item-input:hover { cursor: pointer; }
-.node-item-input:hover path { fill: #fff; }
-
-.node-item-constant path { fill: #eee; }
-.node-item-constant:hover { cursor: pointer; }
-.node-item-constant:hover path { fill: #fff; }
-
-.node-item-undefined path { fill: #f00; }
-.node-item-undefined:hover { cursor: pointer; }
-.node-item-undefined:hover path { fill: #fff; }
-
-.node-argument-list > path { fill: #fff; stroke-width: 0; stroke: #000; }
-.node-argument-list:hover { cursor: pointer; }
-.node-argument-list:hover > path { fill: #f6f6f6; }
-.node-argument > text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 9px; font-weight: normal; text-rendering: geometricPrecision; user-select: none; }
-.node-argument > rect { fill: transparent; }
-
-.graph-item-input path { fill: #eee; }
-.graph-item-input:hover { cursor: pointer; }
-.graph-item-input:hover path { fill: #fff; }
-
-.graph-item-output path { fill: #eee; }
-.graph-item-output:hover { cursor: pointer; }
-.graph-item-output:hover path { fill: #fff; }
-
-#arrowhead { fill: #000; }
-#arrowhead-hover { fill: rgba(220, 0, 0, 0.9); }
-#arrowhead-select { fill: rgba(220, 0, 0, 0.9); }
-
-.edge-paths { pointer-events: none; }
-.edge-path { stroke: #000; stroke-width: 1px; fill: none; marker-end: url("#arrowhead"); }
-.edge-paths-hit-test { pointer-events: stroke; stroke-width: 0.5em; fill: none; stroke: #000; stroke-opacity: 0.001; }
-
-.select > .node.node-border { stroke: rgba(220, 0, 0, 0.9); stroke-width: 2px; }
-.select.edge-path { stroke: rgba(220, 0, 0, 0.9); stroke-width: 1px; marker-end: url("#arrowhead-select"); }
-.select.node-argument > rect { fill: transparent; stroke: rgba(220, 0, 0, 0.9); }
-
-.edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 10px; }
-.edge-path-control-dependency { stroke-dasharray: 3, 2; }
-
-.cluster rect { stroke: #000; fill: #000; fill-opacity: 0.02; stroke-opacity: 0.06; stroke-width: 1px; }
-
-@keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; } }
-
+/* Dark theme adjustments for LOD */
 @media (prefers-color-scheme: dark) {
+    .node-lod-point {
+        fill: #aaaaaa;
+    }
+}
 
-    .edge-path { stroke: #888; }
+/* ── Dtype-based node header coloring ─────────────────────────────────────── */
+/*
+ * CSS class pattern: .node-item-type.node-dtype-{weight}-{activation}
+ * 2-class specificity overrides single-class category rules.
+ *
+ * Palette: light mode = pastel bg + dark text
+ *          dark mode  = saturated dark bg + light text
+ */
 
-    .node path { stroke: #1d1d1d; }
-    .node line { stroke: #1d1d1d; }
+/* ── Uniform-precision ────────────────────────────────────────────────────── */
+.node-item-type.node-dtype-fp32-fp32 path  { fill: #b8d4f0; }
+.node-item-type.node-dtype-fp32-fp32 text  { fill: #152740; }
+.node-item-type.node-dtype-fp32-fp32:hover path { fill: #d6e9fb; }
+.node-item-type.node-dtype-fp32-fp32:hover text { fill: #000; }
 
-    .select > .node.node-border { stroke: rgba(192, 0, 0, 0.8); }
-    .select.edge-path { stroke: rgba(192, 0, 0, 0.8); }
-    .select.node-argument > rect { fill: transparent; stroke: rgba(192, 0, 0, 0.8); }
-    #arrowhead { fill: #888; }
-    #arrowhead-hover { fill: rgba(192, 0, 0, 0.8); }
-    #arrowhead-select { fill: rgba(192, 0, 0, 0.8); }
+.node-item-type.node-dtype-fp16-fp16 path  { fill: #a8e4f0; }
+.node-item-type.node-dtype-fp16-fp16 text  { fill: #0d3040; }
+.node-item-type.node-dtype-fp16-fp16:hover path { fill: #cdf2fb; }
+.node-item-type.node-dtype-fp16-fp16:hover text { fill: #000; }
 
-    .edge-label { fill: #b2b2b2; }
+.node-item-type.node-dtype-bf16-bf16 path  { fill: #a8f0d8; }
+.node-item-type.node-dtype-bf16-bf16 text  { fill: #0d3028; }
+.node-item-type.node-dtype-bf16-bf16:hover path { fill: #ccfbec; }
+.node-item-type.node-dtype-bf16-bf16:hover text { fill: #000; }
 
-    .node-item-function path { fill: #404040; }
-    .node-item-function text { fill: #dfdfdfdf; }
-    .node-item-function:hover { cursor: pointer; }
-    .node-item-function:hover path { fill: #666666; }
-    
-    .node-item-type path { fill: #303030; }
-    .node-item-type text { fill: #dfdfdf; }
-    .node-item-type:hover { cursor: pointer; }
-    .node-item-type:hover path { fill: #808080; }
-    .node-item-type:hover text { fill: #dfdfdf; }
+.node-item-type.node-dtype-fp8-fp8   path  { fill: #b0f0c0; }
+.node-item-type.node-dtype-fp8-fp8   text  { fill: #0d3018; }
+.node-item-type.node-dtype-fp8-fp8:hover path  { fill: #d0fada; }
+.node-item-type.node-dtype-fp8-fp8:hover text  { fill: #000; }
 
-    .node-item path { stroke: #fff; }
-    .node-item text { fill: #dfdfdf; }
+.node-item-type.node-dtype-int8-int8 path  { fill: #f0d8b0; }
+.node-item-type.node-dtype-int8-int8 text  { fill: #3a2000; }
+.node-item-type.node-dtype-int8-int8:hover path { fill: #fbecd4; }
+.node-item-type.node-dtype-int8-int8:hover text { fill: #000; }
 
-    .node-argument > text { fill: #b2b2b2; }
-    .node-argument-list > path { fill: #2d2d2d; }
-    .node-argument-list:hover > path { fill: #303030; }
+.node-item-type.node-dtype-int4-int4 path  { fill: #f0c8a0; }
+.node-item-type.node-dtype-int4-int4 text  { fill: #3a1800; }
+.node-item-type.node-dtype-int4-int4:hover path { fill: #fbdfc4; }
+.node-item-type.node-dtype-int4-int4:hover text { fill: #000; }
 
-    .graph-item-input path { fill: #404040; }
-    .graph-item-input:hover { cursor: pointer; }
-    .graph-item-input:hover path { fill: #666666; }
+.node-item-type.node-dtype-int16-int16 path { fill: #f0eeb0; }
+.node-item-type.node-dtype-int16-int16 text { fill: #302e00; }
+.node-item-type.node-dtype-int16-int16:hover path { fill: #fbfad4; }
+.node-item-type.node-dtype-int16-int16:hover text { fill: #000; }
 
-    .graph-item-output path { fill: #404040; }
-    .graph-item-output:hover { cursor: pointer; }
-    .graph-item-output:hover path { fill: #666666; }
+.node-item-type.node-dtype-int32-int32 path { fill: #d8c8f0; }
+.node-item-type.node-dtype-int32-int32 text { fill: #200d40; }
+.node-item-type.node-dtype-int32-int32:hover path { fill: #ecdffb; }
+.node-item-type.node-dtype-int32-int32:hover text { fill: #000; }
 
-    .node-item-input path { fill: #404040; }
-    .node-item-input:hover path { fill: #666666; }
-    .node-item-constant path { fill: #4b4b4b; }
-    .node-item-constant:hover path { fill: #666666; }
+.node-item-type.node-dtype-int64-int64 path { fill: #c8b8f0; }
+.node-item-type.node-dtype-int64-int64 text { fill: #180d40; }
+.node-item-type.node-dtype-int64-int64:hover path { fill: #ddd4fb; }
+.node-item-type.node-dtype-int64-int64:hover text { fill: #000; }
 
-    .node-item-type-layer path { fill: rgba(51, 85, 136, 0.7); }
-    .node-item-type-activation path { fill: rgba(75, 27, 22, 0.7); }
-    .node-item-type-activation path { fill: rgba(75, 27, 22, 0.7); }
-    .node-item-type-pool path { fill: rgba(51, 85, 51, 0.7); }
-    .node-item-type-pool path { fill: rgba(51, 85, 51, 0.7); }
-    .node-item-type-normalization path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-dropout path { fill: rgba(69, 71, 112, 0.7); }
-    .node-item-type-shape path { fill: rgba(108, 79, 71, 0.7); }
-    .node-item-type-tensor path { fill: rgba(89, 66, 59, 0.7); }
-    .node-item-type-transform path { fill: rgba(51, 85, 68, 0.7); }
-    .node-item-type-data path { fill: rgba(85, 85, 85, 0.7); }
-    .node-item-type-quantization path { fill: rgb(80, 40, 0, 0.7); }
-    .node-item-type-attention path { fill: rgb(100, 50, 0, 0.7); }
-    .node-item-type-custom path { fill: rgb(64, 64, 64, 0.7); }
+.node-item-type.node-dtype-uint8-uint8 path { fill: #d0e8b0; }
+.node-item-type.node-dtype-uint8-uint8 text { fill: #1a3000; }
+.node-item-type.node-dtype-uint8-uint8:hover path { fill: #e6f5d0; }
+.node-item-type.node-dtype-uint8-uint8:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-uint4 path { fill: #f0c8d8; }
+.node-item-type.node-dtype-uint4-uint4 text { fill: #3a0018; }
+.node-item-type.node-dtype-uint4-uint4:hover path { fill: #fbdcec; }
+.node-item-type.node-dtype-uint4-uint4:hover text { fill: #000; }
+
+/* ── Mixed-precision (weight → activation) ───────────────────────────────── */
+.node-item-type.node-dtype-fp32-fp16 path  { fill: #b0e0f0; }
+.node-item-type.node-dtype-fp32-fp16 text  { fill: #0d2838; }
+.node-item-type.node-dtype-fp32-fp16:hover path { fill: #ccf0fb; }
+.node-item-type.node-dtype-fp32-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp32-bf16 path  { fill: #b0f0e4; }
+.node-item-type.node-dtype-fp32-bf16 text  { fill: #0d3028; }
+.node-item-type.node-dtype-fp32-bf16:hover path { fill: #ccfbf4; }
+.node-item-type.node-dtype-fp32-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp32-int8 path  { fill: #c8e8c0; }
+.node-item-type.node-dtype-fp32-int8 text  { fill: #0d2800; }
+.node-item-type.node-dtype-fp32-int8:hover path { fill: #def5d8; }
+.node-item-type.node-dtype-fp32-int8:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp16-fp32 path  { fill: #c0dcf0; }
+.node-item-type.node-dtype-fp16-fp32 text  { fill: #152740; }
+.node-item-type.node-dtype-fp16-fp32:hover path { fill: #d8edfb; }
+.node-item-type.node-dtype-fp16-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-bf16-fp32 path  { fill: #c4f0dc; }
+.node-item-type.node-dtype-bf16-fp32 text  { fill: #0d3020; }
+.node-item-type.node-dtype-bf16-fp32:hover path { fill: #d8fbec; }
+.node-item-type.node-dtype-bf16-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-bf16-fp16 path  { fill: #a8f0e8; }
+.node-item-type.node-dtype-bf16-fp16 text  { fill: #0d3030; }
+.node-item-type.node-dtype-bf16-fp16:hover path { fill: #ccfbf6; }
+.node-item-type.node-dtype-bf16-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int8-fp32 path  { fill: #d0e4f8; }
+.node-item-type.node-dtype-int8-fp32 text  { fill: #152030; }
+.node-item-type.node-dtype-int8-fp32:hover path { fill: #e4f0fb; }
+.node-item-type.node-dtype-int8-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int8-fp16 path  { fill: #c8e8f8; }
+.node-item-type.node-dtype-int8-fp16 text  { fill: #0d2030; }
+.node-item-type.node-dtype-int8-fp16:hover path { fill: #dcf2fb; }
+.node-item-type.node-dtype-int8-fp16:hover text { fill: #000; }
+
+/* W8A16: int8 weight + int16 activation — amber family, lighter than W8A8 */
+.node-item-type.node-dtype-int8-int16 path { fill: #e8dcb0; }
+.node-item-type.node-dtype-int8-int16 text { fill: #2e2000; }
+.node-item-type.node-dtype-int8-int16:hover path { fill: #f5ecd0; }
+.node-item-type.node-dtype-int8-int16:hover text { fill: #000; }
+
+/* W4A16: int4 weight + int16 activation — amber-orange, between W8A16 and W4A4 */
+.node-item-type.node-dtype-int4-int16 path { fill: #e8cca0; }
+.node-item-type.node-dtype-int4-int16 text { fill: #2e1800; }
+.node-item-type.node-dtype-int4-int16:hover path { fill: #f5dfbc; }
+.node-item-type.node-dtype-int4-int16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int4-fp32 path  { fill: #f8d0d8; }
+.node-item-type.node-dtype-int4-fp32 text  { fill: #3a0810; }
+.node-item-type.node-dtype-int4-fp32:hover path { fill: #fbe4ea; }
+.node-item-type.node-dtype-int4-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int4-fp16 path  { fill: #f8e0c8; }
+.node-item-type.node-dtype-int4-fp16 text  { fill: #3a1800; }
+.node-item-type.node-dtype-int4-fp16:hover path { fill: #fbecda; }
+.node-item-type.node-dtype-int4-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int4-bf16 path  { fill: #f8e8c8; }
+.node-item-type.node-dtype-int4-bf16 text  { fill: #382000; }
+.node-item-type.node-dtype-int4-bf16:hover path { fill: #fbf2dc; }
+.node-item-type.node-dtype-int4-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int4-int8 path  { fill: #f8eec0; }
+.node-item-type.node-dtype-int4-int8 text  { fill: #382800; }
+.node-item-type.node-dtype-int4-int8:hover path { fill: #fbf5d8; }
+.node-item-type.node-dtype-int4-int8:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp8-fp32 path   { fill: #c8f0d0; }
+.node-item-type.node-dtype-fp8-fp32 text   { fill: #0d2c14; }
+.node-item-type.node-dtype-fp8-fp32:hover path  { fill: #ddfae4; }
+.node-item-type.node-dtype-fp8-fp32:hover text  { fill: #000; }
+
+.node-item-type.node-dtype-fp8-fp16 path   { fill: #b8f0d8; }
+.node-item-type.node-dtype-fp8-fp16 text   { fill: #0d2c20; }
+.node-item-type.node-dtype-fp8-fp16:hover path  { fill: #d0faeb; }
+.node-item-type.node-dtype-fp8-fp16:hover text  { fill: #000; }
+
+.node-item-type.node-dtype-uint8-fp32 path { fill: #d8f0c8; }
+.node-item-type.node-dtype-uint8-fp32 text { fill: #152800; }
+.node-item-type.node-dtype-uint8-fp32:hover path { fill: #eafade; }
+.node-item-type.node-dtype-uint8-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint8-fp16 path { fill: #c8ecf0; }
+.node-item-type.node-dtype-uint8-fp16 text { fill: #0d2830; }
+.node-item-type.node-dtype-uint8-fp16:hover path { fill: #ddf6fb; }
+.node-item-type.node-dtype-uint8-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint8-bf16 path { fill: #b4f0cc; }
+.node-item-type.node-dtype-uint8-bf16 text { fill: #0d2c1a; }
+.node-item-type.node-dtype-uint8-bf16:hover path { fill: #cdfade; }
+.node-item-type.node-dtype-uint8-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int8-bf16 path  { fill: #bce8dc; }
+.node-item-type.node-dtype-int8-bf16 text  { fill: #0d2c24; }
+.node-item-type.node-dtype-int8-bf16:hover path { fill: #d4f4ec; }
+.node-item-type.node-dtype-int8-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-fp8-bf16 path   { fill: #a4f2e8; }
+.node-item-type.node-dtype-fp8-bf16 text   { fill: #0d2c28; }
+.node-item-type.node-dtype-fp8-bf16:hover path  { fill: #c4fbf4; }
+.node-item-type.node-dtype-fp8-bf16:hover text  { fill: #000; }
+
+.node-item-type.node-dtype-fp16-bf16 path  { fill: #a0eef0; }
+.node-item-type.node-dtype-fp16-bf16 text  { fill: #0d2c30; }
+.node-item-type.node-dtype-fp16-bf16:hover path { fill: #c0f8fb; }
+.node-item-type.node-dtype-fp16-bf16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-fp32 path { fill: #ccd8f0; }
+.node-item-type.node-dtype-uint4-fp32 text { fill: #1a1040; }
+.node-item-type.node-dtype-uint4-fp32:hover path { fill: #e0eafb; }
+.node-item-type.node-dtype-uint4-fp32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-fp16 path { fill: #d0dff8; }
+.node-item-type.node-dtype-uint4-fp16 text { fill: #18103a; }
+.node-item-type.node-dtype-uint4-fp16:hover path { fill: #e4edfb; }
+.node-item-type.node-dtype-uint4-fp16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-bf16 path { fill: #d4e8d4; }
+.node-item-type.node-dtype-uint4-bf16 text { fill: #18301a; }
+.node-item-type.node-dtype-uint4-bf16:hover path { fill: #e8f5e8; }
+.node-item-type.node-dtype-uint4-bf16:hover text { fill: #000; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+    .node-item-type.node-dtype-fp32-fp32 path  { fill: #1e4a7a; }
+    .node-item-type.node-dtype-fp32-fp32 text  { fill: #d0e8ff; }
+    .node-item-type.node-dtype-fp32-fp32:hover path { fill: #2a64a8; }
+    .node-item-type.node-dtype-fp32-fp32:hover text { fill: #e8f4ff; }
+
+    .node-item-type.node-dtype-fp16-fp16 path  { fill: #1a5060; }
+    .node-item-type.node-dtype-fp16-fp16 text  { fill: #c0f0ff; }
+    .node-item-type.node-dtype-fp16-fp16:hover path { fill: #256a80; }
+    .node-item-type.node-dtype-fp16-fp16:hover text { fill: #e0faff; }
+
+    .node-item-type.node-dtype-bf16-bf16 path  { fill: #1a5040; }
+    .node-item-type.node-dtype-bf16-bf16 text  { fill: #c0fae8; }
+    .node-item-type.node-dtype-bf16-bf16:hover path { fill: #256a55; }
+    .node-item-type.node-dtype-bf16-bf16:hover text { fill: #e0fdf2; }
+
+    .node-item-type.node-dtype-fp8-fp8   path  { fill: #1a5028; }
+    .node-item-type.node-dtype-fp8-fp8   text  { fill: #b8fac8; }
+    .node-item-type.node-dtype-fp8-fp8:hover path  { fill: #256a35; }
+    .node-item-type.node-dtype-fp8-fp8:hover text  { fill: #d8fde0; }
+
+    .node-item-type.node-dtype-int8-int8 path  { fill: #604018; }
+    .node-item-type.node-dtype-int8-int8 text  { fill: #ffe4b0; }
+    .node-item-type.node-dtype-int8-int8:hover path { fill: #805520; }
+    .node-item-type.node-dtype-int8-int8:hover text { fill: #fff2d0; }
+
+    .node-item-type.node-dtype-int4-int4 path  { fill: #603010; }
+    .node-item-type.node-dtype-int4-int4 text  { fill: #ffd8a0; }
+    .node-item-type.node-dtype-int4-int4:hover path { fill: #804018; }
+    .node-item-type.node-dtype-int4-int4:hover text { fill: #ffecc8; }
+
+    .node-item-type.node-dtype-int16-int16 path { fill: #504c18; }
+    .node-item-type.node-dtype-int16-int16 text { fill: #faf8b0; }
+    .node-item-type.node-dtype-int16-int16:hover path { fill: #6a6620; }
+    .node-item-type.node-dtype-int16-int16:hover text { fill: #fdfcd0; }
+
+    .node-item-type.node-dtype-int32-int32 path { fill: #402870; }
+    .node-item-type.node-dtype-int32-int32 text { fill: #dcc8ff; }
+    .node-item-type.node-dtype-int32-int32:hover path { fill: #553592; }
+    .node-item-type.node-dtype-int32-int32:hover text { fill: #eedfff; }
+
+    .node-item-type.node-dtype-int64-int64 path { fill: #301a60; }
+    .node-item-type.node-dtype-int64-int64 text { fill: #ccc0ff; }
+    .node-item-type.node-dtype-int64-int64:hover path { fill: #402280; }
+    .node-item-type.node-dtype-int64-int64:hover text { fill: #e4deff; }
+
+    .node-item-type.node-dtype-uint8-uint8 path { fill: #283c18; }
+    .node-item-type.node-dtype-uint8-uint8 text { fill: #cce8a0; }
+    .node-item-type.node-dtype-uint8-uint8:hover path { fill: #355020; }
+    .node-item-type.node-dtype-uint8-uint8:hover text { fill: #e4f5c8; }
+
+    .node-item-type.node-dtype-uint4-uint4 path { fill: #5a1830; }
+    .node-item-type.node-dtype-uint4-uint4 text { fill: #f8c0d8; }
+    .node-item-type.node-dtype-uint4-uint4:hover path { fill: #782040; }
+    .node-item-type.node-dtype-uint4-uint4:hover text { fill: #fbd8e8; }
+
+    .node-item-type.node-dtype-fp32-fp16 path  { fill: #1a4858; }
+    .node-item-type.node-dtype-fp32-fp16 text  { fill: #b0e8ff; }
+    .node-item-type.node-dtype-fp32-fp16:hover path { fill: #256275; }
+    .node-item-type.node-dtype-fp32-fp16:hover text { fill: #d0f4ff; }
+
+    .node-item-type.node-dtype-fp32-bf16 path  { fill: #1a5050; }
+    .node-item-type.node-dtype-fp32-bf16 text  { fill: #b0faf0; }
+    .node-item-type.node-dtype-fp32-bf16:hover path { fill: #256a6a; }
+    .node-item-type.node-dtype-fp32-bf16:hover text { fill: #d0fef8; }
+
+    .node-item-type.node-dtype-fp32-int8 path  { fill: #284820; }
+    .node-item-type.node-dtype-fp32-int8 text  { fill: #c0f0b0; }
+    .node-item-type.node-dtype-fp32-int8:hover path { fill: #35602a; }
+    .node-item-type.node-dtype-fp32-int8:hover text { fill: #d8fad0; }
+
+    .node-item-type.node-dtype-fp16-fp32 path  { fill: #204060; }
+    .node-item-type.node-dtype-fp16-fp32 text  { fill: #b8dcf8; }
+    .node-item-type.node-dtype-fp16-fp32:hover path { fill: #2a5580; }
+    .node-item-type.node-dtype-fp16-fp32:hover text { fill: #d0ecff; }
+
+    .node-item-type.node-dtype-bf16-fp32 path  { fill: #205040; }
+    .node-item-type.node-dtype-bf16-fp32 text  { fill: #b8f8dc; }
+    .node-item-type.node-dtype-bf16-fp32:hover path { fill: #2a6a55; }
+    .node-item-type.node-dtype-bf16-fp32:hover text { fill: #d0fced; }
+
+    .node-item-type.node-dtype-bf16-fp16 path  { fill: #1a5050; }
+    .node-item-type.node-dtype-bf16-fp16 text  { fill: #a8f8f0; }
+    .node-item-type.node-dtype-bf16-fp16:hover path { fill: #256a6a; }
+    .node-item-type.node-dtype-bf16-fp16:hover text { fill: #d0fdf8; }
+
+    .node-item-type.node-dtype-int8-fp32 path  { fill: #204058; }
+    .node-item-type.node-dtype-int8-fp32 text  { fill: #b8d8f8; }
+    .node-item-type.node-dtype-int8-fp32:hover path { fill: #2a5575; }
+    .node-item-type.node-dtype-int8-fp32:hover text { fill: #d0ecff; }
+
+    .node-item-type.node-dtype-int8-fp16 path  { fill: #183a50; }
+    .node-item-type.node-dtype-int8-fp16 text  { fill: #a8d8f8; }
+    .node-item-type.node-dtype-int8-fp16:hover path { fill: #204e6a; }
+    .node-item-type.node-dtype-int8-fp16:hover text { fill: #c8ecff; }
+
+    /* W8A16: int8 weight + int16 activation — dark amber, distinct from W8A8 */
+    .node-item-type.node-dtype-int8-int16 path { fill: #5a4818; }
+    .node-item-type.node-dtype-int8-int16 text { fill: #f8eca8; }
+    .node-item-type.node-dtype-int8-int16:hover path { fill: #756020; }
+    .node-item-type.node-dtype-int8-int16:hover text { fill: #fbf5cc; }
+
+    .node-item-type.node-dtype-int4-fp32 path  { fill: #60202a; }
+    .node-item-type.node-dtype-int4-fp32 text  { fill: #f8c0c8; }
+    .node-item-type.node-dtype-int4-fp32:hover path { fill: #802a38; }
+    .node-item-type.node-dtype-int4-fp32:hover text { fill: #fbd8de; }
+
+    .node-item-type.node-dtype-int4-fp16 path  { fill: #602a18; }
+    .node-item-type.node-dtype-int4-fp16 text  { fill: #f8d8b8; }
+    .node-item-type.node-dtype-int4-fp16:hover path { fill: #803820; }
+    .node-item-type.node-dtype-int4-fp16:hover text { fill: #fbead0; }
+
+    .node-item-type.node-dtype-int4-bf16 path  { fill: #583018; }
+    .node-item-type.node-dtype-int4-bf16 text  { fill: #f8e0b8; }
+    .node-item-type.node-dtype-int4-bf16:hover path { fill: #754020; }
+    .node-item-type.node-dtype-int4-bf16:hover text { fill: #fbefd4; }
+
+    .node-item-type.node-dtype-int4-int8 path  { fill: #504008; }
+    .node-item-type.node-dtype-int4-int8 text  { fill: #f8f0a8; }
+    .node-item-type.node-dtype-int4-int8:hover path { fill: #6a5510; }
+    .node-item-type.node-dtype-int4-int8:hover text { fill: #fbf7cc; }
+
+    /* W4A16: int4 weight + int16 activation — dark orange-amber */
+    .node-item-type.node-dtype-int4-int16 path { fill: #5a3818; }
+    .node-item-type.node-dtype-int4-int16 text { fill: #f8dca0; }
+    .node-item-type.node-dtype-int4-int16:hover path { fill: #754a20; }
+    .node-item-type.node-dtype-int4-int16:hover text { fill: #fbeccc; }
+
+    .node-item-type.node-dtype-fp8-fp32 path   { fill: #1e5030; }
+    .node-item-type.node-dtype-fp8-fp32 text   { fill: #b8f0c8; }
+    .node-item-type.node-dtype-fp8-fp32:hover path  { fill: #286a40; }
+    .node-item-type.node-dtype-fp8-fp32:hover text  { fill: #d8fae0; }
+
+    .node-item-type.node-dtype-fp8-fp16 path   { fill: #185040; }
+    .node-item-type.node-dtype-fp8-fp16 text   { fill: #a8f0d8; }
+    .node-item-type.node-dtype-fp8-fp16:hover path  { fill: #206a55; }
+    .node-item-type.node-dtype-fp8-fp16:hover text  { fill: #c8faed; }
+
+    .node-item-type.node-dtype-uint8-fp32 path { fill: #284830; }
+    .node-item-type.node-dtype-uint8-fp32 text { fill: #c0f0b8; }
+    .node-item-type.node-dtype-uint8-fp32:hover path { fill: #356240; }
+    .node-item-type.node-dtype-uint8-fp32:hover text { fill: #d8fad4; }
+
+    .node-item-type.node-dtype-uint8-fp16 path { fill: #204850; }
+    .node-item-type.node-dtype-uint8-fp16 text { fill: #b8ecf8; }
+    .node-item-type.node-dtype-uint8-fp16:hover path { fill: #286268; }
+    .node-item-type.node-dtype-uint8-fp16:hover text { fill: #d0f6ff; }
+
+    .node-item-type.node-dtype-uint8-bf16 path { fill: #1e4e36; }
+    .node-item-type.node-dtype-uint8-bf16 text { fill: #a8f0cc; }
+    .node-item-type.node-dtype-uint8-bf16:hover path { fill: #286848; }
+    .node-item-type.node-dtype-uint8-bf16:hover text { fill: #c8fae0; }
+
+    .node-item-type.node-dtype-int8-bf16 path  { fill: #204840; }
+    .node-item-type.node-dtype-int8-bf16 text  { fill: #a8f0dc; }
+    .node-item-type.node-dtype-int8-bf16:hover path { fill: #286055; }
+    .node-item-type.node-dtype-int8-bf16:hover text { fill: #c8faed; }
+
+    .node-item-type.node-dtype-fp8-bf16 path   { fill: #1a5050; }
+    .node-item-type.node-dtype-fp8-bf16 text   { fill: #a0f8ec; }
+    .node-item-type.node-dtype-fp8-bf16:hover path  { fill: #226a6a; }
+    .node-item-type.node-dtype-fp8-bf16:hover text  { fill: #c0fff5; }
+
+    .node-item-type.node-dtype-fp16-bf16 path  { fill: #184c50; }
+    .node-item-type.node-dtype-fp16-bf16 text  { fill: #98f8fc; }
+    .node-item-type.node-dtype-fp16-bf16:hover path { fill: #206468; }
+    .node-item-type.node-dtype-fp16-bf16:hover text { fill: #c0ffff; }
+
+    .node-item-type.node-dtype-uint4-fp32 path { fill: #2e2858; }
+    .node-item-type.node-dtype-uint4-fp32 text { fill: #ccd8ff; }
+    .node-item-type.node-dtype-uint4-fp32:hover path { fill: #3e3878; }
+    .node-item-type.node-dtype-uint4-fp32:hover text { fill: #e4eeff; }
+
+    .node-item-type.node-dtype-uint4-fp16 path { fill: #3a2c60; }
+    .node-item-type.node-dtype-uint4-fp16 text { fill: #d0dcff; }
+    .node-item-type.node-dtype-uint4-fp16:hover path { fill: #4e3c80; }
+    .node-item-type.node-dtype-uint4-fp16:hover text { fill: #e8eeff; }
+
+    .node-item-type.node-dtype-uint4-bf16 path { fill: #382840; }
+    .node-item-type.node-dtype-uint4-bf16 text { fill: #d4e8d4; }
+    .node-item-type.node-dtype-uint4-bf16:hover path { fill: #4e3858; }
+    .node-item-type.node-dtype-uint4-bf16:hover text { fill: #eaf5ea; }
 }
