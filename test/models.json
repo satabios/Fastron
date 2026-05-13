@@ -3983,7 +3983,7 @@
   {
     "type":     "ncnn",
     "target":   "mobilenetv2_yolov3.param",
-    "source":   "https://raw.githubusercontent.com/Tencent/ncnn/master/benchmark/mobilenetv2_yolov3.param",
+    "source":   "https://raw.githubusercontent.com/Tencent/ncnn/master/benchmark/models/mobilenetv2_yolov3.param",
     "format":   "ncnn",
     "tags":     "validation",
     "link":     "https://github.com/Tencent/ncnn"
