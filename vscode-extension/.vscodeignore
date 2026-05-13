@@ -1,3 +1,6 @@
+# dependencies (excluded by --no-dependencies flag, but belt+suspenders)
+node_modules/
+
 # vscode
 .vscode/**
 .vscode-test/**
