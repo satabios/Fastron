@@ -255,7 +255,7 @@ in the Console while viewing a model to see detailed statistics.`;
 		vscode.commands.registerCommand('fastron.compare', async (resource: vscode.Uri) => {
 			const modelExtensions = ['onnx', 'pb', 'tflite', 'pt', 'pth', 'h5', 'keras',
 				'mlmodel', 'mlpackage', 'caffemodel', 'bin', 'param', 'ncnn'];
-			const filterEntry = { 'Model Files': modelExtensions };
+			const filterEntry = { 'modelFiles': modelExtensions };
 
 			let fileA: string | undefined = resource?.fsPath;
 
