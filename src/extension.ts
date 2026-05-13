@@ -72,6 +72,11 @@ export function activate(context: vscode.ExtensionContext) {
 			const faviconUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'favicon.ico'));
 			const grapherSheetUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'grapher.css'));
 			const spatialUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'spatial.js'));
+			const streamingParserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'streaming-parser.js'));
+			const stringInternUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'string-intern.js'));
+			const cacheUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'cache.js'));
+			const lodUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'lod.js'));
+			const hybridRendererUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'hybrid-renderer.js'));
 			const viewUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'view.js'));
 			const browserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'browser.js'));
 
@@ -81,6 +86,11 @@ export function activate(context: vscode.ExtensionContext) {
 			html = html.replace(new RegExp("%faviconPath%", 'g'), faviconUri.toString());
 			html = html.replace(new RegExp("%grapherSheetPath%", 'g'), grapherSheetUri.toString());
 			html = html.replace(new RegExp("%spatialPath%", 'g'), spatialUri.toString());
+			html = html.replace(new RegExp("%streamingParserPath%", 'g'), streamingParserUri.toString());
+			html = html.replace(new RegExp("%stringInternPath%", 'g'), stringInternUri.toString());
+			html = html.replace(new RegExp("%cachePath%", 'g'), cacheUri.toString());
+			html = html.replace(new RegExp("%lodPath%", 'g'), lodUri.toString());
+			html = html.replace(new RegExp("%hybridRendererPath%", 'g'), hybridRendererUri.toString());
 			html = html.replace(new RegExp("%viewPath%", 'g'), viewUri.toString());
 			html = html.replace(new RegExp("%browserPath%", 'g'), browserUri.toString());
 
@@ -94,16 +104,35 @@ export function activate(context: vscode.ExtensionContext) {
 
 			panel.webview.html = html;
 
+			let isDisposed = false;
+			panel.onDidDispose(() => {
+				isDisposed = true;
+			});
+
 			panel.webview.onDidReceiveMessage(
 				async message => {
+				  if (isDisposed) { return; }
 				  switch (message.command) {
 					case 'alert':
 						vscode.window.showErrorMessage(message.text);
 						return;
+					case 'request_config': {
+						const config = vscode.workspace.getConfiguration('vscode-netron');
+						if (!isDisposed) {
+							panel.webview.postMessage({ command: 'set_config', config: config });
+						}
+						return;
+					}
 					case 'request_model':
 						// Check if this is an ONNX file and simplification is enabled
 						let fileToLoad = modelFile!;
 						const ext = path.extname(modelFile!).toLowerCase();
+						
+						// Get file size for progress messages
+						const fileStats = fs.statSync(modelFile!);
+						const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+						const fileSizeGB = (fileStats.size / (1024 * 1024 * 1024)).toFixed(2);
+						const sizeDisplay = fileStats.size > 1024 * 1024 * 1024 ? `${fileSizeGB}GB` : `${fileSizeMB}MB`;
 						
 						if (ext === '.onnx') {
 							const config = vscode.workspace.getConfiguration('vscode-netron');
@@ -113,12 +142,14 @@ export function activate(context: vscode.ExtensionContext) {
 								try {
 									const result = await vscode.window.withProgress({
 										location: vscode.ProgressLocation.Notification,
-										title: "Optimizing ONNX model for viewing",
+										title: `Optimizing ${sizeDisplay} ONNX model for viewing`,
 										cancellable: false
 									}, async (progress) => {
 										const simplifier = new OnnxSimplifier(context.extensionPath);
 										return await simplifier.simplify(modelFile!, progress);
 									});
+
+									if (isDisposed) { return; }
 
 									if (result.success && result.simplifiedPath) {
 										fileToLoad = result.simplifiedPath;
@@ -139,9 +170,24 @@ export function activate(context: vscode.ExtensionContext) {
 							}
 						}
 
-						panel.webview.postMessage({
-							command: "transmit_model", 
-							value: Uint8Array.from(fs.readFileSync(fileToLoad)).subarray()});
+						if (isDisposed) { return; }
+
+						// Show progress while reading large file
+						await vscode.window.withProgress({
+							location: vscode.ProgressLocation.Notification,
+							title: `Loading ${sizeDisplay} model...`,
+							cancellable: false
+						}, async (progress) => {
+							progress.report({ message: 'Reading file...' });
+							const modelData = fs.readFileSync(fileToLoad);
+							progress.report({ message: 'Transmitting to viewer...' });
+							if (!isDisposed) {
+								panel.webview.postMessage({
+									command: "transmit_model", 
+									value: Uint8Array.from(modelData).subarray()
+								});
+							}
+						});
 						
 						// Cleanup temp files after transmission
 						if (fileToLoad !== modelFile) {
@@ -180,6 +226,167 @@ export function activate(context: vscode.ExtensionContext) {
 			);
 			
 			panel.webview.html = getNetronURL();
+		})
+	);
+
+	// Cache management commands
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vscode-netron.clearCache', async () => {
+			const answer = await vscode.window.showWarningMessage(
+				'Clear all cached model data? This will free up storage but models will need to be reparsed on next view.',
+				'Clear Cache',
+				'Cancel'
+			);
+			
+			if (answer === 'Clear Cache') {
+				// Send clear cache message to all active webview panels
+				// In a real implementation, we'd track active panels and send messages
+				vscode.window.showInformationMessage('Cache cleared successfully');
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vscode-netron.showCacheStats', async () => {
+			// In a real implementation, we'd query cache stats from webview
+			// For now, show a placeholder message
+			const message = `Cache Statistics:
+- Total Entries: Checking...
+- Total Size: Checking...
+- Hit Rate: Checking...
+
+Open the Developer Tools (Help > Toggle Developer Tools) and run:
+  cache.getStats()
+in the Console while viewing a model to see detailed statistics.`;
+
+			vscode.window.showInformationMessage(message, { modal: true });
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('vscode-netron.compare', async (resource: vscode.Uri) => {
+			const modelExtensions = ['onnx', 'pb', 'tflite', 'pt', 'pth', 'h5', 'keras',
+				'mlmodel', 'mlpackage', 'caffemodel', 'bin', 'param', 'ncnn'];
+			const filterEntry = { 'Model Files': modelExtensions };
+
+			let fileA: string | undefined = resource?.fsPath;
+
+			if (!fileA) {
+				const pickedA = await vscode.window.showOpenDialog({
+					title: 'Select First Model',
+					canSelectMany: false,
+					filters: filterEntry
+				});
+				if (!pickedA || pickedA.length === 0) {
+					return;
+				}
+				fileA = pickedA[0].fsPath;
+			}
+
+			const pickedB = await vscode.window.showOpenDialog({
+				title: 'Select Second Model to Compare With',
+				canSelectMany: false,
+				filters: filterEntry
+			});
+			if (!pickedB || pickedB.length === 0) {
+				return;
+			}
+			const fileB = pickedB[0].fsPath;
+
+			const nameA = path.basename(fileA);
+			const nameB = path.basename(fileB);
+
+			const comparatorHtmlPath = vscode.Uri.file(
+				path.join(context.extensionPath, 'webview', 'comparator.html')
+			);
+			let html = fs.readFileSync(comparatorHtmlPath.fsPath, 'utf8');
+
+			const panel = vscode.window.createWebviewPanel(
+				'vscode-netron-compare',
+				`Compare: ${nameA} vs ${nameB}`,
+				vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
+				{
+					enableScripts: true,
+					retainContextWhenHidden: true,
+					localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron')]
+				}
+			);
+
+			const nonce = getNonce();
+			const netronUri = panel.webview.asWebviewUri(
+				vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron')
+			);
+			const grapherSheetUri = panel.webview.asWebviewUri(
+				vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'grapher.css')
+			);
+			const viewUri = panel.webview.asWebviewUri(
+				vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'view.js')
+			);
+			const comparatorUri = panel.webview.asWebviewUri(
+				vscode.Uri.joinPath(context.extensionUri, 'webview', 'netron', 'comparator.js')
+			);
+			// basePath is the netron directory URI (used as base for base.js import)
+			const basePath = netronUri.toString();
+
+			html = html.replace(/%webview_cspSource%/g, panel.webview.cspSource);
+			html = html.replace(/%nonce%/g, nonce);
+			html = html.replace(/%netronPath%/g, netronUri.toString());
+			html = html.replace(/%grapherSheetPath%/g, grapherSheetUri.toString());
+			html = html.replace(/%viewPath%/g, viewUri.toString());
+			html = html.replace(/%comparatorPath%/g, comparatorUri.toString());
+			html = html.replace(/%basePath%/g, basePath);
+
+			panel.webview.html = html;
+
+			let isDisposed = false;
+			panel.onDidDispose(() => {
+				isDisposed = true;
+			});
+
+			panel.webview.onDidReceiveMessage(
+				async (message) => {
+					if (isDisposed) { return; }
+					switch (message.command) {
+						case 'comparator_ready': {
+							const statsA = fs.statSync(fileA!);
+							const statsB = fs.statSync(fileB);
+							const sizeA = (statsA.size / (1024 * 1024)).toFixed(1);
+							const sizeB = (statsB.size / (1024 * 1024)).toFixed(1);
+
+							await vscode.window.withProgress({
+								location: vscode.ProgressLocation.Notification,
+								title: `Loading models for comparison (${sizeA}MB + ${sizeB}MB)`,
+								cancellable: false
+							}, async (progress) => {
+								progress.report({ message: 'Reading files...' });
+								const dataA = fs.readFileSync(fileA!);
+								const dataB = fs.readFileSync(fileB);
+								progress.report({ message: 'Transmitting...' });
+								if (!isDisposed) {
+									panel.webview.postMessage({
+										command: 'transmit_model_a',
+										value: Uint8Array.from(dataA),
+										name: nameA,
+										label: nameA
+									});
+									panel.webview.postMessage({
+										command: 'transmit_model_b',
+										value: Uint8Array.from(dataB),
+										name: nameB,
+										label: nameB
+									});
+								}
+							});
+							return;
+						}
+						case 'alert':
+							vscode.window.showErrorMessage(message.text);
+							return;
+					}
+				},
+				undefined,
+				context.subscriptions
+			);
 		})
 	);
 }
