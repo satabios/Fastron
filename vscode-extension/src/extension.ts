@@ -13,7 +13,7 @@ function getNonce() {
 	return text;
 }
 
-function getNetronURL() {
+function getFastronURL() {
 	return `<!DOCTYPE html>
 	<html lang="en">
 	<style>
@@ -24,7 +24,7 @@ function getNetronURL() {
 	<head>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Netron</title>
+		<title>Fastron</title>
 	</head>
 	<body>
 	<iframe src="https://netron.app/" title="Netron web app"></iframe>
@@ -36,7 +36,7 @@ function getNetronURL() {
 export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-netron.open', (resource: vscode.Uri) => {
+		vscode.commands.registerCommand('fastron.open', (resource: vscode.Uri) => {
 
 			// Load index file
 			const indexPath = vscode.Uri.file(path.join(context.extensionPath, 'webview', 'index.html'));
@@ -54,8 +54,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 			// Panel creation
 			const panel = vscode.window.createWebviewPanel(
-				'vscode-netron',
-				baseName + " [Netron]",
+				'fastron',
+				baseName + " [Fastron]",
 				vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
 				{
 					enableScripts: true,
@@ -117,7 +117,7 @@ export function activate(context: vscode.ExtensionContext) {
 						vscode.window.showErrorMessage(message.text);
 						return;
 					case 'request_config': {
-						const config = vscode.workspace.getConfiguration('vscode-netron');
+						const config = vscode.workspace.getConfiguration('fastron');
 						if (!isDisposed) {
 							panel.webview.postMessage({ command: 'set_config', config: config });
 						}
@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
 						const sizeDisplay = fileStats.size > 1024 * 1024 * 1024 ? `${fileSizeGB}GB` : `${fileSizeMB}MB`;
 						
 						if (ext === '.onnx') {
-							const config = vscode.workspace.getConfiguration('vscode-netron');
+							const config = vscode.workspace.getConfiguration('fastron');
 							const simplificationEnabled = config.get('onnxSimplification.enabled', true);
 							
 							if (simplificationEnabled) {
@@ -194,7 +194,7 @@ export function activate(context: vscode.ExtensionContext) {
 							setTimeout(() => {
 								try {
 									const tempDir = path.dirname(fileToLoad);
-									if (tempDir.includes('vscode-netron-simplify')) {
+									if (tempDir.includes('fastron-simplify')) {
 										fs.rmSync(tempDir, { recursive: true, force: true });
 									}
 								} catch (e) {
@@ -213,11 +213,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-netron.open_webbrowser', () => {
+		vscode.commands.registerCommand('fastron.open_webbrowser', () => {
 
 			const panel = vscode.window.createWebviewPanel(
-				'vscode-netron',
-				"Netron",
+				'fastron',
+				"Fastron",
 				vscode.ViewColumn.One,
 				{
 					enableScripts: true,
@@ -225,13 +225,13 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			);
 			
-			panel.webview.html = getNetronURL();
+			panel.webview.html = getFastronURL();
 		})
 	);
 
 	// Cache management commands
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-netron.clearCache', async () => {
+		vscode.commands.registerCommand('fastron.clearCache', async () => {
 			const answer = await vscode.window.showWarningMessage(
 				'Clear all cached model data? This will free up storage but models will need to be reparsed on next view.',
 				'Clear Cache',
@@ -247,7 +247,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-netron.showCacheStats', async () => {
+		vscode.commands.registerCommand('fastron.showCacheStats', async () => {
 			// In a real implementation, we'd query cache stats from webview
 			// For now, show a placeholder message
 			const message = `Cache Statistics:
@@ -264,7 +264,7 @@ in the Console while viewing a model to see detailed statistics.`;
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('vscode-netron.compare', async (resource: vscode.Uri) => {
+		vscode.commands.registerCommand('fastron.compare', async (resource: vscode.Uri) => {
 			const modelExtensions = ['onnx', 'pb', 'tflite', 'pt', 'pth', 'h5', 'keras',
 				'mlmodel', 'mlpackage', 'caffemodel', 'bin', 'param', 'ncnn'];
 			const filterEntry = { 'Model Files': modelExtensions };
@@ -302,7 +302,7 @@ in the Console while viewing a model to see detailed statistics.`;
 			let html = fs.readFileSync(comparatorHtmlPath.fsPath, 'utf8');
 
 			const panel = vscode.window.createWebviewPanel(
-				'vscode-netron-compare',
+				'fastron-compare',
 				`Compare: ${nameA} vs ${nameB}`,
 				vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
 				{
