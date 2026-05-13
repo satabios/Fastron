@@ -1,6 +1,6 @@
 {
-  "name": "vscode-netron",
-  "displayName": "vscode-netron",
+  "name": "fastron",
+  "displayName": "Fastron",
   "description": "Visualize machine learning models with Netron in VSCode",
   "version": "2026.4.30",
   "engines": {
