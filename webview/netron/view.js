@@ -739,17 +739,25 @@ view.View = class {
             const clone = canvas.cloneNode(true);
             const document = this._host.document;
             const applyStyleSheet = (element, name) => {
-                let rules = [];
-                for (const styleSheet of document.styleSheets) {
-                    if (styleSheet && styleSheet.href && styleSheet.href.endsWith(`/${name}`)) {
-                        rules = styleSheet.cssRules;
-                        break;
+                let ruleMap = view.View._exportCSSCache.get(name);
+                if (!ruleMap) {
+                    ruleMap = [];
+                    for (const styleSheet of document.styleSheets) {
+                        if (styleSheet && styleSheet.href && styleSheet.href.endsWith(`/${name}`)) {
+                            for (const rule of styleSheet.cssRules) {
+                                if (rule.selectorText) {
+                                    ruleMap.push({ selector: rule.selectorText, style: rule.style });
+                                }
+                            }
+                            break;
+                        }
                     }
+                    view.View._exportCSSCache.set(name, ruleMap);
                 }
                 const nodes = element.getElementsByTagName('*');
                 for (const node of nodes) {
-                    for (const rule of rules) {
-                        if (node.matches(rule.selectorText)) {
+                    for (const rule of ruleMap) {
+                        if (node.matches(rule.selector)) {
                             for (const item of rule.style) {
                                 node.style[item] = rule.style[item];
                             }
@@ -7268,6 +7276,7 @@ if (typeof window !== 'undefined' && window.exports) {
 }
 
 export const View = view.View;
+view.View._exportCSSCache = new Map();
 export const ModelFactoryService = view.ModelFactoryService;
 export const ModelSidebar = view.ModelSidebar;
 export const NodeSidebar = view.NodeSidebar;
