@@ -203,7 +203,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .about .logo-message { top: 175px; font-size: 12px; }
 .about .logo-github { top: 370px; }
 }
-.sidebar { display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif; font-size: 12px; height: 100%; right: -100%; position: fixed; transition: 0.1s; top: 0; background-color: #ececec; color: #242424; overflow: hidden; border-left: 1px solid rgba(255, 255, 255, 0.5); opacity: 0; }
+.sidebar { display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif; font-size: 12px; height: 100%; right: -100%; position: fixed; z-index: 5; transition: 0.1s; top: 0; background-color: #ececec; color: #242424; overflow: hidden; border-left: 1px solid rgba(255, 255, 255, 0.5); opacity: 0; }
 .sidebar-title { font-weight: bold; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; height: 20px; margin: 0; padding: 20px; user-select: none; -webkit-user-select: none; -moz-user-select: none; }
 .sidebar-closebutton { padding: 8px 8px 8px 32px; text-decoration: none; font-size: 25px; color: #777777; opacity: 1.0; display: block; transition: 0.2s; position: absolute; top: 0; right: 15px; margin-left: 50px; user-select: none; -webkit-user-select: none; -moz-user-select: none; }
 .sidebar-closebutton:hover { color: #242424; }
@@ -306,6 +306,44 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 .menu { transition: none; }
 .sidebar { transition: none; }
 }
+/* VS Code injects body.vscode-dark — use as reliable dark-mode fallback */
+body.vscode-dark .sidebar { background-color: #2d2d2d; color: #dfdfdf; border-left: 1px solid rgba(0, 0, 0, 0); }
+body.vscode-dark .sidebar-closebutton:hover { color: #ffffff; }
+body.vscode-dark .sidebar-item-value { background-color: #383838; border-color: #383838; }
+body.vscode-dark .sidebar-item-value-content { background-color: #3e3e3e; border-color: #3e3e3e; }
+body.vscode-dark .sidebar-item-value-line-border { border-color: rgba(0, 0, 0, 0.09); }
+body.vscode-dark .sidebar-item-selector { background-color: #383838; border: #383838; color: #dfdfdf; background-image: linear-gradient(45deg, transparent 50%, #aaa 50%), linear-gradient(135deg, #aaa 50%, transparent 50%); }
+body.vscode-dark .sidebar-header { border-bottom-color: #2d2d2d; color: #dfdfdf; }
+body.vscode-dark .sidebar-documentation h1 { border-bottom: 1px solid #424242; color: #dfdfdf; }
+body.vscode-dark .sidebar-documentation h2 { color: #dfdfdf; }
+body.vscode-dark .sidebar-documentation p { color: #aaaaaa; }
+body.vscode-dark .sidebar-documentation a { color: #6688aa; }
+body.vscode-dark .sidebar-documentation tt { background-color:#1e1e1e; }
+body.vscode-dark .sidebar-documentation code { background-color: #1e1e1e; }
+body.vscode-dark .sidebar-documentation pre { background-color: #1e1e1e; }
+body.vscode-dark .sidebar-find-search { background: #383838; color: #dfdfdf; border-color: #424242; }
+body.vscode-dark .sidebar-find-toggle input[type="checkbox"]:not(:checked) + svg { fill: #555; stroke: #555; }
+body.vscode-dark .sidebar-find-toggle input[type="checkbox"]:checked + svg { fill: #aaa; stroke: #aaa; }
+body.vscode-dark .sidebar-find-content li { color: #aaaaaa; }
+body.vscode-dark .sidebar-find-content li:hover { background: #383838; color: #dfdfdf; }
+body.vscode-dark .sidebar-find-content-icon { stroke: #888888; fill: #888888; }
+body.vscode-dark .sidebar-item-value-expander { color: #888; }
+body.vscode-dark .sidebar-item-value-expander:hover { color: #e5e5e5; }
+body.vscode-dark .sidebar-item-value-button { color: #888; }
+body.vscode-dark .sidebar-item-value-button svg use { fill: #888; stroke: #888; }
+body.vscode-dark .sidebar-item-value-button:hover svg use { fill: #e5e5e5; stroke: #e5e5e5; }
+body.vscode-dark .default { background-color: #404040; }
+body.vscode-dark .target { background-color: #404040; }
+body.vscode-dark .toolbar-button { background: rgba(50, 50, 50, 0.75); }
+body.vscode-dark .toolbar-icon .border { stroke: #333333; }
+body.vscode-dark .toolbar-icon .stroke { stroke: #aaaaaa; }
+body.vscode-dark .toolbar-icon .fill { fill: #aaaaaa; }
+body.vscode-dark .toolbar-icon:hover .stroke { stroke: #dfdfdf; }
+body.vscode-dark .toolbar-icon:hover .fill { fill: #dfdfdf; }
+body.vscode-dark .toolbar-button-weights.weights-disabled .stroke { stroke: #aaaaaa; }
+body.vscode-dark .toolbar-button-weights.weights-disabled .fill { fill: #aaaaaa; }
+body.vscode-dark .toolbar-button-weights.weights-enabled .stroke { stroke: #16825d; }
+body.vscode-dark .toolbar-button-weights.weights-enabled .fill { fill: #16825d; }
 </style>
 </head>
 <body class="welcome spinner">
@@ -387,6 +425,28 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
             <rect class="stroke" x="12" y="12" width="76" height="76" rx="16" ry="16" stroke-width="4"></rect>
             <circle class="stroke" cx="50" cy="50" r="18" stroke-width="4"></circle>
             <circle class="stroke fill" cx="50" cy="50" r="3" stroke-width="4"></circle>
+        </svg>
+    </button>
+    <button id="weights-toggle-button" class="toolbar-button toolbar-button-weights weights-disabled" title="Weights: Disabled (Fast) - Click to enable full weight loading">
+        <svg class="toolbar-icon" viewBox="0 0 100 100">
+            <rect class="border" x="12" y="12" width="76" height="76" rx="16" ry="16" stroke-width="8" stroke="#fff"></rect>
+            <circle class="border" cx="35" cy="35" r="8" stroke-width="8" stroke="#fff"></circle>
+            <circle class="border" cx="65" cy="35" r="8" stroke-width="8" stroke="#fff"></circle>
+            <circle class="border" cx="35" cy="65" r="8" stroke-width="8" stroke="#fff"></circle>
+            <circle class="border" cx="65" cy="65" r="8" stroke-width="8" stroke="#fff"></circle>
+            <line class="border" x1="35" y1="35" x2="65" y2="35" stroke-width="8" stroke-linecap="round" stroke="#fff"></line>
+            <line class="border" x1="35" y1="65" x2="65" y2="65" stroke-width="8" stroke-linecap="round" stroke="#fff"></line>
+            <line class="border" x1="35" y1="35" x2="35" y2="65" stroke-width="8" stroke-linecap="round" stroke="#fff"></line>
+            <line class="border" x1="65" y1="35" x2="65" y2="65" stroke-width="8" stroke-linecap="round" stroke="#fff"></line>
+            <rect class="stroke" x="12" y="12" width="76" height="76" rx="16" ry="16" stroke-width="4"></rect>
+            <circle class="stroke fill" cx="35" cy="35" r="8" stroke-width="4"></circle>
+            <circle class="stroke fill" cx="65" cy="35" r="8" stroke-width="4"></circle>
+            <circle class="stroke fill" cx="35" cy="65" r="8" stroke-width="4"></circle>
+            <circle class="stroke fill" cx="65" cy="65" r="8" stroke-width="4"></circle>
+            <line class="stroke" x1="35" y1="35" x2="65" y2="35" stroke-width="4" stroke-linecap="round"></line>
+            <line class="stroke" x1="35" y1="65" x2="65" y2="65" stroke-width="4" stroke-linecap="round"></line>
+            <line class="stroke" x1="35" y1="35" x2="35" y2="65" stroke-width="4" stroke-linecap="round"></line>
+            <line class="stroke" x1="65" y1="35" x2="65" y2="65" stroke-width="4" stroke-linecap="round"></line>
         </svg>
     </button>
     <div id="toolbar-navigator" class="toolbar-select">
@@ -524,7 +584,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
     </a>
     <div class="center logo-message">
         <div style="height: 30px; text-align: center;">Version <span id="version" class="select">{version}</span></div>
-        <div style="height: 30px; text-align: center;">Copyright &copy; <a href="https://www.lutzroeder.com" target="blank_">Lutz Roeder</a></div>
+        <div style="height: 30px; text-align: center;">Copyright &copy; <a href="https://github.com/satabios/Fastron" target="blank_">Fastron</a> &mdash; built on <a href="https://github.com/lutzroeder/netron" target="blank_">Netron</a> by Lutz Roeder</div>
     </div>
     <a id="logo-github" class="center logo-github" href="https://github.com/satabios/Fastron" target="blank_">
         <svg viewbox="0 0 438.549 438.549">
@@ -603,6 +663,13 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 	const vscode = acquireVsCodeApi();
 	
 	var host = new Host();
+	// Override cookie functions to use localStorage (document.cookie doesn't persist in VS Code webviews)
+	host._getCookie = function(name) {
+		try { return localStorage.getItem('fastron_cookie_' + name) || ''; } catch(e) { return ''; }
+	};
+	host._setCookie = function(name, value, days) {
+		try { localStorage.setItem('fastron_cookie_' + name, value); } catch(e) {}
+	};
 	window.__view__ = new View(host);
 	window.__view__._worker = null;
 	
