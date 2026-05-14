@@ -150,13 +150,13 @@
     /* FIX: improved contrast from #b2b2b2 (~4.5:1) to #c8c8c8 (~5.7:1) on #404040 background */
     .edge-label { fill: #c8c8c8; stroke: #1e1e1e; }
 
-    /* FIX: corrected 8-digit hex typo #dfdfdfdf → #dfdfdf */
-    .node-item-function path { fill: #404040; }
+    /* FIX: corrected 8-digit hex typo #dfdfdfdf → #dfdfdf; improved visibility on #404040 bg */
+    .node-item-function path { fill: #505050; }
     .node-item-function text { fill: #dfdfdf; }
     .node-item-function:hover { cursor: pointer; }
-    .node-item-function:hover path { fill: #666666; }
+    .node-item-function:hover path { fill: #686868; }
 
-    .node-item-type path { fill: #303030; }
+    .node-item-type path { fill: #3a3a4a; }
     .node-item-type text { fill: #dfdfdf; }
     .node-item-type:hover { cursor: pointer; }
     .node-item-type:hover path { fill: #808080; }
