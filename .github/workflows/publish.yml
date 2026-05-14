@@ -11,6 +11,8 @@ env:
 jobs:
   publish:
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
 
     strategy:
       matrix:
@@ -41,7 +43,8 @@ jobs:
       - name: Publish Electron
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -79,19 +82,24 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.pypi_api_token }}
-        run: npm run publish python
+        run: |
+          if [[ -z "$TWINE_PASSWORD" ]]; then
+            echo "Skipping Python publish: pypi_api_token not configured."
+            exit 0
+          fi
+          npm run publish python
 
       - if: startsWith(matrix.os, 'ubuntu')
         name: Publish Web
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
         run: git push origin HEAD:release --force
 
       - if: false # startsWith(matrix.os, 'macos')
         name: Publish cask
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
         run: npm run publish cask
 
@@ -99,6 +107,11 @@ jobs:
         name: Publish winget
         env:
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: npm run publish winget
+        run: |
+          if [[ -z "$WINGET_TOKEN" ]]; then
+            echo "Skipping winget publish: WINGET_TOKEN not configured."
+            exit 0
+          fi
+          npm run publish winget
