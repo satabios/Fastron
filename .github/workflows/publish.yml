@@ -53,8 +53,8 @@ jobs:
           case "${{ matrix.os }}" in
             macos*)
               if [[ -z "${CSC_LINK}" || -z "${CSC_KEY_PASSWORD}" || -z "${APPLE_API_KEY}" || -z "${APPLE_API_KEY_ID}" || -z "${APPLE_API_ISSUER}" ]]; then
-                echo "Missing macOS signing/notarization secrets (CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER)."
-                exit 1
+                echo "Skipping macOS publish: signing/notarization secrets not configured."
+                exit 0
               fi
               if [[ -f "${APPLE_API_KEY}" ]]; then
                 export APPLE_API_KEY="${APPLE_API_KEY}"
