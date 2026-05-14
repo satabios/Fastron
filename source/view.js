@@ -2559,16 +2559,26 @@ view.Graph = class extends grapher.Graph {
         canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
         canvas.setAttribute('width', width);
         canvas.setAttribute('height', height);
-        this._zoom = state ? state.zoom : 1;
-        this._updateZoom(this._zoom);
         const container = this._containerElement;
+        // Auto-fit zoom on fresh load: if graph is larger than the viewport, scale down so
+        // the whole graph is visible at once. Cap at zoom=1 (never magnify on load).
+        const autoFitZoom = (() => {
+            if (state) return state.zoom;
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            if (cw > 0 && ch > 0) {
+                const fit = Math.min(cw / width, ch / height) * 0.92;
+                return Math.min(1, Math.max(0.15, fit));
+            }
+            return 1;
+        })();
+        this._zoom = autoFitZoom;
+        this._updateZoom(this._zoom);
         const context = state ? this.select([state.context]) : [];
         if (context.length > 0) {
             this.scrollTo(context, 'instant');
-        } else {
-            // Use graph-space coordinates from layout to scroll to the starting
-            // (input) nodes. This works at any zoom level and under deferred/
-            // viewport-culling rendering where no DOM elements exist yet.
+        } else if (state) {
+            // Restoring saved state — scroll to input nodes as before.
             const scrolledToInputs = (() => {
                 const inputNodes = this._inputNodes;
                 if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
@@ -2597,9 +2607,6 @@ view.Graph = class extends grapher.Graph {
                 return true;
             })();
             if (!scrolledToInputs) {
-                // Fallback: scroll to the start (input side) of the graph using layout bounds.
-                // For vertical (TB) layout scroll to the top slice; for horizontal (LR) to the left slice.
-                // This ensures input nodes are visible even when not explicitly tracked.
                 if (this._layoutBounds) {
                     const isHorizontal = this.options && this.options.direction !== 'vertical';
                     const b = this._layoutBounds;
@@ -2608,7 +2615,6 @@ view.Graph = class extends grapher.Graph {
                         : { x: b.x, y: b.y, width: b.width, height: Math.min(400, b.height) };
                     this._scrollToGraphBounds(slice, 'auto');
                 } else {
-                    // Last resort: center the whole canvas element.
                     const canvasRect = canvas.getBoundingClientRect();
                     const graphRect = container.getBoundingClientRect();
                     const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
@@ -2616,6 +2622,15 @@ view.Graph = class extends grapher.Graph {
                     container.scrollTo({ left, top, behavior: 'auto' });
                 }
             }
+        } else {
+            // Fresh load with auto-fit zoom: center the entire graph in the viewport.
+            const zoomedW = this._zoom * width;
+            const zoomedH = this._zoom * height;
+            container.scrollTo({
+                left: Math.max(0, (zoomedW - container.clientWidth) / 2),
+                top: Math.max(0, (zoomedH - container.clientHeight) / 2),
+                behavior: 'auto'
+            });
         }
 
         // Trigger initial viewport update for lazy rendering.
