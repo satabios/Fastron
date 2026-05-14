@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="description" content="Visualizer for neural network, deep learning and machine learning models." />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src %webview_cspSource%; style-src %webview_cspSource% 'unsafe-inline'; img-src %webview_cspSource% https:; script-src %webview_cspSource% 'nonce-%nonce%'; script-src-elem %webview_cspSource% 'nonce-%nonce%'; connect-src %webview_cspSource% https:; frame-src https:;">
+<meta http-equiv="Content-Security-Policy" content="default-src %webview_cspSource%; style-src %webview_cspSource% 'unsafe-inline'; img-src %webview_cspSource% https:; script-src %webview_cspSource% 'nonce-%nonce%'; script-src-elem %webview_cspSource% 'nonce-%nonce%'; worker-src %webview_cspSource%; connect-src %webview_cspSource% https:; frame-src https:;">
 <meta name="version" content="8.7.5">
 <meta name="date" content="">
 <title>Fastron</title>
@@ -17,7 +17,7 @@
 <script type="module" nonce="%nonce%" src="%viewPath%"></script>
 <script type="module" nonce="%nonce%" src="%browserPath%"></script>
 <style>
-html { touch-action: none; overflow: hidden; width: 100%; height: 100%; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-text-rendering: optimizeLegibility; -moz-text-rendering: optimizeLegibility; -ms-text-rendering: optimizeLegibility; -o-text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-font-smoothing: antialiased; -ms-font-smoothing: antialiased; -o-font-smoothing: antialiased; }
+html { touch-action: none; overflow: hidden; width: 100%; height: 100%; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 12px; text-rendering: geometricPrecision; }
 button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; }
 .center { position: absolute; margin: auto; top: 0; right: 0; bottom: 0; left: 0; user-select: none; -webkit-user-select: none; -moz-user-select: none; }
@@ -621,9 +621,13 @@ body.vscode-dark .toolbar-button-weights.weights-enabled .fill { fill: #3fb950; 
 	host._setCookie = function(name, value, days) {
 		try { localStorage.setItem('fastron_cookie_' + name, value); } catch(e) {}
 	};
+	// Override worker() to use webview URI — relative paths don't resolve in VS Code webviews
+	host.worker = function(id) {
+		const cleanId = id.replace(/^\.\//, '');
+		return new Worker('%netronPath%/' + cleanId + '.js', { type: 'module' });
+	};
 	window.__view__ = new View(host);
-	window.__view__._worker = null;
-	
+
 	// Redefinition of host methods
 	window.__view__._host._url = function(file) {
 		return '%netronPath%/' + file;
