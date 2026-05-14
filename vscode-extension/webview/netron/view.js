@@ -2563,7 +2563,9 @@ view.Graph = class extends grapher.Graph {
         // Auto-fit zoom on fresh load: if graph is larger than the viewport, scale down so
         // the whole graph is visible at once. Cap at zoom=1 (never magnify on load).
         const autoFitZoom = (() => {
-            if (state) { return state.zoom; }
+            if (state) {
+                return state.zoom;
+            }
             const cw = container.clientWidth;
             const ch = container.clientHeight;
             if (cw > 0 && ch > 0) {
