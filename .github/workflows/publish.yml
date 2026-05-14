@@ -22,8 +22,8 @@ jobs:
 
       - name: Git credentials
         run: |
-          git config --global user.name ${{ secrets.PUBLISH_GITHUB_USER_NAME }}
-          git config --global user.email ${{ secrets.PUBLISH_GITHUB_USER_EMAIL }}
+          git config --global user.name "${{ secrets.PUBLISH_GITHUB_USER_NAME || 'github-actions[bot]' }}"
+          git config --global user.email "${{ secrets.PUBLISH_GITHUB_USER_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
