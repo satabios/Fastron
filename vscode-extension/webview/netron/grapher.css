@@ -255,47 +255,44 @@
     .node-block .select.edge-path { stroke: #fff; }
 }
 
-/* ── Fastron extension additions ─────────────────────────────────────────── */
-
-/* General LOD setup */
-.node-lod-point {
-    display: none; /* Hidden by default */
-    fill: #808080;
+/* ── Tunnel edges (subgraph cross-boundary connectors) ─────────────────────── */
+.edge-path-tunnel {
+    stroke-dasharray: 5, 3;
+    marker-end: url("#arrowhead-tunnel");
+    opacity: 0.5;
 }
 
-/* Full detail (default) - no changes needed, but class is for consistency */
-.lod-full {
-    /* All elements are visible by default */
+#arrowhead-tunnel {
+    fill: #000;
 }
 
-/* Simple LOD: Hide node arguments/attributes */
-.lod-simple .node-argument-list {
-    display: none;
+.dark #arrowhead-tunnel {
+    fill: #ccc;
 }
 
-/* Rectangle LOD: Hide all text and internal content, show only border */
-.lod-rect .node-item-type,
-.lod-rect .node-argument-list,
-.lod-rect text {
-    display: none !important; /* Use important to override other styles if necessary */
+/* ── Node block (subgraph container) ──────────────────────────────────────── */
+.node-block > rect {
+    fill: none;
+    stroke: #aaa;
+    stroke-width: 1px;
+    stroke-dasharray: 4, 2;
 }
 
-/* Point LOD: Hide everything except the point representation */
-.lod-point .node-border,
-.lod-point .node-item,
-.lod-point .node-argument-list {
-    display: none !important;
+.node-block .edge-path {
+    stroke: #aaa;
+    fill: none;
 }
 
-.lod-point .node-lod-point {
-    display: block;
+.node-block .select.edge-path {
+    stroke: #000;
 }
 
-/* Dark theme adjustments for LOD */
-@media (prefers-color-scheme: dark) {
-    .node-lod-point {
-        fill: #aaaaaa;
-    }
+.dark .node-block > rect {
+    stroke: #555;
+}
+
+.dark .edge-path-tunnel {
+    stroke: #888;
 }
 
 /* ── Dtype-based node header coloring ─────────────────────────────────────── */
