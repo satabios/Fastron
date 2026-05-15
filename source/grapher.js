@@ -943,7 +943,7 @@ grapher.Graph = class {
                 nodes = message.nodes;
                 edges = message.edges;
             } catch {
-                if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold) {
                     this._fastLayout(nodes, edges, rotate, layout);
                 } else {
                     const dagre = await import('./dagre.js');
@@ -966,9 +966,8 @@ grapher.Graph = class {
                     edges = message.edges;
                     state.log = message.state.log;
                 } catch {
-                    // Preserve responsiveness when the worker is unavailable or
-                    // Dagre fails on graphs large enough to threaten interactivity.
-                    if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                    // Worker unavailable: fall back using same threshold as the no-worker path.
+                    if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold) {
                         this._fastLayout(nodes, edges, rotate, layout);
                     } else {
                         const dagre = await import('./dagre.js');
