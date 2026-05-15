@@ -947,12 +947,34 @@ view.View = class {
         this._updateDtypeLegend(this.activeTarget);
         // restore() may have computed zoom/centering while the container was still hidden
         // (opacity:0), so clientHeight/clientWidth could be zero or stale at that point.
+        // If restore() flagged _needsZoomFit the container was hidden; recompute the
+        // auto-fit zoom now that show() has made the container visible.
         if (this._target) {
             const target = this._target;
             requestAnimationFrame(() => {
-                if (target === this._target) {
-                    target._updateZoom(target._zoom);
+                if (target !== this._target) {
+                    return;
                 }
+                if (target._needsZoomFit) {
+                    target._needsZoomFit = false;
+                    const container = target._containerElement;
+                    const cw = container.clientWidth;
+                    const ch = container.clientHeight;
+                    if (cw > 0 && ch > 0) {
+                        const w = target._width;
+                        const h = target._height;
+                        const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
+                        target._zoom = zoom;
+                        target._updateZoom(zoom);
+                        container.scrollTo({
+                            left: Math.max(0, (zoom * w - cw) / 2),
+                            top: Math.max(0, (zoom * h - ch) / 2),
+                            behavior: 'auto'
+                        });
+                        return;
+                    }
+                }
+                target._updateZoom(target._zoom);
             });
         }
         const path = this._element('toolbar-path');
@@ -2562,6 +2584,9 @@ view.Graph = class extends grapher.Graph {
         const container = this._containerElement;
         // Auto-fit zoom on fresh load: if graph is larger than the viewport, scale down so
         // the whole graph is visible at once. Cap at zoom=1 (never magnify on load).
+        // If the container is hidden (clientWidth=0) we defer the fit until the RAF after
+        // show() makes the container visible — flag _needsZoomFit for that deferred pass.
+        this._needsZoomFit = false;
         const autoFitZoom = (() => {
             if (state) {
                 return state.zoom;
@@ -2572,6 +2597,7 @@ view.Graph = class extends grapher.Graph {
                 const fit = Math.min(cw / width, ch / height) * 0.92;
                 return Math.min(1, Math.max(0.15, fit));
             }
+            this._needsZoomFit = true;
             return 1;
         })();
         this._zoom = autoFitZoom;
