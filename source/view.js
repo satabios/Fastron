@@ -951,16 +951,19 @@ view.View = class {
         // auto-fit zoom now that show() has made the container visible.
         if (this._target) {
             const target = this._target;
-            requestAnimationFrame(() => {
+            // RAF_B: apply deferred zoom fit once container is visible.
+            // _needsZoomFit stays true until successfully applied so that
+            // refreshViewport (RAF_A) waits and uses the correct zoom.
+            const applyZoomFit = (retriesLeft) => {
                 if (target !== this._target) {
                     return;
                 }
                 if (target._needsZoomFit) {
-                    target._needsZoomFit = false;
                     const container = target._containerElement;
                     const cw = container.clientWidth;
                     const ch = container.clientHeight;
                     if (cw > 0 && ch > 0) {
+                        target._needsZoomFit = false;
                         const w = target._width;
                         const h = target._height;
                         const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
@@ -973,9 +976,15 @@ view.View = class {
                         });
                         return;
                     }
+                    if (retriesLeft > 0) {
+                        requestAnimationFrame(() => applyZoomFit(retriesLeft - 1));
+                        return;
+                    }
+                    target._needsZoomFit = false;
                 }
                 target._updateZoom(target._zoom);
-            });
+            };
+            requestAnimationFrame(() => applyZoomFit(3));
         }
         const path = this._element('toolbar-path');
         const back = this._element('toolbar-path-back-button');
@@ -2760,7 +2769,14 @@ view.Graph = class extends grapher.Graph {
 
             // Force an initial visible-time pass after registration to avoid
             // a blank graph when early culling updates happened during loading.
+            // If _needsZoomFit is still set (restore() ran while container was hidden,
+            // RAF_B hasn't applied the correct zoom yet) wait before querying viewport
+            // so the first _onViewportChange uses the right zoom and scroll position.
             const refreshViewport = (attempt = 0) => {
+                if (this._needsZoomFit && attempt < 8) {
+                    setTimeout(() => refreshViewport(attempt + 1), 20);
+                    return;
+                }
                 const viewport = this._getViewportBounds();
                 if ((viewport.width <= 0 || viewport.height <= 0) && attempt < 4) {
                     setTimeout(() => refreshViewport(attempt + 1), 50);
