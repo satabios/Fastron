@@ -2674,6 +2674,53 @@ view.Graph = class extends grapher.Graph {
 
     register() {
         if (!this._events) {
+            // Container is now visible (show('default') was just called).
+            // If restore() set _needsZoomFit because clientWidth was 0 at layout time,
+            // apply the correct zoom + scroll SYNCHRONOUSLY here, before the
+            // refreshViewport RAF below fires.  This guarantees RAF_A uses the right
+            // zoom so the correct graph region is materialized on the very first frame.
+            if (this._needsZoomFit) {
+                this._needsZoomFit = false;
+                const container = this._containerElement;
+                const cw = container.clientWidth;
+                const ch = container.clientHeight;
+                if (cw > 0 && ch > 0) {
+                    const w = this._width;
+                    const h = this._height;
+                    const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
+                    this._zoom = zoom;
+                    this._updateZoom(zoom);
+                    // Re-apply scroll: scroll to input nodes if available, else center.
+                    // restore() already attempted this but the container was hidden so
+                    // the scrollTo() had no effect.
+                    const inputNodes = this._inputNodes;
+                    let scrolled = false;
+                    if (Array.isArray(inputNodes) && inputNodes.length > 0) {
+                        let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
+                        for (const node of inputNodes) {
+                            if (typeof node.x === 'number' && typeof node.y === 'number') {
+                                const hw = (node.width || 0) / 2;
+                                const hh = (node.height || 0) / 2;
+                                l = Math.min(l, node.x - hw);
+                                r = Math.max(r, node.x + hw);
+                                t = Math.min(t, node.y - hh);
+                                b = Math.max(b, node.y + hh);
+                            }
+                        }
+                        if (isFinite(l)) {
+                            this._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
+                            scrolled = true;
+                        }
+                    }
+                    if (!scrolled) {
+                        container.scrollTo({
+                            left: Math.max(0, (zoom * w - cw) / 2),
+                            top: Math.max(0, (zoom * h - ch) / 2),
+                            behavior: 'auto'
+                        });
+                    }
+                }
+            }
             this._events = {};
             this._events.scroll = (e) => this._scrollHandler(e);
             this._events.wheel = (e) => this._wheelHandler(e);
