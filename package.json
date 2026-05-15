@@ -1,57 +1,57 @@
 {
-    "name": "fastron",
-    "productName": "Fastron",
-    "author": {
-        "name": "satabios",
-        "email": "satabios@users.noreply.github.com",
-        "url": "https://www.satabios.com"
-    },
-    "version": "2026.5.17",
-    "date": "2026-05-14 05:47:06",
-    "description": "Visualizer for neural network, deep learning, and machine learning models",
-    "license": "MIT",
-    "repository": "satabios/netron",
-    "type": "module",
-    "main": "source/app.js",
-    "scripts": {
-        "start": "node package.js start",
-        "server": "python package.py build start",
-        "clean": "node package.js clean",
-        "install": "node package.js install",
-        "lint": "node package.js lint",
-        "build": "node package.js build",
-        "publish": "node package.js publish",
-        "version": "node package.js version",
-        "version:date": "node package.js sync-version",
-        "test": "node package.js test",
-        "validate": "node package.js validate",
-        "coverage": "node package.js coverage",
-        "analyze": "node package.js analyze",
-        "update": "node package.js update",
-        "pull": "node package.js pull",
-        "slim-metadata": "node tools/slim-metadata.mjs"
-    },
-    "dependencies": {
-        "electron-updater": "6.6.8",
-        "elkjs": "0.11.1"
-    },
-    "devDependencies": {
-        "@electron/notarize": "3.1.1",
-        "@electron/rebuild": "4.0.4",
-        "@playwright/test": "1.57.0",
-        "electron": "39.2.7",
-        "electron-builder": "26.0.20",
-        "eslint": "9.39.2"
-    },
-    "build": {
-        "extends": "publish/electron-builder.json"
-    },
-    "nyc": {
-        "reporter": [
-            "lcov",
-            "html"
-        ],
-        "report-dir": "dist/nyc/report",
-        "temp-dir": "dist/nyc/.nyc_output"
-    }
+  "name": "fastron",
+  "productName": "Fastron",
+  "author": {
+    "name": "satabios",
+    "email": "satabios@users.noreply.github.com",
+    "url": "https://www.satabios.com"
+  },
+  "version": "2026.5.18",
+  "date": "2026-05-14 05:47:06",
+  "description": "Visualizer for neural network, deep learning, and machine learning models",
+  "license": "MIT",
+  "repository": "satabios/netron",
+  "type": "module",
+  "main": "source/app.js",
+  "scripts": {
+    "start": "node package.js start",
+    "server": "python package.py build start",
+    "clean": "node package.js clean",
+    "install": "node package.js install",
+    "lint": "node package.js lint",
+    "build": "node package.js build",
+    "publish": "node package.js publish",
+    "version": "node package.js version",
+    "version:date": "node package.js sync-version",
+    "test": "node package.js test",
+    "validate": "node package.js validate",
+    "coverage": "node package.js coverage",
+    "analyze": "node package.js analyze",
+    "update": "node package.js update",
+    "pull": "node package.js pull",
+    "slim-metadata": "node tools/slim-metadata.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.6.8",
+    "elkjs": "0.11.1"
+  },
+  "devDependencies": {
+    "@electron/notarize": "3.1.1",
+    "@electron/rebuild": "4.0.4",
+    "@playwright/test": "1.57.0",
+    "electron": "39.2.7",
+    "electron-builder": "26.0.20",
+    "eslint": "9.39.2"
+  },
+  "build": {
+    "extends": "publish/electron-builder.json"
+  },
+  "nyc": {
+    "reporter": [
+      "lcov",
+      "html"
+    ],
+    "report-dir": "dist/nyc/report",
+    "temp-dir": "dist/nyc/.nyc_output"
+  }
 }
