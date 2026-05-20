@@ -306,377 +306,408 @@
 /* ── Dtype-based node header coloring ─────────────────────────────────────── */
 /*
  * CSS class pattern: .node-item-type.node-dtype-{weight}-{activation}
- * 2-class specificity overrides single-class category rules.
  *
- * Palette: light mode = pastel bg + dark text
- *          dark mode  = saturated dark bg + light text
+ * Colors follow VIBGYOR (Violet → Red = highest → lowest precision):
+ *   Violet  (272°) FP32
+ *   Indigo  (244°) FP16    +  INT64/INT32 nearby
+ *   Blue    (226°) BF16
+ *   sCyan   (205°) FP8     +  INT16 (178°)
+ *   Green   (148°) INT8    +  UINT8 (118°)
+ *   Yellow  ( 58°) INT4    +  UINT4 (38°)
+ *   Orange  ( 18°) INT2
+ *   Red     (  4°) INT1
+ *
+ * Uniform-precision:  base VIBGYOR hue, s=65%, l=86% (light) / s=60%, l=25% (dark)
+ * Mixed-precision:    weighted blend of weight+activation hues, slightly desaturated
  */
 
 /* ── Uniform-precision ────────────────────────────────────────────────────── */
-.node-item-type.node-dtype-fp32-fp32 path  { fill: #b8d4f0; }
-.node-item-type.node-dtype-fp32-fp32 text  { fill: #152740; }
-.node-item-type.node-dtype-fp32-fp32:hover path { fill: #d6e9fb; }
+.node-item-type.node-dtype-fp32-fp32 path  { fill: #ddc4f3; }
+.node-item-type.node-dtype-fp32-fp32 text  { fill: #2b064b; }
+.node-item-type.node-dtype-fp32-fp32:hover path { fill: #e9dbf5; }
 .node-item-type.node-dtype-fp32-fp32:hover text { fill: #000; }
 
-.node-item-type.node-dtype-fp16-fp16 path  { fill: #a8e4f0; }
-.node-item-type.node-dtype-fp16-fp16 text  { fill: #0d3040; }
-.node-item-type.node-dtype-fp16-fp16:hover path { fill: #cdf2fb; }
+.node-item-type.node-dtype-fp16-fp16 path  { fill: #c7c4f3; }
+.node-item-type.node-dtype-fp16-fp16 text  { fill: #0b064b; }
+.node-item-type.node-dtype-fp16-fp16:hover path { fill: #dddbf5; }
 .node-item-type.node-dtype-fp16-fp16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-bf16-bf16 path  { fill: #a8f0d8; }
-.node-item-type.node-dtype-bf16-bf16 text  { fill: #0d3028; }
-.node-item-type.node-dtype-bf16-bf16:hover path { fill: #ccfbec; }
+.node-item-type.node-dtype-bf16-bf16 path  { fill: #c4cff3; }
+.node-item-type.node-dtype-bf16-bf16 text  { fill: #06164b; }
+.node-item-type.node-dtype-bf16-bf16:hover path { fill: #dbe1f5; }
 .node-item-type.node-dtype-bf16-bf16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-fp8-fp8   path  { fill: #b0f0c0; }
-.node-item-type.node-dtype-fp8-fp8   text  { fill: #0d3018; }
-.node-item-type.node-dtype-fp8-fp8:hover path  { fill: #d0fada; }
-.node-item-type.node-dtype-fp8-fp8:hover text  { fill: #000; }
+.node-item-type.node-dtype-fp8-fp8 path  { fill: #c4dff3; }
+.node-item-type.node-dtype-fp8-fp8 text  { fill: #062f4b; }
+.node-item-type.node-dtype-fp8-fp8:hover path { fill: #dbeaf5; }
+.node-item-type.node-dtype-fp8-fp8:hover text { fill: #000; }
 
-.node-item-type.node-dtype-int8-int8 path  { fill: #f0d8b0; }
-.node-item-type.node-dtype-int8-int8 text  { fill: #3a2000; }
-.node-item-type.node-dtype-int8-int8:hover path { fill: #fbecd4; }
-.node-item-type.node-dtype-int8-int8:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-int4 path  { fill: #f0c8a0; }
-.node-item-type.node-dtype-int4-int4 text  { fill: #3a1800; }
-.node-item-type.node-dtype-int4-int4:hover path { fill: #fbdfc4; }
-.node-item-type.node-dtype-int4-int4:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int16-int16 path { fill: #f0eeb0; }
-.node-item-type.node-dtype-int16-int16 text { fill: #302e00; }
-.node-item-type.node-dtype-int16-int16:hover path { fill: #fbfad4; }
-.node-item-type.node-dtype-int16-int16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int32-int32 path { fill: #d8c8f0; }
-.node-item-type.node-dtype-int32-int32 text { fill: #200d40; }
-.node-item-type.node-dtype-int32-int32:hover path { fill: #ecdffb; }
-.node-item-type.node-dtype-int32-int32:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int64-int64 path { fill: #c8b8f0; }
-.node-item-type.node-dtype-int64-int64 text { fill: #180d40; }
-.node-item-type.node-dtype-int64-int64:hover path { fill: #ddd4fb; }
+.node-item-type.node-dtype-int64-int64 path  { fill: #d6c4f3; }
+.node-item-type.node-dtype-int64-int64 text  { fill: #21064b; }
+.node-item-type.node-dtype-int64-int64:hover path { fill: #e5dbf5; }
 .node-item-type.node-dtype-int64-int64:hover text { fill: #000; }
 
-.node-item-type.node-dtype-uint8-uint8 path { fill: #d0e8b0; }
-.node-item-type.node-dtype-uint8-uint8 text { fill: #1a3000; }
-.node-item-type.node-dtype-uint8-uint8:hover path { fill: #e6f5d0; }
+.node-item-type.node-dtype-int32-int32 path  { fill: #cfc4f3; }
+.node-item-type.node-dtype-int32-int32 text  { fill: #16064b; }
+.node-item-type.node-dtype-int32-int32:hover path { fill: #e1dbf5; }
+.node-item-type.node-dtype-int32-int32:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int16-int16 path  { fill: #c4f3f1; }
+.node-item-type.node-dtype-int16-int16 text  { fill: #064b49; }
+.node-item-type.node-dtype-int16-int16:hover path { fill: #dbf5f4; }
+.node-item-type.node-dtype-int16-int16:hover text { fill: #000; }
+
+.node-item-type.node-dtype-int8-int8 path  { fill: #c4f3da; }
+.node-item-type.node-dtype-int8-int8 text  { fill: #064b26; }
+.node-item-type.node-dtype-int8-int8:hover path { fill: #dbf5e7; }
+.node-item-type.node-dtype-int8-int8:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint8-uint8 path  { fill: #c6f3c4; }
+.node-item-type.node-dtype-uint8-uint8 text  { fill: #084b06; }
+.node-item-type.node-dtype-uint8-uint8:hover path { fill: #dcf5db; }
 .node-item-type.node-dtype-uint8-uint8:hover text { fill: #000; }
 
-.node-item-type.node-dtype-uint4-uint4 path { fill: #f0c8d8; }
-.node-item-type.node-dtype-uint4-uint4 text { fill: #3a0018; }
-.node-item-type.node-dtype-uint4-uint4:hover path { fill: #fbdcec; }
+.node-item-type.node-dtype-int4-int4 path  { fill: #f3f1c4; }
+.node-item-type.node-dtype-int4-int4 text  { fill: #4b4906; }
+.node-item-type.node-dtype-int4-int4:hover path { fill: #f5f4db; }
+.node-item-type.node-dtype-int4-int4:hover text { fill: #000; }
+
+.node-item-type.node-dtype-uint4-uint4 path  { fill: #f3e1c4; }
+.node-item-type.node-dtype-uint4-uint4 text  { fill: #4b3206; }
+.node-item-type.node-dtype-uint4-uint4:hover path { fill: #f5ebdb; }
 .node-item-type.node-dtype-uint4-uint4:hover text { fill: #000; }
 
-/* ── Mixed-precision (weight → activation) ───────────────────────────────── */
-.node-item-type.node-dtype-fp32-fp16 path  { fill: #b0e0f0; }
-.node-item-type.node-dtype-fp32-fp16 text  { fill: #0d2838; }
-.node-item-type.node-dtype-fp32-fp16:hover path { fill: #ccf0fb; }
+/* ── Mixed-precision (weight → activation) ─────────────────────────────────── */
+/* W=FP32, A=FP16 */
+.node-item-type.node-dtype-fp32-fp16 path  { fill: #ded4f2; }
+.node-item-type.node-dtype-fp32-fp16 text  { fill: #1d064b; }
+.node-item-type.node-dtype-fp32-fp16:hover path { fill: #ede9f6; }
 .node-item-type.node-dtype-fp32-fp16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-fp32-bf16 path  { fill: #b0f0e4; }
-.node-item-type.node-dtype-fp32-bf16 text  { fill: #0d3028; }
-.node-item-type.node-dtype-fp32-bf16:hover path { fill: #ccfbf4; }
+/* W=FP32, A=BF16 */
+.node-item-type.node-dtype-fp32-bf16 path  { fill: #dad4f2; }
+.node-item-type.node-dtype-fp32-bf16 text  { fill: #13064b; }
+.node-item-type.node-dtype-fp32-bf16:hover path { fill: #ece9f6; }
 .node-item-type.node-dtype-fp32-bf16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-fp32-int8 path  { fill: #c8e8c0; }
-.node-item-type.node-dtype-fp32-int8 text  { fill: #0d2800; }
-.node-item-type.node-dtype-fp32-int8:hover path { fill: #def5d8; }
-.node-item-type.node-dtype-fp32-int8:hover text { fill: #000; }
-
-.node-item-type.node-dtype-fp16-fp32 path  { fill: #c0dcf0; }
-.node-item-type.node-dtype-fp16-fp32 text  { fill: #152740; }
-.node-item-type.node-dtype-fp16-fp32:hover path { fill: #d8edfb; }
+/* W=FP16, A=FP32 */
+.node-item-type.node-dtype-fp16-fp32 path  { fill: #dcd4f2; }
+.node-item-type.node-dtype-fp16-fp32 text  { fill: #19064b; }
+.node-item-type.node-dtype-fp16-fp32:hover path { fill: #ede9f6; }
 .node-item-type.node-dtype-fp16-fp32:hover text { fill: #000; }
 
-.node-item-type.node-dtype-bf16-fp32 path  { fill: #c4f0dc; }
-.node-item-type.node-dtype-bf16-fp32 text  { fill: #0d3020; }
-.node-item-type.node-dtype-bf16-fp32:hover path { fill: #d8fbec; }
+/* W=BF16, A=FP32 */
+.node-item-type.node-dtype-bf16-fp32 path  { fill: #d8d4f2; }
+.node-item-type.node-dtype-bf16-fp32 text  { fill: #0e064b; }
+.node-item-type.node-dtype-bf16-fp32:hover path { fill: #ebe9f6; }
 .node-item-type.node-dtype-bf16-fp32:hover text { fill: #000; }
 
-.node-item-type.node-dtype-bf16-fp16 path  { fill: #a8f0e8; }
-.node-item-type.node-dtype-bf16-fp16 text  { fill: #0d3030; }
-.node-item-type.node-dtype-bf16-fp16:hover path { fill: #ccfbf6; }
+/* W=BF16, A=FP16 */
+.node-item-type.node-dtype-bf16-fp16 path  { fill: #d4d7f2; }
+.node-item-type.node-dtype-bf16-fp16 text  { fill: #060d4b; }
+.node-item-type.node-dtype-bf16-fp16:hover path { fill: #e9ebf6; }
 .node-item-type.node-dtype-bf16-fp16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-int8-fp32 path  { fill: #d0e4f8; }
-.node-item-type.node-dtype-int8-fp32 text  { fill: #152030; }
-.node-item-type.node-dtype-int8-fp32:hover path { fill: #e4f0fb; }
-.node-item-type.node-dtype-int8-fp32:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int8-fp16 path  { fill: #c8e8f8; }
-.node-item-type.node-dtype-int8-fp16 text  { fill: #0d2030; }
-.node-item-type.node-dtype-int8-fp16:hover path { fill: #dcf2fb; }
-.node-item-type.node-dtype-int8-fp16:hover text { fill: #000; }
-
-/* W8A16: int8 weight + int16 activation — amber family, lighter than W8A8 */
-.node-item-type.node-dtype-int8-int16 path { fill: #e8dcb0; }
-.node-item-type.node-dtype-int8-int16 text { fill: #2e2000; }
-.node-item-type.node-dtype-int8-int16:hover path { fill: #f5ecd0; }
-.node-item-type.node-dtype-int8-int16:hover text { fill: #000; }
-
-/* W4A16: int4 weight + int16 activation — amber-orange, between W8A16 and W4A4 */
-.node-item-type.node-dtype-int4-int16 path { fill: #e8cca0; }
-.node-item-type.node-dtype-int4-int16 text { fill: #2e1800; }
-.node-item-type.node-dtype-int4-int16:hover path { fill: #f5dfbc; }
-.node-item-type.node-dtype-int4-int16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-fp32 path  { fill: #f8d0d8; }
-.node-item-type.node-dtype-int4-fp32 text  { fill: #3a0810; }
-.node-item-type.node-dtype-int4-fp32:hover path { fill: #fbe4ea; }
-.node-item-type.node-dtype-int4-fp32:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-fp16 path  { fill: #f8e0c8; }
-.node-item-type.node-dtype-int4-fp16 text  { fill: #3a1800; }
-.node-item-type.node-dtype-int4-fp16:hover path { fill: #fbecda; }
-.node-item-type.node-dtype-int4-fp16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-bf16 path  { fill: #f8e8c8; }
-.node-item-type.node-dtype-int4-bf16 text  { fill: #382000; }
-.node-item-type.node-dtype-int4-bf16:hover path { fill: #fbf2dc; }
-.node-item-type.node-dtype-int4-bf16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int4-int8 path  { fill: #f8eec0; }
-.node-item-type.node-dtype-int4-int8 text  { fill: #382800; }
-.node-item-type.node-dtype-int4-int8:hover path { fill: #fbf5d8; }
-.node-item-type.node-dtype-int4-int8:hover text { fill: #000; }
-
-.node-item-type.node-dtype-fp8-fp32 path   { fill: #c8f0d0; }
-.node-item-type.node-dtype-fp8-fp32 text   { fill: #0d2c14; }
-.node-item-type.node-dtype-fp8-fp32:hover path  { fill: #ddfae4; }
-.node-item-type.node-dtype-fp8-fp32:hover text  { fill: #000; }
-
-.node-item-type.node-dtype-fp8-fp16 path   { fill: #b8f0d8; }
-.node-item-type.node-dtype-fp8-fp16 text   { fill: #0d2c20; }
-.node-item-type.node-dtype-fp8-fp16:hover path  { fill: #d0faeb; }
-.node-item-type.node-dtype-fp8-fp16:hover text  { fill: #000; }
-
-.node-item-type.node-dtype-uint8-fp32 path { fill: #d8f0c8; }
-.node-item-type.node-dtype-uint8-fp32 text { fill: #152800; }
-.node-item-type.node-dtype-uint8-fp32:hover path { fill: #eafade; }
-.node-item-type.node-dtype-uint8-fp32:hover text { fill: #000; }
-
-.node-item-type.node-dtype-uint8-fp16 path { fill: #c8ecf0; }
-.node-item-type.node-dtype-uint8-fp16 text { fill: #0d2830; }
-.node-item-type.node-dtype-uint8-fp16:hover path { fill: #ddf6fb; }
-.node-item-type.node-dtype-uint8-fp16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-uint8-bf16 path { fill: #b4f0cc; }
-.node-item-type.node-dtype-uint8-bf16 text { fill: #0d2c1a; }
-.node-item-type.node-dtype-uint8-bf16:hover path { fill: #cdfade; }
-.node-item-type.node-dtype-uint8-bf16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-int8-bf16 path  { fill: #bce8dc; }
-.node-item-type.node-dtype-int8-bf16 text  { fill: #0d2c24; }
-.node-item-type.node-dtype-int8-bf16:hover path { fill: #d4f4ec; }
-.node-item-type.node-dtype-int8-bf16:hover text { fill: #000; }
-
-.node-item-type.node-dtype-fp8-bf16 path   { fill: #a4f2e8; }
-.node-item-type.node-dtype-fp8-bf16 text   { fill: #0d2c28; }
-.node-item-type.node-dtype-fp8-bf16:hover path  { fill: #c4fbf4; }
-.node-item-type.node-dtype-fp8-bf16:hover text  { fill: #000; }
-
-.node-item-type.node-dtype-fp16-bf16 path  { fill: #a0eef0; }
-.node-item-type.node-dtype-fp16-bf16 text  { fill: #0d2c30; }
-.node-item-type.node-dtype-fp16-bf16:hover path { fill: #c0f8fb; }
+/* W=FP16, A=BF16 */
+.node-item-type.node-dtype-fp16-bf16 path  { fill: #d4d6f2; }
+.node-item-type.node-dtype-fp16-bf16 text  { fill: #060b4b; }
+.node-item-type.node-dtype-fp16-bf16:hover path { fill: #e9eaf6; }
 .node-item-type.node-dtype-fp16-bf16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-uint4-fp32 path { fill: #ccd8f0; }
-.node-item-type.node-dtype-uint4-fp32 text { fill: #1a1040; }
-.node-item-type.node-dtype-uint4-fp32:hover path { fill: #e0eafb; }
+/* W=FP8, A=FP32 */
+.node-item-type.node-dtype-fp8-fp32 path  { fill: #d4d7f2; }
+.node-item-type.node-dtype-fp8-fp32 text  { fill: #060c4b; }
+.node-item-type.node-dtype-fp8-fp32:hover path { fill: #e9eaf6; }
+.node-item-type.node-dtype-fp8-fp32:hover text { fill: #000; }
+
+/* W=FP8, A=FP16 */
+.node-item-type.node-dtype-fp8-fp16 path  { fill: #d4ddf2; }
+.node-item-type.node-dtype-fp8-fp16 text  { fill: #061a4b; }
+.node-item-type.node-dtype-fp8-fp16:hover path { fill: #e9edf6; }
+.node-item-type.node-dtype-fp8-fp16:hover text { fill: #000; }
+
+/* W=FP8, A=BF16 */
+.node-item-type.node-dtype-fp8-bf16 path  { fill: #d4e1f2; }
+.node-item-type.node-dtype-fp8-bf16 text  { fill: #06244b; }
+.node-item-type.node-dtype-fp8-bf16:hover path { fill: #e9eff6; }
+.node-item-type.node-dtype-fp8-bf16:hover text { fill: #000; }
+
+/* W=FP32, A=INT8 */
+.node-item-type.node-dtype-fp32-int8 path  { fill: #d4e0f2; }
+.node-item-type.node-dtype-fp32-int8 text  { fill: #06224b; }
+.node-item-type.node-dtype-fp32-int8:hover path { fill: #e9eef6; }
+.node-item-type.node-dtype-fp32-int8:hover text { fill: #000; }
+
+/* W=INT8, A=FP32 */
+.node-item-type.node-dtype-int8-fp32 path  { fill: #d4e6f2; }
+.node-item-type.node-dtype-int8-fp32 text  { fill: #06304b; }
+.node-item-type.node-dtype-int8-fp32:hover path { fill: #e9f1f6; }
+.node-item-type.node-dtype-int8-fp32:hover text { fill: #000; }
+
+/* W=INT8, A=FP16 */
+.node-item-type.node-dtype-int8-fp16 path  { fill: #d4ecf2; }
+.node-item-type.node-dtype-int8-fp16 text  { fill: #063f4b; }
+.node-item-type.node-dtype-int8-fp16:hover path { fill: #e9f4f6; }
+.node-item-type.node-dtype-int8-fp16:hover text { fill: #000; }
+
+/* W=INT8, A=BF16 */
+.node-item-type.node-dtype-int8-bf16 path  { fill: #d4f0f2; }
+.node-item-type.node-dtype-int8-bf16 text  { fill: #06484b; }
+.node-item-type.node-dtype-int8-bf16:hover path { fill: #e9f5f6; }
+.node-item-type.node-dtype-int8-bf16:hover text { fill: #000; }
+
+/* W=INT4, A=FP32 */
+.node-item-type.node-dtype-int4-fp32 path  { fill: #f2d4d8; }
+.node-item-type.node-dtype-int4-fp32 text  { fill: #4b060f; }
+.node-item-type.node-dtype-int4-fp32:hover path { fill: #f6e9eb; }
+.node-item-type.node-dtype-int4-fp32:hover text { fill: #000; }
+
+/* W=INT4, A=FP16 */
+.node-item-type.node-dtype-int4-fp16 path  { fill: #f2d4de; }
+.node-item-type.node-dtype-int4-fp16 text  { fill: #4b061e; }
+.node-item-type.node-dtype-int4-fp16:hover path { fill: #f6e9ee; }
+.node-item-type.node-dtype-int4-fp16:hover text { fill: #000; }
+
+/* W=INT4, A=BF16 */
+.node-item-type.node-dtype-int4-bf16 path  { fill: #d4f2db; }
+.node-item-type.node-dtype-int4-bf16 text  { fill: #064b16; }
+.node-item-type.node-dtype-int4-bf16:hover path { fill: #e9f6ec; }
+.node-item-type.node-dtype-int4-bf16:hover text { fill: #000; }
+
+/* W=UINT8, A=FP32 */
+.node-item-type.node-dtype-uint8-fp32 path  { fill: #d4eef2; }
+.node-item-type.node-dtype-uint8-fp32 text  { fill: #06434b; }
+.node-item-type.node-dtype-uint8-fp32:hover path { fill: #e9f5f6; }
+.node-item-type.node-dtype-uint8-fp32:hover text { fill: #000; }
+
+/* W=UINT8, A=FP16 */
+.node-item-type.node-dtype-uint8-fp16 path  { fill: #d4f2ef; }
+.node-item-type.node-dtype-uint8-fp16 text  { fill: #064b45; }
+.node-item-type.node-dtype-uint8-fp16:hover path { fill: #e9f6f5; }
+.node-item-type.node-dtype-uint8-fp16:hover text { fill: #000; }
+
+/* W=UINT8, A=BF16 */
+.node-item-type.node-dtype-uint8-bf16 path  { fill: #d4f2eb; }
+.node-item-type.node-dtype-uint8-bf16 text  { fill: #064b3c; }
+.node-item-type.node-dtype-uint8-bf16:hover path { fill: #e9f6f3; }
+.node-item-type.node-dtype-uint8-bf16:hover text { fill: #000; }
+
+/* W=UINT4, A=FP32 */
+.node-item-type.node-dtype-uint4-fp32 path  { fill: #f2d4dd; }
+.node-item-type.node-dtype-uint4-fp32 text  { fill: #4b061c; }
+.node-item-type.node-dtype-uint4-fp32:hover path { fill: #f6e9ed; }
 .node-item-type.node-dtype-uint4-fp32:hover text { fill: #000; }
 
-.node-item-type.node-dtype-uint4-fp16 path { fill: #d0dff8; }
-.node-item-type.node-dtype-uint4-fp16 text { fill: #18103a; }
-.node-item-type.node-dtype-uint4-fp16:hover path { fill: #e4edfb; }
+/* W=UINT4, A=FP16 */
+.node-item-type.node-dtype-uint4-fp16 path  { fill: #f2d4e4; }
+.node-item-type.node-dtype-uint4-fp16 text  { fill: #4b062a; }
+.node-item-type.node-dtype-uint4-fp16:hover path { fill: #f6e9f0; }
 .node-item-type.node-dtype-uint4-fp16:hover text { fill: #000; }
 
-.node-item-type.node-dtype-uint4-bf16 path { fill: #d4e8d4; }
-.node-item-type.node-dtype-uint4-bf16 text { fill: #18301a; }
-.node-item-type.node-dtype-uint4-bf16:hover path { fill: #e8f5e8; }
+/* W=UINT4, A=BF16 */
+.node-item-type.node-dtype-uint4-bf16 path  { fill: #f2d4e8; }
+.node-item-type.node-dtype-uint4-bf16 text  { fill: #4b0634; }
+.node-item-type.node-dtype-uint4-bf16:hover path { fill: #f6e9f2; }
 .node-item-type.node-dtype-uint4-bf16:hover text { fill: #000; }
+
+/* W=INT8, A=INT16 */
+.node-item-type.node-dtype-int8-int16 path  { fill: #d4f2e9; }
+.node-item-type.node-dtype-int8-int16 text  { fill: #064b36; }
+.node-item-type.node-dtype-int8-int16:hover path { fill: #e9f6f2; }
+.node-item-type.node-dtype-int8-int16:hover text { fill: #000; }
+
+/* W=INT4, A=INT16 */
+.node-item-type.node-dtype-int4-int16 path  { fill: #d8f2d4; }
+.node-item-type.node-dtype-int4-int16 text  { fill: #0f4b06; }
+.node-item-type.node-dtype-int4-int16:hover path { fill: #ebf6e9; }
+.node-item-type.node-dtype-int4-int16:hover text { fill: #000; }
+
+/* W=INT4, A=INT8 */
+.node-item-type.node-dtype-int4-int8 path  { fill: #dff2d4; }
+.node-item-type.node-dtype-int4-int8 text  { fill: #1f4b06; }
+.node-item-type.node-dtype-int4-int8:hover path { fill: #eef6e9; }
+.node-item-type.node-dtype-int4-int8:hover text { fill: #000; }
 
 /* ── Dark mode ────────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
-    .node-item-type.node-dtype-fp32-fp32 path  { fill: #1e4a7a; }
-    .node-item-type.node-dtype-fp32-fp32 text  { fill: #d0e8ff; }
-    .node-item-type.node-dtype-fp32-fp32:hover path { fill: #2a64a8; }
-    .node-item-type.node-dtype-fp32-fp32:hover text { fill: #e8f4ff; }
+    .node-item-type.node-dtype-fp32-fp32 path  { fill: #421966; }
+    .node-item-type.node-dtype-fp32-fp32 text  { fill: #d8b6f7; }
+    .node-item-type.node-dtype-fp32-fp32:hover path { fill: #5d248f; }
+    .node-item-type.node-dtype-fp32-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp16-fp16 path  { fill: #1a5060; }
-    .node-item-type.node-dtype-fp16-fp16 text  { fill: #c0f0ff; }
-    .node-item-type.node-dtype-fp16-fp16:hover path { fill: #256a80; }
-    .node-item-type.node-dtype-fp16-fp16:hover text { fill: #e0faff; }
+    .node-item-type.node-dtype-fp16-fp16 path  { fill: #1f1966; }
+    .node-item-type.node-dtype-fp16-fp16 text  { fill: #bab6f7; }
+    .node-item-type.node-dtype-fp16-fp16:hover path { fill: #2b248f; }
+    .node-item-type.node-dtype-fp16-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-bf16-bf16 path  { fill: #1a5040; }
-    .node-item-type.node-dtype-bf16-bf16 text  { fill: #c0fae8; }
-    .node-item-type.node-dtype-bf16-bf16:hover path { fill: #256a55; }
-    .node-item-type.node-dtype-bf16-bf16:hover text { fill: #e0fdf2; }
+    .node-item-type.node-dtype-bf16-bf16 path  { fill: #192b66; }
+    .node-item-type.node-dtype-bf16-bf16 text  { fill: #b6c5f7; }
+    .node-item-type.node-dtype-bf16-bf16:hover path { fill: #243d8f; }
+    .node-item-type.node-dtype-bf16-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp8-fp8   path  { fill: #1a5028; }
-    .node-item-type.node-dtype-fp8-fp8   text  { fill: #b8fac8; }
-    .node-item-type.node-dtype-fp8-fp8:hover path  { fill: #256a35; }
-    .node-item-type.node-dtype-fp8-fp8:hover text  { fill: #d8fde0; }
+    .node-item-type.node-dtype-fp8-fp8 path  { fill: #194666; }
+    .node-item-type.node-dtype-fp8-fp8 text  { fill: #b6dcf7; }
+    .node-item-type.node-dtype-fp8-fp8:hover path { fill: #24628f; }
+    .node-item-type.node-dtype-fp8-fp8:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int8-int8 path  { fill: #604018; }
-    .node-item-type.node-dtype-int8-int8 text  { fill: #ffe4b0; }
-    .node-item-type.node-dtype-int8-int8:hover path { fill: #805520; }
-    .node-item-type.node-dtype-int8-int8:hover text { fill: #fff2d0; }
+    .node-item-type.node-dtype-int64-int64 path  { fill: #371966; }
+    .node-item-type.node-dtype-int64-int64 text  { fill: #cfb6f7; }
+    .node-item-type.node-dtype-int64-int64:hover path { fill: #4d248f; }
+    .node-item-type.node-dtype-int64-int64:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int4-int4 path  { fill: #603010; }
-    .node-item-type.node-dtype-int4-int4 text  { fill: #ffd8a0; }
-    .node-item-type.node-dtype-int4-int4:hover path { fill: #804018; }
-    .node-item-type.node-dtype-int4-int4:hover text { fill: #ffecc8; }
+    .node-item-type.node-dtype-int32-int32 path  { fill: #2b1966; }
+    .node-item-type.node-dtype-int32-int32 text  { fill: #c5b6f7; }
+    .node-item-type.node-dtype-int32-int32:hover path { fill: #3d248f; }
+    .node-item-type.node-dtype-int32-int32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int16-int16 path { fill: #504c18; }
-    .node-item-type.node-dtype-int16-int16 text { fill: #faf8b0; }
-    .node-item-type.node-dtype-int16-int16:hover path { fill: #6a6620; }
-    .node-item-type.node-dtype-int16-int16:hover text { fill: #fdfcd0; }
+    .node-item-type.node-dtype-int16-int16 path  { fill: #196663; }
+    .node-item-type.node-dtype-int16-int16 text  { fill: #b6f7f5; }
+    .node-item-type.node-dtype-int16-int16:hover path { fill: #248f8b; }
+    .node-item-type.node-dtype-int16-int16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int32-int32 path { fill: #402870; }
-    .node-item-type.node-dtype-int32-int32 text { fill: #dcc8ff; }
-    .node-item-type.node-dtype-int32-int32:hover path { fill: #553592; }
-    .node-item-type.node-dtype-int32-int32:hover text { fill: #eedfff; }
+    .node-item-type.node-dtype-int8-int8 path  { fill: #19663d; }
+    .node-item-type.node-dtype-int8-int8 text  { fill: #b6f7d4; }
+    .node-item-type.node-dtype-int8-int8:hover path { fill: #248f56; }
+    .node-item-type.node-dtype-int8-int8:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int64-int64 path { fill: #301a60; }
-    .node-item-type.node-dtype-int64-int64 text { fill: #ccc0ff; }
-    .node-item-type.node-dtype-int64-int64:hover path { fill: #402280; }
-    .node-item-type.node-dtype-int64-int64:hover text { fill: #e4deff; }
+    .node-item-type.node-dtype-uint8-uint8 path  { fill: #1c6619; }
+    .node-item-type.node-dtype-uint8-uint8 text  { fill: #b8f7b6; }
+    .node-item-type.node-dtype-uint8-uint8:hover path { fill: #278f24; }
+    .node-item-type.node-dtype-uint8-uint8:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint8-uint8 path { fill: #283c18; }
-    .node-item-type.node-dtype-uint8-uint8 text { fill: #cce8a0; }
-    .node-item-type.node-dtype-uint8-uint8:hover path { fill: #355020; }
-    .node-item-type.node-dtype-uint8-uint8:hover text { fill: #e4f5c8; }
+    .node-item-type.node-dtype-int4-int4 path  { fill: #666319; }
+    .node-item-type.node-dtype-int4-int4 text  { fill: #f7f5b6; }
+    .node-item-type.node-dtype-int4-int4:hover path { fill: #8f8b24; }
+    .node-item-type.node-dtype-int4-int4:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint4-uint4 path { fill: #5a1830; }
-    .node-item-type.node-dtype-uint4-uint4 text { fill: #f8c0d8; }
-    .node-item-type.node-dtype-uint4-uint4:hover path { fill: #782040; }
-    .node-item-type.node-dtype-uint4-uint4:hover text { fill: #fbd8e8; }
+    .node-item-type.node-dtype-uint4-uint4 path  { fill: #664a19; }
+    .node-item-type.node-dtype-uint4-uint4 text  { fill: #f7dfb6; }
+    .node-item-type.node-dtype-uint4-uint4:hover path { fill: #8f6824; }
+    .node-item-type.node-dtype-uint4-uint4:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp32-fp16 path  { fill: #1a4858; }
-    .node-item-type.node-dtype-fp32-fp16 text  { fill: #b0e8ff; }
-    .node-item-type.node-dtype-fp32-fp16:hover path { fill: #256275; }
-    .node-item-type.node-dtype-fp32-fp16:hover text { fill: #d0f4ff; }
+    .node-item-type.node-dtype-fp32-fp16 path  { fill: #2e1c54; }
+    .node-item-type.node-dtype-fp32-fp16 text  { fill: #cbb6f7; }
+    .node-item-type.node-dtype-fp32-fp16:hover path { fill: #43297a; }
+    .node-item-type.node-dtype-fp32-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp32-bf16 path  { fill: #1a5050; }
-    .node-item-type.node-dtype-fp32-bf16 text  { fill: #b0faf0; }
-    .node-item-type.node-dtype-fp32-bf16:hover path { fill: #256a6a; }
-    .node-item-type.node-dtype-fp32-bf16:hover text { fill: #d0fef8; }
+    .node-item-type.node-dtype-fp32-bf16 path  { fill: #271c54; }
+    .node-item-type.node-dtype-fp32-bf16 text  { fill: #c2b6f7; }
+    .node-item-type.node-dtype-fp32-bf16:hover path { fill: #38297a; }
+    .node-item-type.node-dtype-fp32-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp32-int8 path  { fill: #284820; }
-    .node-item-type.node-dtype-fp32-int8 text  { fill: #c0f0b0; }
-    .node-item-type.node-dtype-fp32-int8:hover path { fill: #35602a; }
-    .node-item-type.node-dtype-fp32-int8:hover text { fill: #d8fad0; }
+    .node-item-type.node-dtype-fp16-fp32 path  { fill: #2c1c54; }
+    .node-item-type.node-dtype-fp16-fp32 text  { fill: #c8b6f7; }
+    .node-item-type.node-dtype-fp16-fp32:hover path { fill: #3f297a; }
+    .node-item-type.node-dtype-fp16-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp16-fp32 path  { fill: #204060; }
-    .node-item-type.node-dtype-fp16-fp32 text  { fill: #b8dcf8; }
-    .node-item-type.node-dtype-fp16-fp32:hover path { fill: #2a5580; }
-    .node-item-type.node-dtype-fp16-fp32:hover text { fill: #d0ecff; }
+    .node-item-type.node-dtype-bf16-fp32 path  { fill: #221c54; }
+    .node-item-type.node-dtype-bf16-fp32 text  { fill: #bdb6f7; }
+    .node-item-type.node-dtype-bf16-fp32:hover path { fill: #32297a; }
+    .node-item-type.node-dtype-bf16-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-bf16-fp32 path  { fill: #205040; }
-    .node-item-type.node-dtype-bf16-fp32 text  { fill: #b8f8dc; }
-    .node-item-type.node-dtype-bf16-fp32:hover path { fill: #2a6a55; }
-    .node-item-type.node-dtype-bf16-fp32:hover text { fill: #d0fced; }
+    .node-item-type.node-dtype-bf16-fp16 path  { fill: #1c2254; }
+    .node-item-type.node-dtype-bf16-fp16 text  { fill: #b6bcf7; }
+    .node-item-type.node-dtype-bf16-fp16:hover path { fill: #29317a; }
+    .node-item-type.node-dtype-bf16-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-bf16-fp16 path  { fill: #1a5050; }
-    .node-item-type.node-dtype-bf16-fp16 text  { fill: #a8f8f0; }
-    .node-item-type.node-dtype-bf16-fp16:hover path { fill: #256a6a; }
-    .node-item-type.node-dtype-bf16-fp16:hover text { fill: #d0fdf8; }
+    .node-item-type.node-dtype-fp16-bf16 path  { fill: #1c2054; }
+    .node-item-type.node-dtype-fp16-bf16 text  { fill: #b6baf7; }
+    .node-item-type.node-dtype-fp16-bf16:hover path { fill: #292e7a; }
+    .node-item-type.node-dtype-fp16-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int8-fp32 path  { fill: #204058; }
-    .node-item-type.node-dtype-int8-fp32 text  { fill: #b8d8f8; }
-    .node-item-type.node-dtype-int8-fp32:hover path { fill: #2a5575; }
-    .node-item-type.node-dtype-int8-fp32:hover text { fill: #d0ecff; }
+    .node-item-type.node-dtype-fp8-fp32 path  { fill: #1c2154; }
+    .node-item-type.node-dtype-fp8-fp32 text  { fill: #b6bbf7; }
+    .node-item-type.node-dtype-fp8-fp32:hover path { fill: #292f7a; }
+    .node-item-type.node-dtype-fp8-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int8-fp16 path  { fill: #183a50; }
-    .node-item-type.node-dtype-int8-fp16 text  { fill: #a8d8f8; }
-    .node-item-type.node-dtype-int8-fp16:hover path { fill: #204e6a; }
-    .node-item-type.node-dtype-int8-fp16:hover text { fill: #c8ecff; }
+    .node-item-type.node-dtype-fp8-fp16 path  { fill: #1c2c54; }
+    .node-item-type.node-dtype-fp8-fp16 text  { fill: #b6c9f7; }
+    .node-item-type.node-dtype-fp8-fp16:hover path { fill: #29417a; }
+    .node-item-type.node-dtype-fp8-fp16:hover text { fill: #fff; }
 
-    /* W8A16: int8 weight + int16 activation — dark amber, distinct from W8A8 */
-    .node-item-type.node-dtype-int8-int16 path { fill: #5a4818; }
-    .node-item-type.node-dtype-int8-int16 text { fill: #f8eca8; }
-    .node-item-type.node-dtype-int8-int16:hover path { fill: #756020; }
-    .node-item-type.node-dtype-int8-int16:hover text { fill: #fbf5cc; }
+    .node-item-type.node-dtype-fp8-bf16 path  { fill: #1c3454; }
+    .node-item-type.node-dtype-fp8-bf16 text  { fill: #b6d1f7; }
+    .node-item-type.node-dtype-fp8-bf16:hover path { fill: #294c7a; }
+    .node-item-type.node-dtype-fp8-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int4-fp32 path  { fill: #60202a; }
-    .node-item-type.node-dtype-int4-fp32 text  { fill: #f8c0c8; }
-    .node-item-type.node-dtype-int4-fp32:hover path { fill: #802a38; }
-    .node-item-type.node-dtype-int4-fp32:hover text { fill: #fbd8de; }
+    .node-item-type.node-dtype-fp32-int8 path  { fill: #1c3254; }
+    .node-item-type.node-dtype-fp32-int8 text  { fill: #b6cff7; }
+    .node-item-type.node-dtype-fp32-int8:hover path { fill: #29497a; }
+    .node-item-type.node-dtype-fp32-int8:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int4-fp16 path  { fill: #602a18; }
-    .node-item-type.node-dtype-int4-fp16 text  { fill: #f8d8b8; }
-    .node-item-type.node-dtype-int4-fp16:hover path { fill: #803820; }
-    .node-item-type.node-dtype-int4-fp16:hover text { fill: #fbead0; }
+    .node-item-type.node-dtype-int8-fp32 path  { fill: #1c3e54; }
+    .node-item-type.node-dtype-int8-fp32 text  { fill: #b6ddf7; }
+    .node-item-type.node-dtype-int8-fp32:hover path { fill: #295a7a; }
+    .node-item-type.node-dtype-int8-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int4-bf16 path  { fill: #583018; }
-    .node-item-type.node-dtype-int4-bf16 text  { fill: #f8e0b8; }
-    .node-item-type.node-dtype-int4-bf16:hover path { fill: #754020; }
-    .node-item-type.node-dtype-int4-bf16:hover text { fill: #fbefd4; }
+    .node-item-type.node-dtype-int8-fp16 path  { fill: #1c4a54; }
+    .node-item-type.node-dtype-int8-fp16 text  { fill: #b6ebf7; }
+    .node-item-type.node-dtype-int8-fp16:hover path { fill: #296b7a; }
+    .node-item-type.node-dtype-int8-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int4-int8 path  { fill: #504008; }
-    .node-item-type.node-dtype-int4-int8 text  { fill: #f8f0a8; }
-    .node-item-type.node-dtype-int4-int8:hover path { fill: #6a5510; }
-    .node-item-type.node-dtype-int4-int8:hover text { fill: #fbf7cc; }
+    .node-item-type.node-dtype-int8-bf16 path  { fill: #1c5154; }
+    .node-item-type.node-dtype-int8-bf16 text  { fill: #b6f3f7; }
+    .node-item-type.node-dtype-int8-bf16:hover path { fill: #29767a; }
+    .node-item-type.node-dtype-int8-bf16:hover text { fill: #fff; }
 
-    /* W4A16: int4 weight + int16 activation — dark orange-amber */
-    .node-item-type.node-dtype-int4-int16 path { fill: #5a3818; }
-    .node-item-type.node-dtype-int4-int16 text { fill: #f8dca0; }
-    .node-item-type.node-dtype-int4-int16:hover path { fill: #754a20; }
-    .node-item-type.node-dtype-int4-int16:hover text { fill: #fbeccc; }
+    .node-item-type.node-dtype-int4-fp32 path  { fill: #541c23; }
+    .node-item-type.node-dtype-int4-fp32 text  { fill: #f7b6be; }
+    .node-item-type.node-dtype-int4-fp32:hover path { fill: #7a2933; }
+    .node-item-type.node-dtype-int4-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp8-fp32 path   { fill: #1e5030; }
-    .node-item-type.node-dtype-fp8-fp32 text   { fill: #b8f0c8; }
-    .node-item-type.node-dtype-fp8-fp32:hover path  { fill: #286a40; }
-    .node-item-type.node-dtype-fp8-fp32:hover text  { fill: #d8fae0; }
+    .node-item-type.node-dtype-int4-fp16 path  { fill: #541c2f; }
+    .node-item-type.node-dtype-int4-fp16 text  { fill: #f7b6cc; }
+    .node-item-type.node-dtype-int4-fp16:hover path { fill: #7a2944; }
+    .node-item-type.node-dtype-int4-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp8-fp16 path   { fill: #185040; }
-    .node-item-type.node-dtype-fp8-fp16 text   { fill: #a8f0d8; }
-    .node-item-type.node-dtype-fp8-fp16:hover path  { fill: #206a55; }
-    .node-item-type.node-dtype-fp8-fp16:hover text  { fill: #c8faed; }
+    .node-item-type.node-dtype-int4-bf16 path  { fill: #1c5429; }
+    .node-item-type.node-dtype-int4-bf16 text  { fill: #b6f7c4; }
+    .node-item-type.node-dtype-int4-bf16:hover path { fill: #297a3b; }
+    .node-item-type.node-dtype-int4-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint8-fp32 path { fill: #284830; }
-    .node-item-type.node-dtype-uint8-fp32 text { fill: #c0f0b8; }
-    .node-item-type.node-dtype-uint8-fp32:hover path { fill: #356240; }
-    .node-item-type.node-dtype-uint8-fp32:hover text { fill: #d8fad4; }
+    .node-item-type.node-dtype-uint8-fp32 path  { fill: #1c4d54; }
+    .node-item-type.node-dtype-uint8-fp32 text  { fill: #b6eff7; }
+    .node-item-type.node-dtype-uint8-fp32:hover path { fill: #29707a; }
+    .node-item-type.node-dtype-uint8-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint8-fp16 path { fill: #204850; }
-    .node-item-type.node-dtype-uint8-fp16 text { fill: #b8ecf8; }
-    .node-item-type.node-dtype-uint8-fp16:hover path { fill: #286268; }
-    .node-item-type.node-dtype-uint8-fp16:hover text { fill: #d0f6ff; }
+    .node-item-type.node-dtype-uint8-fp16 path  { fill: #1c544f; }
+    .node-item-type.node-dtype-uint8-fp16 text  { fill: #b6f7f1; }
+    .node-item-type.node-dtype-uint8-fp16:hover path { fill: #297a73; }
+    .node-item-type.node-dtype-uint8-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint8-bf16 path { fill: #1e4e36; }
-    .node-item-type.node-dtype-uint8-bf16 text { fill: #a8f0cc; }
-    .node-item-type.node-dtype-uint8-bf16:hover path { fill: #286848; }
-    .node-item-type.node-dtype-uint8-bf16:hover text { fill: #c8fae0; }
+    .node-item-type.node-dtype-uint8-bf16 path  { fill: #1c5448; }
+    .node-item-type.node-dtype-uint8-bf16 text  { fill: #b6f7e8; }
+    .node-item-type.node-dtype-uint8-bf16:hover path { fill: #297a68; }
+    .node-item-type.node-dtype-uint8-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-int8-bf16 path  { fill: #204840; }
-    .node-item-type.node-dtype-int8-bf16 text  { fill: #a8f0dc; }
-    .node-item-type.node-dtype-int8-bf16:hover path { fill: #286055; }
-    .node-item-type.node-dtype-int8-bf16:hover text { fill: #c8faed; }
+    .node-item-type.node-dtype-uint4-fp32 path  { fill: #541c2e; }
+    .node-item-type.node-dtype-uint4-fp32 text  { fill: #f7b6ca; }
+    .node-item-type.node-dtype-uint4-fp32:hover path { fill: #7a2942; }
+    .node-item-type.node-dtype-uint4-fp32:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp8-bf16 path   { fill: #1a5050; }
-    .node-item-type.node-dtype-fp8-bf16 text   { fill: #a0f8ec; }
-    .node-item-type.node-dtype-fp8-bf16:hover path  { fill: #226a6a; }
-    .node-item-type.node-dtype-fp8-bf16:hover text  { fill: #c0fff5; }
+    .node-item-type.node-dtype-uint4-fp16 path  { fill: #541c39; }
+    .node-item-type.node-dtype-uint4-fp16 text  { fill: #f7b6d8; }
+    .node-item-type.node-dtype-uint4-fp16:hover path { fill: #7a2953; }
+    .node-item-type.node-dtype-uint4-fp16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-fp16-bf16 path  { fill: #184c50; }
-    .node-item-type.node-dtype-fp16-bf16 text  { fill: #98f8fc; }
-    .node-item-type.node-dtype-fp16-bf16:hover path { fill: #206468; }
-    .node-item-type.node-dtype-fp16-bf16:hover text { fill: #c0ffff; }
+    .node-item-type.node-dtype-uint4-bf16 path  { fill: #541c41; }
+    .node-item-type.node-dtype-uint4-bf16 text  { fill: #f7b6e0; }
+    .node-item-type.node-dtype-uint4-bf16:hover path { fill: #7a295e; }
+    .node-item-type.node-dtype-uint4-bf16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint4-fp32 path { fill: #2e2858; }
-    .node-item-type.node-dtype-uint4-fp32 text { fill: #ccd8ff; }
-    .node-item-type.node-dtype-uint4-fp32:hover path { fill: #3e3878; }
-    .node-item-type.node-dtype-uint4-fp32:hover text { fill: #e4eeff; }
+    .node-item-type.node-dtype-int8-int16 path  { fill: #1c5443; }
+    .node-item-type.node-dtype-int8-int16 text  { fill: #b6f7e3; }
+    .node-item-type.node-dtype-int8-int16:hover path { fill: #297a61; }
+    .node-item-type.node-dtype-int8-int16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint4-fp16 path { fill: #3a2c60; }
-    .node-item-type.node-dtype-uint4-fp16 text { fill: #d0dcff; }
-    .node-item-type.node-dtype-uint4-fp16:hover path { fill: #4e3c80; }
-    .node-item-type.node-dtype-uint4-fp16:hover text { fill: #e8eeff; }
+    .node-item-type.node-dtype-int4-int16 path  { fill: #24541c; }
+    .node-item-type.node-dtype-int4-int16 text  { fill: #bef7b6; }
+    .node-item-type.node-dtype-int4-int16:hover path { fill: #347a29; }
+    .node-item-type.node-dtype-int4-int16:hover text { fill: #fff; }
 
-    .node-item-type.node-dtype-uint4-bf16 path { fill: #382840; }
-    .node-item-type.node-dtype-uint4-bf16 text { fill: #d4e8d4; }
-    .node-item-type.node-dtype-uint4-bf16:hover path { fill: #4e3858; }
-    .node-item-type.node-dtype-uint4-bf16:hover text { fill: #eaf5ea; }
+    .node-item-type.node-dtype-int4-int8 path  { fill: #30541c; }
+    .node-item-type.node-dtype-int4-int8 text  { fill: #cdf7b6; }
+    .node-item-type.node-dtype-int4-int8:hover path { fill: #467a29; }
+    .node-item-type.node-dtype-int4-int8:hover text { fill: #fff; }
+
 }

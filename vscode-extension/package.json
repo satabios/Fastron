@@ -2,7 +2,7 @@
   "name": "fastron",
   "displayName": "Fastron",
   "description": "Visualize machine learning models with Fastron in VSCode",
-  "version": "2026.5.22",
+  "version": "2026.5.23",
   "engines": {
     "vscode": "^1.86.0"
   },
