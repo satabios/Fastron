@@ -1,8 +1,15 @@
 
 const require = async () => {
     if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-        const worker_threads = await import('worker_threads');
-        return worker_threads.parentPort;
+        try {
+            const worker_threads = await import('worker_threads');
+            if (worker_threads.parentPort) {
+                return worker_threads.parentPort;
+            }
+        } catch {
+            // Not a real Node.js environment (e.g. Electron webview exposes process
+            // but worker_threads is unavailable). Fall through to web worker path.
+        }
     }
     import('./dagre.js');
     return self;
@@ -75,5 +82,5 @@ require().then((self) => {
             }
         }
     });
-});
+}).catch(() => { /* worker setup failed — host will fall back to main-thread layout */ });
 
