@@ -621,10 +621,17 @@ body.vscode-dark .toolbar-button-weights.weights-enabled .fill { fill: #3fb950; 
 	host._setCookie = function(name, value, days) {
 		try { localStorage.setItem('fastron_cookie_' + name, value); } catch(e) {}
 	};
-	// Override worker() to use webview URI — relative paths don't resolve in VS Code webviews
+	// Override worker() to use webview URI — relative paths don't resolve in VS Code webviews.
+	// type:module workers throw synchronously in some VS Code/Electron sandbox configurations;
+	// fall back to a classic worker which supports dynamic import() in Chrome 80+.
 	host.worker = function(id) {
 		const cleanId = id.replace(/^\.\//, '');
-		return new Worker('%netronPath%/' + cleanId + '.js', { type: 'module' });
+		const url = '%netronPath%/' + cleanId + '.js';
+		try {
+			return new Worker(url, { type: 'module' });
+		} catch (e) {
+			return new Worker(url);
+		}
 	};
 	window.__view__ = new View(host);
 
