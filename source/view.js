@@ -973,7 +973,7 @@ view.View = class {
                         const inputNodes = target._inputNodes;
                         let scrolled = false;
                         if (Array.isArray(inputNodes) && inputNodes.length > 0) {
-                            let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+                            let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
                             for (const node of inputNodes) {
                                 if (typeof node.x === 'number' && typeof node.y === 'number') {
                                     const hw = (node.width || 0) / 2;
@@ -2688,7 +2688,7 @@ view.Graph = class extends grapher.Graph {
                 if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
                     return false;
                 }
-                let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+                let bottom = -Infinity, left = Infinity, right = -Infinity, top = Infinity;
                 for (const node of inputNodes) {
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
