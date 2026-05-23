@@ -969,11 +969,33 @@ view.View = class {
                         const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
                         target._zoom = zoom;
                         target._updateZoom(zoom);
-                        container.scrollTo({
-                            left: Math.max(0, (zoom * w - cw) / 2),
-                            top: Math.max(0, (zoom * h - ch) / 2),
-                            behavior: 'auto'
-                        });
+                        // Scroll to input nodes if available, else center the graph.
+                        const inputNodes = target._inputNodes;
+                        let scrolled = false;
+                        if (Array.isArray(inputNodes) && inputNodes.length > 0) {
+                            let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+                            for (const node of inputNodes) {
+                                if (typeof node.x === 'number' && typeof node.y === 'number') {
+                                    const hw = (node.width || 0) / 2;
+                                    const hh = (node.height || 0) / 2;
+                                    l = Math.min(l, node.x - hw);
+                                    r = Math.max(r, node.x + hw);
+                                    t = Math.min(t, node.y - hh);
+                                    b = Math.max(b, node.y + hh);
+                                }
+                            }
+                            if (isFinite(l)) {
+                                target._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
+                                scrolled = true;
+                            }
+                        }
+                        if (!scrolled) {
+                            container.scrollTo({
+                                left: Math.max(0, (zoom * w - cw) / 2),
+                                top: Math.max(0, (zoom * h - ch) / 2),
+                                behavior: 'auto'
+                            });
+                        }
                         return;
                     }
                     if (retriesLeft > 0) {
@@ -2660,14 +2682,38 @@ view.Graph = class extends grapher.Graph {
                 }
             }
         } else {
-            // Fresh load with auto-fit zoom: center the entire graph in the viewport.
-            const zoomedW = this._zoom * width;
-            const zoomedH = this._zoom * height;
-            container.scrollTo({
-                left: Math.max(0, (zoomedW - container.clientWidth) / 2),
-                top: Math.max(0, (zoomedH - container.clientHeight) / 2),
-                behavior: 'auto'
-            });
+            // Fresh load: scroll to input nodes if available, else center the graph.
+            const scrolledToInputs = (() => {
+                const inputNodes = this._inputNodes;
+                if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
+                    return false;
+                }
+                let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+                for (const node of inputNodes) {
+                    if (typeof node.x === 'number' && typeof node.y === 'number') {
+                        const hw = (node.width || 0) / 2;
+                        const hh = (node.height || 0) / 2;
+                        left = Math.min(left, node.x - hw);
+                        right = Math.max(right, node.x + hw);
+                        top = Math.min(top, node.y - hh);
+                        bottom = Math.max(bottom, node.y + hh);
+                    }
+                }
+                if (!isFinite(left)) {
+                    return false;
+                }
+                this._scrollToGraphBounds({ x: left, y: top, width: right - left, height: bottom - top }, 'auto');
+                return true;
+            })();
+            if (!scrolledToInputs) {
+                const zoomedW = this._zoom * width;
+                const zoomedH = this._zoom * height;
+                container.scrollTo({
+                    left: Math.max(0, (zoomedW - container.clientWidth) / 2),
+                    top: Math.max(0, (zoomedH - container.clientHeight) / 2),
+                    behavior: 'auto'
+                });
+            }
         }
 
         // Trigger initial viewport update for lazy rendering.
