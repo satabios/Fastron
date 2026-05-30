@@ -73,6 +73,24 @@
 .node-item-type-custom        text { fill: #fff; }
 .node-item-type-custom:hover  path { fill: #506070; }
 
+/* arithmetic – element-wise math ops (Add, Sub, Mul, Div, Sqrt, Exp, Log, …) */
+/* hue ~54° (old-gold) – well clear of VIBGYOR pastels and all existing category hues */
+.node-item-type-arithmetic        path { fill: #6c5e00; }
+.node-item-type-arithmetic        text { fill: #fff; }
+.node-item-type-arithmetic:hover  path { fill: #8a7a10; }
+
+/* logic – boolean / comparison ops (And, Or, Not, Equal, Greater, Less, …) */
+/* hue ~330° (dark rose-magenta) – between normalization 275° and activation 347° */
+.node-item-type-logic        path { fill: #7e1848; }
+.node-item-type-logic        text { fill: #fff; }
+.node-item-type-logic:hover  path { fill: #9e2860; }
+
+/* reduce – aggregation ops (ReduceSum, ReduceMean, ArgMax, ArgMin, …) */
+/* hue ~193° (dark teal-ocean) – clearly distinct from pool 147° and transform 197° */
+.node-item-type-reduce        path { fill: #0e6478; }
+.node-item-type-reduce        text { fill: #fff; }
+.node-item-type-reduce:hover  path { fill: #168098; }
+
 /* === Graph-level input / output nodes === */
 .graph-item-input        path { fill: #1a7868; }
 .graph-item-input        text { fill: #fff; }
@@ -229,6 +247,21 @@
     .node-item-type-custom        path { fill: #586070; }
     .node-item-type-custom        text { fill: #dde4f0; }
     .node-item-type-custom:hover  path { fill: #708090; }
+
+    /* arithmetic – dark mode */
+    .node-item-type-arithmetic        path { fill: #b8a020; }
+    .node-item-type-arithmetic        text { fill: #fffcb8; }
+    .node-item-type-arithmetic:hover  path { fill: #d8be30; }
+
+    /* logic – dark mode */
+    .node-item-type-logic        path { fill: #c83870; }
+    .node-item-type-logic        text { fill: #ffd0e8; }
+    .node-item-type-logic:hover  path { fill: #e05088; }
+
+    /* reduce – dark mode */
+    .node-item-type-reduce        path { fill: #1898b8; }
+    .node-item-type-reduce        text { fill: #c8f0ff; }
+    .node-item-type-reduce:hover  path { fill: #28b0d0; }
 
     /* === Graph-level input / output nodes (dark mode) === */
     .graph-item-input        path { fill: #20a888; }
