@@ -227,6 +227,7 @@ const install = async () => {
     const node_modules = dirname('node_modules');
     let exists = await access(node_modules);
     if (exists) {
+        const optional = new Set(Object.keys(configuration.optionalDependencies || {}));
         const dependencies = { ...configuration.dependencies, ...configuration.optionalDependencies, ...configuration.devDependencies };
         const matches = await Promise.all(Object.entries(dependencies).map(async ([name, version]) => {
             const file = path.join('node_modules', name, 'package.json');
@@ -236,7 +237,7 @@ const install = async () => {
                 const obj = JSON.parse(content);
                 return obj.version === version;
             }
-            return false;
+            return optional.has(name);
         }));
         exists = matches.every((match) => match);
         if (!exists) {

@@ -7,9 +7,9 @@ Fastron can run as both an [Electron](https://electronjs.org) app or a web app.
 To start the Electron app, install [Node.js](https://nodejs.org) and run: 
 
 ```bash
-git clone https://github.com/satabios/netron
-cd netron
-npm install
+git clone https://github.com/satabios/Fastron
+cd Fastron
+npm run setup
 npm start
 ```
 

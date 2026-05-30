@@ -36,7 +36,7 @@ jobs:
           python-version: 3.x
 
       - name: Install Packages
-        run: npm run install
+        run: npm run setup
 
       - name: Publish Electron
         shell: bash
