@@ -309,9 +309,11 @@ const installElectron = async () => {
         await rm('node_modules', 'electron');
         await rm('node_modules', '.bin', 'electron');
         await rm('node_modules', '.bin', 'electron.cmd');
-        const env = { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '', npm_config_build_from_source: 'true' };
-        delete env.ELECTRON_SKIP_BINARY_DOWNLOAD;
-        await exec(`npm install --no-save --no-ignore-scripts electron@${electronVersion}`, undefined, dirname());
+        try {
+            await exec('npm install');
+        } catch (error) {
+            writeLine(`npm install failed: ${error.message}`);
+        }
         verified = await verifyElectron();
         if (!verified && await repairElectronPath()) {
             verified = await verifyElectron();
