@@ -260,29 +260,6 @@ const installElectron = async () => {
     if (!electronVersion) {
         return;
     }
-    const verifyElectron = async () => {
-        const result = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
-        return result.status === 0;
-    };
-    const findElectronBinary = async (dir, candidates) => {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        /* eslint-disable no-await-in-loop */
-        for (const entry of entries) {
-            const location = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                const match = await findElectronBinary(location, candidates);
-                if (match) {
-                    return match;
-                }
-                continue;
-            }
-            if (entry.isFile() && candidates.has(entry.name)) {
-                return location;
-            }
-        }
-        /* eslint-enable no-await-in-loop */
-        return null;
-    };
     const repairElectronPath = async () => {
         const root = dirname('node_modules', 'electron');
         const dist = path.join(root, 'dist');
@@ -295,33 +272,29 @@ const installElectron = async () => {
         } else if (process.platform === 'win32') {
             names = ['electron.exe'];
         }
-        const binary = await findElectronBinary(dist, new Set(names));
-        if (!binary) {
-            return false;
+        const entries = await fs.readdir(dist, { withFileTypes: true });
+        /* eslint-disable no-await-in-loop */
+        for (const entry of entries) {
+            if (names.includes(entry.name)) {
+                await fs.writeFile(path.join(root, 'path.txt'), entry.name, 'utf-8');
+                return true;
+            }
+            if (entry.isDirectory()) {
+                const subpath = path.join(dist, entry.name);
+                const subentries = await fs.readdir(subpath, { withFileTypes: true });
+                for (const subentry of subentries) {
+                    if (names.includes(subentry.name)) {
+                        await fs.writeFile(path.join(root, 'path.txt'), `${entry.name}/${subentry.name}`, 'utf-8');
+                        return true;
+                    }
+                }
+            }
         }
-        const relative = path.relative(dist, binary).split(path.sep).join('/');
-        await fs.writeFile(path.join(root, 'path.txt'), relative, 'utf-8');
-        return true;
+        /* eslint-enable no-await-in-loop */
+        return false;
     };
-    let verified = await verifyElectron();
-    if (!verified) {
-        writeLine('install electron');
-        await rm('node_modules', 'electron');
-        await rm('node_modules', '.bin', 'electron');
-        await rm('node_modules', '.bin', 'electron.cmd');
-        try {
-            await exec('npm install');
-        } catch (error) {
-            writeLine(`npm install failed: ${error.message}`);
-        }
-        verified = await verifyElectron();
-        if (!verified && await repairElectronPath()) {
-            verified = await verifyElectron();
-        }
-        if (!verified) {
-            throw new Error('Electron failed to install correctly.');
-        }
-    }
+    writeLine('repair electron metadata');
+    await repairElectronPath();
 };
 
 const start = async () => {
