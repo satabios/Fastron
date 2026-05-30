@@ -2,33 +2,90 @@
   {
     "name": "__torch__.torch.classes.rnn.CellParamsBase",
     "inputs": [
-      { "name": "type", "type": "string" },
-      { "name": "tensors", "type": "Tensor[]" },
-      { "name": "doubles", "type": "float64[]" },
-      { "name": "longs", "type": "int64[]" },
-      { "name": "packed_params", "type": "__torch__.torch.classes.quantized.LinearPackedParamsBase[]" }
+      {
+        "name": "type",
+        "type": "string"
+      },
+      {
+        "name": "tensors",
+        "type": "Tensor[]"
+      },
+      {
+        "name": "doubles",
+        "type": "float64[]"
+      },
+      {
+        "name": "longs",
+        "type": "int64[]"
+      },
+      {
+        "name": "packed_params",
+        "type": "__torch__.torch.classes.quantized.LinearPackedParamsBase[]"
+      }
     ]
   },
   {
     "name": "__torch__.torch.classes.xnnpack.Conv2dOpContext",
     "inputs": [
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true },
-      { "name": "stride", "type": "int64[]" },
-      { "name": "padding", "type": "int64[]" },
-      { "name": "dilation", "type": "int64[]" },
-      { "name": "groups", "type": "int64" },
-      { "name": "output_min", "type": "int64[]", "optional": true },
-      { "name": "output_max", "type": "int64[]", "optional": true }
+      {
+        "name": "weight",
+        "type": "Tensor"
+      },
+      {
+        "name": "bias",
+        "type": "Tensor",
+        "optional": true
+      },
+      {
+        "name": "stride",
+        "type": "int64[]"
+      },
+      {
+        "name": "padding",
+        "type": "int64[]"
+      },
+      {
+        "name": "dilation",
+        "type": "int64[]"
+      },
+      {
+        "name": "groups",
+        "type": "int64"
+      },
+      {
+        "name": "output_min",
+        "type": "int64[]",
+        "optional": true
+      },
+      {
+        "name": "output_max",
+        "type": "int64[]",
+        "optional": true
+      }
     ]
   },
   {
     "name": "__torch__.torch.classes.xnnpack.LinearOpContext",
     "inputs": [
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true },
-      { "name": "output_min", "type": "int64[]", "optional": true },
-      { "name": "output_max", "type": "int64[]", "optional": true }
+      {
+        "name": "weight",
+        "type": "Tensor"
+      },
+      {
+        "name": "bias",
+        "type": "Tensor",
+        "optional": true
+      },
+      {
+        "name": "output_min",
+        "type": "int64[]",
+        "optional": true
+      },
+      {
+        "name": "output_max",
+        "type": "int64[]",
+        "optional": true
+      }
     ]
   },
   {
@@ -71,9 +128,19 @@
     "name": "torch.nn.modules.activation.ReLU",
     "category": "Activation",
     "inputs": [
-      { "name": "inplace", "default": false, "visible": false },
-      { "name": "threshold", "default": 0 },
-      { "name": "value", "default": 0 }
+      {
+        "name": "inplace",
+        "default": false,
+        "visible": false
+      },
+      {
+        "name": "threshold",
+        "default": 0
+      },
+      {
+        "name": "value",
+        "default": 0
+      }
     ]
   },
   {
@@ -112,50 +179,150 @@
     "name": "torch.nn.modules.batchnorm.BatchNorm2d",
     "category": "Normalization",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight" },
-      { "name": "bias" },
-      { "name": "running_mean" },
-      { "name": "running_var" },
-      { "name": "num_batches_tracked", "visible": false },
-      { "name": "eps", "default": 1e-05 },
-      { "name": "momentum", "default": 0.1 },
-      { "name": "affine", "default": true },
-      { "name": "track_running_stats", "default": true }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight"
+      },
+      {
+        "name": "bias"
+      },
+      {
+        "name": "running_mean"
+      },
+      {
+        "name": "running_var"
+      },
+      {
+        "name": "num_batches_tracked",
+        "visible": false
+      },
+      {
+        "name": "eps",
+        "default": 1e-05
+      },
+      {
+        "name": "momentum",
+        "default": 0.1
+      },
+      {
+        "name": "affine",
+        "default": true
+      },
+      {
+        "name": "track_running_stats",
+        "default": true
+      }
     ]
   },
   {
     "name": "torch.nn.modules.conv.Conv1d",
     "category": "Layer",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight" },
-      { "name": "bias" },
-      { "name": "output_padding", "visible": false },
-      { "name": "in_channels", "visible": false },
-      { "name": "out_channels", "visible": false },
-      { "name": "groups", "default": 1 },
-      { "name": "transposed", "default": false },
-      { "name": "padding", "default": [   0 ] },
-      { "name": "dilation", "default": [   1 ] },
-      { "name": "stride", "default": [   1 ] }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight"
+      },
+      {
+        "name": "bias"
+      },
+      {
+        "name": "output_padding",
+        "visible": false
+      },
+      {
+        "name": "in_channels",
+        "visible": false
+      },
+      {
+        "name": "out_channels",
+        "visible": false
+      },
+      {
+        "name": "groups",
+        "default": 1
+      },
+      {
+        "name": "transposed",
+        "default": false
+      },
+      {
+        "name": "padding",
+        "default": [
+          0
+        ]
+      },
+      {
+        "name": "dilation",
+        "default": [
+          1
+        ]
+      },
+      {
+        "name": "stride",
+        "default": [
+          1
+        ]
+      }
     ]
   },
   {
     "name": "torch.nn.modules.conv.Conv2d",
     "category": "Layer",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight" },
-      { "name": "bias" },
-      { "name": "output_padding", "visible": false },
-      { "name": "in_channels", "visible": false },
-      { "name": "out_channels", "visible": false },
-      { "name": "groups", "default": 1 },
-      { "name": "transposed", "default": false },
-      { "name": "padding", "default": [   0,   0 ] },
-      { "name": "dilation", "default": [   1,   1 ] },
-      { "name": "stride", "default": [   1,   1 ] }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight"
+      },
+      {
+        "name": "bias"
+      },
+      {
+        "name": "output_padding",
+        "visible": false
+      },
+      {
+        "name": "in_channels",
+        "visible": false
+      },
+      {
+        "name": "out_channels",
+        "visible": false
+      },
+      {
+        "name": "groups",
+        "default": 1
+      },
+      {
+        "name": "transposed",
+        "default": false
+      },
+      {
+        "name": "padding",
+        "default": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "dilation",
+        "default": [
+          1,
+          1
+        ]
+      },
+      {
+        "name": "stride",
+        "default": [
+          1,
+          1
+        ]
+      }
     ]
   },
   {
@@ -166,34 +333,109 @@
     "name": "torch.nn.modules.conv.ConvTranspose1d",
     "category": "Layer",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight" },
-      { "name": "bias" },
-      { "name": "output_padding", "visible": false },
-      { "name": "in_channels", "visible": false },
-      { "name": "out_channels", "visible": false },
-      { "name": "groups", "default": 1 },
-      { "name": "transposed", "default": true },
-      { "name": "padding", "default": [   0 ] },
-      { "name": "dilation", "default": [   1 ] },
-      { "name": "stride", "default": [   1 ] }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight"
+      },
+      {
+        "name": "bias"
+      },
+      {
+        "name": "output_padding",
+        "visible": false
+      },
+      {
+        "name": "in_channels",
+        "visible": false
+      },
+      {
+        "name": "out_channels",
+        "visible": false
+      },
+      {
+        "name": "groups",
+        "default": 1
+      },
+      {
+        "name": "transposed",
+        "default": true
+      },
+      {
+        "name": "padding",
+        "default": [
+          0
+        ]
+      },
+      {
+        "name": "dilation",
+        "default": [
+          1
+        ]
+      },
+      {
+        "name": "stride",
+        "default": [
+          1
+        ]
+      }
     ]
   },
   {
     "name": "torch.nn.modules.conv.ConvTranspose2d",
     "category": "Layer",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight" },
-      { "name": "bias" },
-      { "name": "output_padding", "visible": false },
-      { "name": "in_channels", "visible": false },
-      { "name": "out_channels", "visible": false },
-      { "name": "groups", "default": 1 },
-      { "name": "transposed", "default": true },
-      { "name": "padding", "default": [   0,   0 ] },
-      { "name": "dilation", "default": [   1,   1 ] },
-      { "name": "stride", "default": [   1,   1 ] }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight"
+      },
+      {
+        "name": "bias"
+      },
+      {
+        "name": "output_padding",
+        "visible": false
+      },
+      {
+        "name": "in_channels",
+        "visible": false
+      },
+      {
+        "name": "out_channels",
+        "visible": false
+      },
+      {
+        "name": "groups",
+        "default": 1
+      },
+      {
+        "name": "transposed",
+        "default": true
+      },
+      {
+        "name": "padding",
+        "default": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "dilation",
+        "default": [
+          1,
+          1
+        ]
+      },
+      {
+        "name": "stride",
+        "default": [
+          1,
+          1
+        ]
+      }
     ]
   },
   {
@@ -204,16 +446,30 @@
     "name": "torch.nn.modules.dropout.Dropout",
     "category": "Dropout",
     "inputs": [
-      { "name": "inplace", "default": false, "visible": false },
-      { "name": "p", "default": 0.5 }
+      {
+        "name": "inplace",
+        "default": false,
+        "visible": false
+      },
+      {
+        "name": "p",
+        "default": 0.5
+      }
     ]
   },
   {
     "name": "torch.nn.modules.dropout.Dropout2d",
     "category": "Dropout",
     "inputs": [
-      { "name": "inplace", "default": false, "visible": false },
-      { "name": "p", "default": 0.5 }
+      {
+        "name": "inplace",
+        "default": false,
+        "visible": false
+      },
+      {
+        "name": "p",
+        "default": 0.5
+      }
     ]
   },
   {
@@ -233,9 +489,18 @@
     "name": "torch.nn.modules.normalization.CrossMapLRN2d",
     "category": "Normalization",
     "inputs": [
-      { "name": "alpha", "default": 0.0001 },
-      { "name": "beta", "default": 0.75 },
-      { "name": "k", "default": 1 }
+      {
+        "name": "alpha",
+        "default": 0.0001
+      },
+      {
+        "name": "beta",
+        "default": 0.75
+      },
+      {
+        "name": "k",
+        "default": 1
+      }
     ]
   },
   {
@@ -313,9 +578,18 @@
     "name": "torch.nn.modules.pooling.AvgPool2d",
     "category": "Pool",
     "inputs": [
-      { "name": "padding", "default": 0 },
-      { "name": "count_include_pad", "default": true },
-      { "name": "ceil_mode", "visible": false }
+      {
+        "name": "padding",
+        "default": 0
+      },
+      {
+        "name": "count_include_pad",
+        "default": true
+      },
+      {
+        "name": "ceil_mode",
+        "visible": false
+      }
     ]
   },
   {
@@ -330,11 +604,25 @@
     "name": "torch.nn.modules.pooling.MaxPool2d",
     "category": "Pool",
     "inputs": [
-      { "name": "input" },
-      { "name": "padding", "default": 0 },
-      { "name": "dilation", "default": 1 },
-      { "name": "return_indices", "default": false },
-      { "name": "ceil_mode", "visible": false }
+      {
+        "name": "input"
+      },
+      {
+        "name": "padding",
+        "default": 0
+      },
+      {
+        "name": "dilation",
+        "default": 1
+      },
+      {
+        "name": "return_indices",
+        "default": false
+      },
+      {
+        "name": "ceil_mode",
+        "visible": false
+      }
     ]
   },
   {
@@ -365,21 +653,65 @@
     "name": "torch.nn.modules.rnn.LSTM",
     "category": "Layer",
     "inputs": [
-      { "name": "input" },
-      { "name": "weight_ih_l0", "visible": false },
-      { "name": "weight_hh_l0", "visible": false },
-      { "name": "bias_ih_l0", "visible": false },
-      { "name": "bias_hh_l0", "visible": false },
-      { "name": "weight_ih_l1", "visible": false },
-      { "name": "weight_hh_l1", "visible": false },
-      { "name": "bias_ih_l1", "visible": false },
-      { "name": "bias_hh_l1", "visible": false },
-      { "name": "dropout", "default": 0 },
-      { "name": "dropout_state", "default": {} },
-      { "name": "num_layers", "default": 1 },
-      { "name": "batch_first", "visible": false },
-      { "name": "bidirectional", "visible": false },
-      { "name": "bias", "visible": false }
+      {
+        "name": "input"
+      },
+      {
+        "name": "weight_ih_l0",
+        "visible": false
+      },
+      {
+        "name": "weight_hh_l0",
+        "visible": false
+      },
+      {
+        "name": "bias_ih_l0",
+        "visible": false
+      },
+      {
+        "name": "bias_hh_l0",
+        "visible": false
+      },
+      {
+        "name": "weight_ih_l1",
+        "visible": false
+      },
+      {
+        "name": "weight_hh_l1",
+        "visible": false
+      },
+      {
+        "name": "bias_ih_l1",
+        "visible": false
+      },
+      {
+        "name": "bias_hh_l1",
+        "visible": false
+      },
+      {
+        "name": "dropout",
+        "default": 0
+      },
+      {
+        "name": "dropout_state",
+        "default": {}
+      },
+      {
+        "name": "num_layers",
+        "default": 1
+      },
+      {
+        "name": "batch_first",
+        "visible": false
+      },
+      {
+        "name": "bidirectional",
+        "visible": false
+      },
+      {
+        "name": "bias",
+        "visible": false
+      }
     ]
   },
   {
@@ -394,11 +726,26 @@
     "name": "torch.nn.modules.sparse.Embedding",
     "category": "Transform",
     "inputs": [
-      { "name": "norm_type", "default": 2 },
-      { "name": "scale_grad_by_freq", "default": false },
-      { "name": "sparse", "default": false },
-      { "name": "max_norm", "default": null },
-      { "name": "padding_idx", "default": null }
+      {
+        "name": "norm_type",
+        "default": 2
+      },
+      {
+        "name": "scale_grad_by_freq",
+        "default": false
+      },
+      {
+        "name": "sparse",
+        "default": false
+      },
+      {
+        "name": "max_norm",
+        "default": null
+      },
+      {
+        "name": "padding_idx",
+        "default": null
+      }
     ]
   },
   {
@@ -1139,52 +1486,66 @@
     "name": "aten::_weight_norm_interface_backward.out(Tensor grad_w, Tensor saved_v, Tensor saved_g, Tensor saved_norms, int dim, *, Tensor(a!) out0, Tensor(b!) out1) -> (Tensor(a!), Tensor(b!))"
   },
   {
-    "name": "aten::abs(Tensor self) -> Tensor"
+    "name": "aten::abs(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::abs.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::abs.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::abs_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::acos(Tensor self) -> Tensor"
+    "name": "aten::acos(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acos.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::acos.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acos.int(int a) -> float"
+    "name": "aten::acos.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acos.float(float a) -> float"
+    "name": "aten::acos.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acos.complex(complex a) -> complex"
+    "name": "aten::acos.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acos.Scalar(Scalar a) -> Scalar"
+    "name": "aten::acos.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::acos_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::acosh(Tensor self) -> Tensor"
+    "name": "aten::acosh(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acosh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::acosh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acosh.int(int a) -> float"
+    "name": "aten::acosh.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acosh.float(float a) -> float"
+    "name": "aten::acosh.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acosh.complex(complex a) -> complex"
+    "name": "aten::acosh.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::acosh.Scalar(Scalar a) -> Scalar"
+    "name": "aten::acosh.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::acosh_(Tensor(a!) self) -> Tensor(a!)"
@@ -1230,52 +1591,68 @@
     "name": "aten::adaptive_max_pool3d.out(Tensor self, int[3] output_size, *, Tensor(a!) out, Tensor(b!) indices) -> (Tensor(a!), Tensor(b!))"
   },
   {
-    "name": "aten::add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor"
+    "name": "aten::add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor"
+    "name": "aten::add.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::add.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.Scalar_out(Tensor self, Scalar other, Scalar alpha=1, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::add.Scalar_out(Tensor self, Scalar other, Scalar alpha=1, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.t(t[] a, t[] b) -> t[]"
+    "name": "aten::add.t(t[] a, t[] b) -> t[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.str(str a, str b) -> str"
+    "name": "aten::add.str(str a, str b) -> str",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.int(int a, int b) -> int"
+    "name": "aten::add.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.complex(complex a, complex b) -> complex"
+    "name": "aten::add.complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.float(float a, float b) -> float"
+    "name": "aten::add.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.int_complex(int a, complex b) -> complex"
+    "name": "aten::add.int_complex(int a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.complex_int(complex a, int b) -> complex"
+    "name": "aten::add.complex_int(complex a, int b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.float_complex(float a, complex b) -> complex"
+    "name": "aten::add.float_complex(float a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.complex_float(complex a, float b) -> complex"
+    "name": "aten::add.complex_float(complex a, float b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.int_float(int a, float b) -> float"
+    "name": "aten::add.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add.float_int(float a, int b) -> float"
+    "name": "aten::add.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::add(Scalar a, Scalar b) -> Scalar"
+    "name": "aten::add(Scalar a, Scalar b) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::add_.Tensor(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)"
@@ -1293,16 +1670,20 @@
     "name": "aten::addbmm.out(Tensor self, Tensor batch1, Tensor batch2, *, Scalar beta=1, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::addcdiv(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor"
+    "name": "aten::addcdiv(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::addcdiv.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::addcdiv.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::addcmul(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor"
+    "name": "aten::addcmul(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::addcmul.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::addcmul.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::addcmul_(Tensor(a!) self, Tensor tensor1, Tensor tensor2, *, Scalar value=1) -> Tensor(a!)"
@@ -1348,37 +1729,48 @@
     "name": "aten::alias_copy.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::all(Tensor self) -> Tensor"
+    "name": "aten::all(Tensor self) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.dim(Tensor self, int dim, bool keepdim=False) -> Tensor"
+    "name": "aten::all.dim(Tensor self, int dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.dims(Tensor self, int[]? dim=None, bool keepdim=False) -> Tensor"
+    "name": "aten::all.dims(Tensor self, int[]? dim=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.out(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::all.out(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.dims_out(Tensor self, int[]? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::all.dims_out(Tensor self, int[]? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.all_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::all.all_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.dimname(Tensor self, str dim, bool keepdim=False) -> Tensor"
+    "name": "aten::all.dimname(Tensor self, str dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.dimname_out(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::all.dimname_out(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.int(int[] self) -> bool"
+    "name": "aten::all.int(int[] self) -> bool",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.float(float[] self) -> bool"
+    "name": "aten::all.float(float[] self) -> bool",
+    "category": "Reduce"
   },
   {
-    "name": "aten::all.bool(bool[] self) -> bool"
+    "name": "aten::all.bool(bool[] self) -> bool",
+    "category": "Reduce"
   },
   {
     "name": "aten::allclose(Tensor self, Tensor other, float rtol=1.0000000000000001e-05, float atol=1e-08, bool equal_nan=False) -> bool"
@@ -1392,16 +1784,20 @@
     "category": "Dropout"
   },
   {
-    "name": "aten::amax(Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor"
+    "name": "aten::amax(Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::amax.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::amax.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::amin(Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor"
+    "name": "aten::amin(Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::amin.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::amin.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::aminmax(Tensor self, *, int? dim=None, bool keepdim=False) -> (Tensor min, Tensor max)"
@@ -1428,40 +1824,52 @@
     "name": "aten::angle.Scalar(Scalar a) -> Scalar"
   },
   {
-    "name": "aten::any(Tensor self) -> Tensor"
+    "name": "aten::any(Tensor self) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.dim(Tensor self, int dim, bool keepdim=False) -> Tensor"
+    "name": "aten::any.dim(Tensor self, int dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.dims(Tensor self, int[]? dim=None, bool keepdim=False) -> Tensor"
+    "name": "aten::any.dims(Tensor self, int[]? dim=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.out(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::any.out(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.dims_out(Tensor self, int[]? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::any.dims_out(Tensor self, int[]? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.all_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::any.all_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.dimname(Tensor self, str dim, bool keepdim=False) -> Tensor"
+    "name": "aten::any.dimname(Tensor self, str dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.dimname_out(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::any.dimname_out(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.str(str[] self) -> bool"
+    "name": "aten::any.str(str[] self) -> bool",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.int(int[] self) -> bool"
+    "name": "aten::any.int(int[] self) -> bool",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.float(float[] self) -> bool"
+    "name": "aten::any.float(float[] self) -> bool",
+    "category": "Reduce"
   },
   {
-    "name": "aten::any.bool(bool[] self) -> bool"
+    "name": "aten::any.bool(bool[] self) -> bool",
+    "category": "Reduce"
   },
   {
     "name": "aten::append.t(t[](a!) self, t(c -> *) el) -> t[](a!)"
@@ -1500,16 +1908,20 @@
     "name": "aten::arctan_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::argmax(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"
+    "name": "aten::argmax(Tensor self, int? dim=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::argmax.out(Tensor self, int? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::argmax.out(Tensor self, int? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::argmin(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"
+    "name": "aten::argmin(Tensor self, int? dim=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::argmin.out(Tensor self, int? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::argmin.out(Tensor self, int? dim=None, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::argsort(Tensor self, int dim=-1, bool descending=False) -> Tensor"
@@ -1563,58 +1975,76 @@
     "name": "aten::as_tensor.list(t[] data, *, ScalarType? dtype=None, Device? device=None) -> Tensor"
   },
   {
-    "name": "aten::asin(Tensor self) -> Tensor"
+    "name": "aten::asin(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asin.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::asin.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asin.int(int a) -> float"
+    "name": "aten::asin.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asin.float(float a) -> float"
+    "name": "aten::asin.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asin.complex(complex a) -> complex"
+    "name": "aten::asin.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asin.Scalar(Scalar a) -> Scalar"
+    "name": "aten::asin.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh(Tensor self) -> Tensor"
+    "name": "aten::asinh(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::asinh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh.int(int a) -> float"
+    "name": "aten::asinh.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh.float(float a) -> float"
+    "name": "aten::asinh.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh.complex(complex a) -> complex"
+    "name": "aten::asinh.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::asinh.Scalar(Scalar a) -> Scalar"
+    "name": "aten::asinh.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan(Tensor self) -> Tensor"
+    "name": "aten::atan(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::atan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan.int(int a) -> float"
+    "name": "aten::atan.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan.float(float a) -> float"
+    "name": "aten::atan.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan.complex(complex a) -> complex"
+    "name": "aten::atan.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atan.Scalar(Scalar a) -> Scalar"
+    "name": "aten::atan.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::atan2(Tensor self, Tensor other) -> Tensor"
@@ -1644,22 +2074,28 @@
     "name": "aten::atan_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::atanh(Tensor self) -> Tensor"
+    "name": "aten::atanh(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atanh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::atanh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atanh.int(int a) -> float"
+    "name": "aten::atanh.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atanh.float(float a) -> float"
+    "name": "aten::atanh.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atanh.complex(complex a) -> complex"
+    "name": "aten::atanh.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::atanh.Scalar(Scalar a) -> Scalar"
+    "name": "aten::atanh.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::atanh_(Tensor(a!) self) -> Tensor(a!)"
@@ -1765,22 +2201,28 @@
     "name": "aten::binomial.out(Tensor count, Tensor prob, Generator? generator=None, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_and.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_and.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_and.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::bitwise_and.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_and.Scalar_Tensor(Scalar self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_and.Scalar_Tensor(Scalar self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_and.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_and.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_and.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_and.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_and.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_and.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_and_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
@@ -1789,22 +2231,28 @@
     "name": "aten::bitwise_and_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_left_shift.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_left_shift.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_left_shift.Tensor_Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::bitwise_left_shift.Tensor_Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_left_shift.Scalar_Tensor(Scalar self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_left_shift.Scalar_Tensor(Scalar self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_left_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_left_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_left_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_left_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_left_shift.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_left_shift.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_left_shift_.Tensor_Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
@@ -1813,31 +2261,39 @@
     "name": "aten::bitwise_left_shift_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_not(Tensor self) -> Tensor"
+    "name": "aten::bitwise_not(Tensor self) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_not_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_or.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_or.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_or.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::bitwise_or.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_or.Scalar_Tensor(Scalar self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_or.Scalar_Tensor(Scalar self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_or.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_or.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_or.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_or.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_or.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_or.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_or_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
@@ -1846,22 +2302,28 @@
     "name": "aten::bitwise_or_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_right_shift.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_right_shift.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_right_shift.Tensor_Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::bitwise_right_shift.Tensor_Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_right_shift.Scalar_Tensor(Scalar self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_right_shift.Scalar_Tensor(Scalar self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_right_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_right_shift.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_right_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_right_shift.Tensor_Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_right_shift.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_right_shift.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_right_shift_.Tensor_Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
@@ -1870,22 +2332,28 @@
     "name": "aten::bitwise_right_shift_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::bitwise_xor.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_xor.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_xor.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::bitwise_xor.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_xor.Scalar_Tensor(Scalar self, Tensor other) -> Tensor"
+    "name": "aten::bitwise_xor.Scalar_Tensor(Scalar self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_xor.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_xor.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_xor.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_xor.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::bitwise_xor.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::bitwise_xor.Scalar_Tensor_out(Scalar self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::bitwise_xor_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
@@ -1955,19 +2423,24 @@
     "name": "aten::cdist(Tensor x1, Tensor x2, float p=2., int? compute_mode=None) -> Tensor"
   },
   {
-    "name": "aten::ceil(Tensor self) -> Tensor"
+    "name": "aten::ceil(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::ceil.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::ceil.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::ceil.int(int a) -> int"
+    "name": "aten::ceil.int(int a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::ceil.float(float a) -> int"
+    "name": "aten::ceil.float(float a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::ceil.Scalar(Scalar a) -> Scalar"
+    "name": "aten::ceil.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::ceil_(Tensor(a!) self) -> Tensor(a!)"
@@ -2001,16 +2474,20 @@
     "name": "aten::chunk(Tensor(a -> *) self, int chunks, int dim=0) -> Tensor(a)[]"
   },
   {
-    "name": "aten::clamp(Tensor self, Scalar? min=None, Scalar? max=None) -> Tensor"
+    "name": "aten::clamp(Tensor self, Scalar? min=None, Scalar? max=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp.Tensor(Tensor self, Tensor? min=None, Tensor? max=None) -> Tensor"
+    "name": "aten::clamp.Tensor(Tensor self, Tensor? min=None, Tensor? max=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp.out(Tensor self, Scalar? min=None, Scalar? max=None, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp.out(Tensor self, Scalar? min=None, Scalar? max=None, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp.Tensor_out(Tensor self, Tensor? min=None, Tensor? max=None, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp.Tensor_out(Tensor self, Tensor? min=None, Tensor? max=None, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::clamp_(Tensor(a!) self, Scalar? min=None, Scalar? max=None) -> Tensor(a!)"
@@ -2019,16 +2496,20 @@
     "name": "aten::clamp_.Tensor(Tensor(a!) self, Tensor? min=None, Tensor? max=None) -> Tensor(a!)"
   },
   {
-    "name": "aten::clamp_max(Tensor self, Scalar max) -> Tensor"
+    "name": "aten::clamp_max(Tensor self, Scalar max) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_max.Tensor(Tensor self, Tensor max) -> Tensor"
+    "name": "aten::clamp_max.Tensor(Tensor self, Tensor max) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_max.out(Tensor self, Scalar max, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp_max.out(Tensor self, Scalar max, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_max.Tensor_out(Tensor self, Tensor max, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp_max.Tensor_out(Tensor self, Tensor max, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::clamp_max_(Tensor(a!) self, Scalar max) -> Tensor(a!)"
@@ -2037,16 +2518,20 @@
     "name": "aten::clamp_max_.Tensor(Tensor(a!) self, Tensor max) -> Tensor(a!)"
   },
   {
-    "name": "aten::clamp_min(Tensor self, Scalar min) -> Tensor"
+    "name": "aten::clamp_min(Tensor self, Scalar min) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_min.Tensor(Tensor self, Tensor min) -> Tensor"
+    "name": "aten::clamp_min.Tensor(Tensor self, Tensor min) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_min.out(Tensor self, Scalar min, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp_min.out(Tensor self, Scalar min, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::clamp_min.Tensor_out(Tensor self, Tensor min, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::clamp_min.Tensor_out(Tensor self, Tensor min, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::clamp_min_(Tensor(a!) self, Scalar min) -> Tensor(a!)"
@@ -2264,40 +2749,52 @@
     "name": "aten::copy_.float(Tensor(a!) self, float other) -> Tensor(a!)"
   },
   {
-    "name": "aten::cos(Tensor self) -> Tensor"
+    "name": "aten::cos(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cos.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cos.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cos.int(int a) -> float"
+    "name": "aten::cos.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cos.float(float a) -> float"
+    "name": "aten::cos.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cos.complex(complex a) -> complex"
+    "name": "aten::cos.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cos.Scalar(Scalar a) -> Scalar"
+    "name": "aten::cos.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh(Tensor self) -> Tensor"
+    "name": "aten::cosh(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cosh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh.int(int a) -> float"
+    "name": "aten::cosh.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh.float(float a) -> float"
+    "name": "aten::cosh.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh.complex(complex a) -> complex"
+    "name": "aten::cosh.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cosh.Scalar(Scalar a) -> Scalar"
+    "name": "aten::cosh.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::cosine_similarity(Tensor x1, Tensor x2, int dim=1, float eps=1e-08) -> Tensor"
@@ -2321,16 +2818,20 @@
     "name": "aten::count.str(str[] self, str el) -> int"
   },
   {
-    "name": "aten::count_nonzero.dim_IntList(Tensor self, int[] dim) -> Tensor"
+    "name": "aten::count_nonzero.dim_IntList(Tensor self, int[] dim) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::count_nonzero.dim_IntList_out(Tensor self, int[] dim, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::count_nonzero.dim_IntList_out(Tensor self, int[] dim, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::count_nonzero(Tensor self, int? dim=None) -> Tensor"
+    "name": "aten::count_nonzero(Tensor self, int? dim=None) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::count_nonzero.out(Tensor self, int? dim=None, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::count_nonzero.out(Tensor self, int? dim=None, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::cpu(Tensor(a) self) -> Tensor(a|b)"
@@ -2375,43 +2876,55 @@
     "name": "aten::cudnn_convolution_relu(Tensor self, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, SymInt groups) -> Tensor"
   },
   {
-    "name": "aten::cummax(Tensor self, int dim) -> (Tensor values, Tensor indices)"
+    "name": "aten::cummax(Tensor self, int dim) -> (Tensor values, Tensor indices)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::cummax.dimname(Tensor self, str dim) -> (Tensor values, Tensor indices)"
+    "name": "aten::cummax.dimname(Tensor self, str dim) -> (Tensor values, Tensor indices)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::cummax.dimname_out(Tensor self, str dim, *, Tensor(a!) values, Tensor(b!) indices) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::cummax.dimname_out(Tensor self, str dim, *, Tensor(a!) values, Tensor(b!) indices) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::cummax.out(Tensor self, int dim, *, Tensor(a!) values, Tensor(b!) indices) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::cummax.out(Tensor self, int dim, *, Tensor(a!) values, Tensor(b!) indices) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Reduce"
   },
   {
     "name": "aten::cummaxmin_backward(Tensor grad, Tensor input, Tensor indices, int dim) -> Tensor"
   },
   {
-    "name": "aten::cumprod(Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::cumprod(Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumprod.dimname(Tensor self, str dim, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::cumprod.dimname(Tensor self, str dim, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumprod.dimname_out(Tensor self, str dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cumprod.dimname_out(Tensor self, str dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumprod.out(Tensor self, int dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cumprod.out(Tensor self, int dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumsum(Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::cumsum(Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumsum.dimname(Tensor self, str dim, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::cumsum.dimname(Tensor self, str dim, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumsum.dimname_out(Tensor self, str dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cumsum.dimname_out(Tensor self, str dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::cumsum.out(Tensor self, int dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::cumsum.out(Tensor self, int dim, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::cumsum_(Tensor(a!) self, int dim, *, ScalarType? dtype=None) -> Tensor(a!)"
@@ -2557,40 +3070,52 @@
     "name": "aten::dist.out(Tensor self, Tensor other, Scalar p=2, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::div.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::div.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::div.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.Tensor_mode(Tensor self, Tensor other, *, str? rounding_mode) -> Tensor"
+    "name": "aten::div.Tensor_mode(Tensor self, Tensor other, *, str? rounding_mode) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.Scalar_mode(Tensor self, Scalar other, *, str? rounding_mode) -> Tensor"
+    "name": "aten::div.Scalar_mode(Tensor self, Scalar other, *, str? rounding_mode) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::div.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.out_mode(Tensor self, Tensor other, *, str? rounding_mode, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::div.out_mode(Tensor self, Tensor other, *, str? rounding_mode, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::div.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.Scalar_mode_out(Tensor self, Scalar other, *, str? rounding_mode, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::div.Scalar_mode_out(Tensor self, Scalar other, *, str? rounding_mode, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.int(int a, int b) -> float"
+    "name": "aten::div.int(int a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.complex(complex a, complex b) -> complex"
+    "name": "aten::div.complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div.float(float a, float b) -> float"
+    "name": "aten::div.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::div(Scalar a, Scalar b) -> float"
+    "name": "aten::div(Scalar a, Scalar b) -> float",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::div_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
@@ -2716,85 +3241,112 @@
     "name": "aten::empty_like.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::eq.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::eq.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::eq.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::eq.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::eq.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.int_list(int[] a, int[] b) -> bool"
+    "name": "aten::eq.int_list(int[] a, int[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.device(Device a, Device b) -> bool"
+    "name": "aten::eq.device(Device a, Device b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.bool(bool a, bool b) -> bool"
+    "name": "aten::eq.bool(bool a, bool b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.enum(AnyEnumType a, AnyEnumType b) -> bool"
+    "name": "aten::eq.enum(AnyEnumType a, AnyEnumType b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.int(int a, int b) -> bool"
+    "name": "aten::eq.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.complex(complex a, complex b) -> bool"
+    "name": "aten::eq.complex(complex a, complex b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.float(float a, float b) -> bool"
+    "name": "aten::eq.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.int_float(int a, float b) -> bool"
+    "name": "aten::eq.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.float_int(float a, int b) -> bool"
+    "name": "aten::eq.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.float_complex(float a, complex b) -> bool"
+    "name": "aten::eq.float_complex(float a, complex b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.complex_float(complex a, float b) -> bool"
+    "name": "aten::eq.complex_float(complex a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq(Scalar a, Scalar b) -> bool"
+    "name": "aten::eq(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.str(str a, str b) -> bool"
+    "name": "aten::eq.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.float_list(float[] a, float[] b) -> bool"
+    "name": "aten::eq.float_list(float[] a, float[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.Tensor_list(Tensor[] a, Tensor[] b) -> bool"
+    "name": "aten::eq.Tensor_list(Tensor[] a, Tensor[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.bool_list(bool[] a, bool[] b) -> bool"
+    "name": "aten::eq.bool_list(bool[] a, bool[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::eq.str_list(str[] a, str[] b) -> bool"
+    "name": "aten::eq.str_list(str[] a, str[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::equal(Tensor self, Tensor other) -> bool"
+    "name": "aten::equal(Tensor self, Tensor other) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::erf(Tensor self) -> Tensor"
+    "name": "aten::erf(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::erf.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::erf.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::erf.int(int a) -> float"
+    "name": "aten::erf.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::erf.float(float a) -> float"
+    "name": "aten::erf.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::erf.Scalar(Scalar a) -> Scalar"
+    "name": "aten::erf.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::erfc(Tensor self) -> Tensor"
@@ -2818,22 +3370,28 @@
     "name": "aten::erfinv.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::exp(Tensor self) -> Tensor"
+    "name": "aten::exp(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::exp.int(int a) -> float"
+    "name": "aten::exp.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::exp.float(float a) -> float"
+    "name": "aten::exp.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::exp.complex(complex a) -> complex"
+    "name": "aten::exp.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::exp.Scalar(Scalar a) -> Scalar"
+    "name": "aten::exp.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::exp2(Tensor self) -> Tensor"
@@ -2857,19 +3415,24 @@
     "name": "aten::expand_copy.out(Tensor self, SymInt[] size, *, bool implicit=False, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::expm1(Tensor self) -> Tensor"
+    "name": "aten::expm1(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::expm1.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::expm1.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::expm1.int(int a) -> float"
+    "name": "aten::expm1.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::expm1.float(float a) -> float"
+    "name": "aten::expm1.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::expm1.Scalar(Scalar a) -> Scalar"
+    "name": "aten::expm1.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::expm1_(Tensor(a!) self) -> Tensor(a!)"
@@ -3081,19 +3644,24 @@
     "name": "aten::flip.out(Tensor self, int[] dims, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::floor(Tensor self) -> Tensor"
+    "name": "aten::floor(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::floor.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::floor.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::floor.int(int a) -> int"
+    "name": "aten::floor.int(int a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::floor.float(float a) -> int"
+    "name": "aten::floor.float(float a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::floor.Scalar(Scalar a) -> Scalar"
+    "name": "aten::floor.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::floor_(Tensor(a!) self) -> Tensor(a!)"
@@ -3132,31 +3700,40 @@
     "name": "aten::floordiv(Scalar a, Scalar b) -> Scalar"
   },
   {
-    "name": "aten::fmod.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::fmod.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::fmod.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::fmod.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::fmod.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.int(int a, int b) -> float"
+    "name": "aten::fmod.int(int a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.float(float a, float b) -> float"
+    "name": "aten::fmod.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.int_float(int a, float b) -> float"
+    "name": "aten::fmod.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod.float_int(float a, int b) -> float"
+    "name": "aten::fmod.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::fmod(Scalar a, Scalar b) -> float"
+    "name": "aten::fmod(Scalar a, Scalar b) -> float",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::format(str self, ...) -> str",
@@ -3210,46 +3787,59 @@
     "name": "aten::gather_backward(Tensor grad, Tensor self, int dim, Tensor index, bool sparse_grad) -> Tensor"
   },
   {
-    "name": "aten::gcd(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::gcd(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::gcd.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::gcd.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::gcd.int(int a, int b) -> int"
+    "name": "aten::gcd.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::gcd_(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::ge.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::ge.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::ge.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::ge.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::ge.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.int(int a, int b) -> bool"
+    "name": "aten::ge.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.float(float a, float b) -> bool"
+    "name": "aten::ge.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.int_float(int a, float b) -> bool"
+    "name": "aten::ge.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.float_int(float a, int b) -> bool"
+    "name": "aten::ge.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge(Scalar a, Scalar b) -> bool"
+    "name": "aten::ge(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ge.str(str a, str b) -> bool"
+    "name": "aten::ge.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::ge_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
@@ -3348,16 +3938,20 @@
     "name": "aten::grad(Tensor[] outputs, Tensor[] inputs, Tensor?[]? grad_outputs=None, bool? retain_graph=None, bool create_graph=False, bool allow_unused=False) -> Tensor?[]"
   },
   {
-    "name": "aten::greater.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::greater.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::greater.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::greater.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::greater.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::greater.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::greater.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::greater.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::greater_equal.Tensor(Tensor self, Tensor other) -> Tensor"
@@ -3405,34 +3999,44 @@
     "name": "aten::gru_cell(Tensor input, Tensor hx, Tensor w_ih, Tensor w_hh, Tensor? b_ih=None, Tensor? b_hh=None) -> Tensor"
   },
   {
-    "name": "aten::gt.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::gt.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::gt.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::gt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::gt.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.int(int a, int b) -> bool"
+    "name": "aten::gt.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.float(float a, float b) -> bool"
+    "name": "aten::gt.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.int_float(int a, float b) -> bool"
+    "name": "aten::gt.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.float_int(float a, int b) -> bool"
+    "name": "aten::gt.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt(Scalar a, Scalar b) -> bool"
+    "name": "aten::gt(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::gt.str(str a, str b) -> bool"
+    "name": "aten::gt.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::hamming_window(int window_length, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"
@@ -3731,13 +4335,16 @@
     "name": "aten::isdigit(str self) -> bool"
   },
   {
-    "name": "aten::isfinite(Tensor self) -> Tensor"
+    "name": "aten::isfinite(Tensor self) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::isfinite.float(float a) -> bool"
+    "name": "aten::isfinite.float(float a) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::isfinite.complex(complex a) -> bool"
+    "name": "aten::isfinite.complex(complex a) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::isin.Tensor_Tensor(Tensor elements, Tensor test_elements, *, bool assume_unique=False, bool invert=False) -> Tensor"
@@ -3758,28 +4365,36 @@
     "name": "aten::isin.Scalar_Tensor_out(Scalar element, Tensor test_elements, *, bool assume_unique=False, bool invert=False, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::isinf(Tensor self) -> Tensor"
+    "name": "aten::isinf(Tensor self) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::isinf.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::isinf.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::isinf.float(float a) -> bool"
+    "name": "aten::isinf.float(float a) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::isinf.complex(complex a) -> bool"
+    "name": "aten::isinf.complex(complex a) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::isnan(Tensor self) -> Tensor"
+    "name": "aten::isnan(Tensor self) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::isnan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::isnan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::isnan.float(float a) -> bool"
+    "name": "aten::isnan.float(float a) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::isnan.complex(complex a) -> bool"
+    "name": "aten::isnan.complex(complex a) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::istft(Tensor self, int n_fft, int? hop_length=None, int? win_length=None, Tensor? window=None, bool center=True, bool normalized=False, bool? onesided=None, int? length=None, bool return_complex=False) -> Tensor"
@@ -3849,34 +4464,44 @@
     "category": "Normalization"
   },
   {
-    "name": "aten::le.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::le.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::le.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::le.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::le.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.int(int a, int b) -> bool"
+    "name": "aten::le.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.float(float a, float b) -> bool"
+    "name": "aten::le.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.int_float(int a, float b) -> bool"
+    "name": "aten::le.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.float_int(float a, int b) -> bool"
+    "name": "aten::le.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::le(Scalar a, Scalar b) -> bool"
+    "name": "aten::le(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::le.str(str a, str b) -> bool"
+    "name": "aten::le.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::leaky_relu(Tensor self, Scalar negative_slope=0.01) -> Tensor",
@@ -3920,28 +4545,36 @@
     "name": "aten::len.any(Any[] a) -> int"
   },
   {
-    "name": "aten::lerp.Scalar(Tensor self, Tensor end, Scalar weight) -> Tensor"
+    "name": "aten::lerp.Scalar(Tensor self, Tensor end, Scalar weight) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::lerp.Tensor(Tensor self, Tensor end, Tensor weight) -> Tensor"
+    "name": "aten::lerp.Tensor(Tensor self, Tensor end, Tensor weight) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::lerp.Scalar_out(Tensor self, Tensor end, Scalar weight, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::lerp.Scalar_out(Tensor self, Tensor end, Scalar weight, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::lerp.Tensor_out(Tensor self, Tensor end, Tensor weight, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::lerp.Tensor_out(Tensor self, Tensor end, Tensor weight, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::less.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::less.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::less.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::less.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::less.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::less.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::less.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::less.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::less_equal.Tensor(Tensor self, Tensor other) -> Tensor"
@@ -4132,97 +4765,126 @@
     "name": "aten::list_with_default(int[] list, int[] defaults) -> int[]"
   },
   {
-    "name": "aten::log(Tensor self) -> Tensor"
+    "name": "aten::log(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::log.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.int(int a) -> float"
+    "name": "aten::log.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.float(float a) -> float"
+    "name": "aten::log.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.complex(complex a) -> complex"
+    "name": "aten::log.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.Scalar(Scalar a) -> Scalar"
+    "name": "aten::log.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.int_int(int a, int b) -> float"
+    "name": "aten::log.int_int(int a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.float_float(float a, float b) -> float"
+    "name": "aten::log.float_float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.complex_complex(complex a, complex b) -> complex"
+    "name": "aten::log.complex_complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.int_float(int a, float b) -> float"
+    "name": "aten::log.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.float_int(float a, int b) -> float"
+    "name": "aten::log.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.int_complex(int a, complex b) -> complex"
+    "name": "aten::log.int_complex(int a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.complex_int(complex a, int b) -> complex"
+    "name": "aten::log.complex_int(complex a, int b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.float_complex(float a, complex b) -> complex"
+    "name": "aten::log.float_complex(float a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.complex_float(complex a, float b) -> complex"
+    "name": "aten::log.complex_float(complex a, float b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log.Scalar_Scalar(Scalar a, Scalar b) -> float"
+    "name": "aten::log.Scalar_Scalar(Scalar a, Scalar b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10(Tensor self) -> Tensor"
+    "name": "aten::log10(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::log10.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10.int(int a) -> float"
+    "name": "aten::log10.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10.float(float a) -> float"
+    "name": "aten::log10.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10.complex(complex a) -> complex"
+    "name": "aten::log10.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log10.Scalar(Scalar a) -> Scalar"
+    "name": "aten::log10.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::log10_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::log1p(Tensor self) -> Tensor"
+    "name": "aten::log1p(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log1p.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::log1p.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log1p.int(int a) -> float"
+    "name": "aten::log1p.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log1p.float(float a) -> float"
+    "name": "aten::log1p.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log1p.Scalar(Scalar a) -> Scalar"
+    "name": "aten::log1p.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::log1p_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::log2(Tensor self) -> Tensor"
+    "name": "aten::log2(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::log2.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::log2.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::log2_(Tensor(a!) self) -> Tensor(a!)"
@@ -4263,10 +4925,12 @@
     "name": "aten::log_softmax.int_out(Tensor self, int dim, ScalarType? dtype=None, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::logaddexp(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::logaddexp(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::logaddexp.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logaddexp.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::logaddexp2(Tensor self, Tensor other) -> Tensor"
@@ -4290,46 +4954,56 @@
     "name": "aten::logdet(Tensor self) -> Tensor"
   },
   {
-    "name": "aten::logical_and(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::logical_and(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::logical_and.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logical_and.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::logical_and_(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::logical_not(Tensor self) -> Tensor"
+    "name": "aten::logical_not(Tensor self) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::logical_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logical_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::logical_not_(Tensor(a!) self) -> Tensor(a!)"
   },
   {
-    "name": "aten::logical_or(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::logical_or(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::logical_or.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logical_or.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::logical_or_(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::logical_xor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::logical_xor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::logical_xor.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logical_xor.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
     "name": "aten::logical_xor_(Tensor(a!) self, Tensor other) -> Tensor(a!)"
   },
   {
-    "name": "aten::logit(Tensor self, float? eps=None) -> Tensor"
+    "name": "aten::logit(Tensor self, float? eps=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::logit.out(Tensor self, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logit.out(Tensor self, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::logit_(Tensor(a!) self, float? eps=None) -> Tensor(a!)"
@@ -4365,16 +5039,20 @@
     "name": "aten::logspace.Scalar_Tensor_out(Scalar start, Tensor end, int steps, float base=10., *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::logsumexp(Tensor self, int[1] dim, bool keepdim=False) -> Tensor"
+    "name": "aten::logsumexp(Tensor self, int[1] dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::logsumexp.names(Tensor self, str[1] dim, bool keepdim=False) -> Tensor"
+    "name": "aten::logsumexp.names(Tensor self, str[1] dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::logsumexp.names_out(Tensor self, str[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logsumexp.names_out(Tensor self, str[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::logsumexp.out(Tensor self, int[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::logsumexp.out(Tensor self, int[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::lower(str self) -> str"
@@ -4395,34 +5073,44 @@
     "name": "aten::lstrip(str self, str chars=\" \\n\\t\\f\\v\") -> str"
   },
   {
-    "name": "aten::lt.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::lt.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::lt.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::lt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::lt.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.int(int a, int b) -> bool"
+    "name": "aten::lt.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.float(float a, float b) -> bool"
+    "name": "aten::lt.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.int_float(int a, float b) -> bool"
+    "name": "aten::lt.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.float_int(float a, int b) -> bool"
+    "name": "aten::lt.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt(Scalar a, Scalar b) -> bool"
+    "name": "aten::lt(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::lt.str(str a, str b) -> bool"
+    "name": "aten::lt.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
     "name": "aten::mT(Tensor(a) self) -> Tensor(a)"
@@ -4476,28 +5164,36 @@
     "name": "aten::matmul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::max.other(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::max.other(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max(Tensor self) -> Tensor"
+    "name": "aten::max(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)"
+    "name": "aten::max.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.dim_max(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) max, Tensor(b!) max_values) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::max.dim_max(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) max, Tensor(b!) max_values) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.names_dim(Tensor self, str dim, bool keepdim=False) -> (Tensor values, Tensor indices)"
+    "name": "aten::max.names_dim(Tensor self, str dim, bool keepdim=False) -> (Tensor values, Tensor indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.names_dim_max(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) max, Tensor(b!) max_values) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::max.names_dim_max(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) max, Tensor(b!) max_values) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.unary_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::max.unary_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::max.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::max.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::max_pool1d(Tensor self, int[1] kernel_size, int[1] stride=[], int[1] padding=[0], int[1] dilation=[1], bool ceil_mode=False) -> Tensor",
@@ -4555,22 +5251,28 @@
     "name": "aten::maximum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::mean(Tensor self, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::mean(Tensor self, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mean.dim(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::mean.dim(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mean.names_dim(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::mean.names_dim(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mean.names_out(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::mean.names_out(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mean.out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::mean.out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mean.dtype_out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::mean.dtype_out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::median(Tensor self) -> Tensor"
@@ -4599,28 +5301,36 @@
     "category": "Tensor"
   },
   {
-    "name": "aten::min.other(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::min.other(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min(Tensor self) -> Tensor"
+    "name": "aten::min(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)"
+    "name": "aten::min.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.dim_min(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) min, Tensor(b!) min_indices) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::min.dim_min(Tensor self, int dim, bool keepdim=False, *, Tensor(a!) min, Tensor(b!) min_indices) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.names_dim(Tensor self, str dim, bool keepdim=False) -> (Tensor values, Tensor indices)"
+    "name": "aten::min.names_dim(Tensor self, str dim, bool keepdim=False) -> (Tensor values, Tensor indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.names_dim_min(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) min, Tensor(b!) min_indices) -> (Tensor(a!) values, Tensor(b!) indices)"
+    "name": "aten::min.names_dim_min(Tensor self, str dim, bool keepdim=False, *, Tensor(a!) min, Tensor(b!) min_indices) -> (Tensor(a!) values, Tensor(b!) indices)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.unary_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::min.unary_out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::min.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::min.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::minimum(Tensor self, Tensor other) -> Tensor"
@@ -4700,52 +5410,68 @@
     "name": "aten::mse_loss_backward.grad_input(Tensor grad_output, Tensor self, Tensor target, int reduction, *, Tensor(a!) grad_input) -> Tensor(a!)"
   },
   {
-    "name": "aten::mul.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::mul.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::mul.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::mul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::mul.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.left_t(t[] l, int n) -> t[]"
+    "name": "aten::mul.left_t(t[] l, int n) -> t[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.right_(int n, t[] l) -> t[]"
+    "name": "aten::mul.right_(int n, t[] l) -> t[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.int(int a, int b) -> int"
+    "name": "aten::mul.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.complex(complex a, complex b) -> complex"
+    "name": "aten::mul.complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.float(float a, float b) -> float"
+    "name": "aten::mul.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.int_complex(int a, complex b) -> complex"
+    "name": "aten::mul.int_complex(int a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.complex_int(complex a, int b) -> complex"
+    "name": "aten::mul.complex_int(complex a, int b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.float_complex(float a, complex b) -> complex"
+    "name": "aten::mul.float_complex(float a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.complex_float(complex a, float b) -> complex"
+    "name": "aten::mul.complex_float(complex a, float b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.int_float(int a, float b) -> float"
+    "name": "aten::mul.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul.float_int(float a, int b) -> float"
+    "name": "aten::mul.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::mul(Scalar a, Scalar b) -> Scalar"
+    "name": "aten::mul(Scalar a, Scalar b) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::mul_.Tensor(Tensor(a!) self, Tensor other) -> Tensor(a!)"
@@ -4834,85 +5560,112 @@
     "category": "Normalization"
   },
   {
-    "name": "aten::ne.Tensor(Tensor self, Tensor other) -> Tensor"
+    "name": "aten::ne.Tensor(Tensor self, Tensor other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.Scalar(Tensor self, Scalar other) -> Tensor"
+    "name": "aten::ne.Scalar(Tensor self, Scalar other) -> Tensor",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::ne.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::ne.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.int_list(int[] a, int[] b) -> bool"
+    "name": "aten::ne.int_list(int[] a, int[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.device(Device a, Device b) -> bool"
+    "name": "aten::ne.device(Device a, Device b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.bool(bool a, bool b) -> bool"
+    "name": "aten::ne.bool(bool a, bool b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.enum(AnyEnumType a, AnyEnumType b) -> bool"
+    "name": "aten::ne.enum(AnyEnumType a, AnyEnumType b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.int(int a, int b) -> bool"
+    "name": "aten::ne.int(int a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.complex(complex a, complex b) -> bool"
+    "name": "aten::ne.complex(complex a, complex b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.float(float a, float b) -> bool"
+    "name": "aten::ne.float(float a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.int_float(int a, float b) -> bool"
+    "name": "aten::ne.int_float(int a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.float_int(float a, int b) -> bool"
+    "name": "aten::ne.float_int(float a, int b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.float_complex(float a, complex b) -> bool"
+    "name": "aten::ne.float_complex(float a, complex b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.complex_float(complex a, float b) -> bool"
+    "name": "aten::ne.complex_float(complex a, float b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne(Scalar a, Scalar b) -> bool"
+    "name": "aten::ne(Scalar a, Scalar b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.str(str a, str b) -> bool"
+    "name": "aten::ne.str(str a, str b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.float_list(float[] a, float[] b) -> bool"
+    "name": "aten::ne.float_list(float[] a, float[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.Tensor_list(Tensor[] a, Tensor[] b) -> bool"
+    "name": "aten::ne.Tensor_list(Tensor[] a, Tensor[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.bool_list(bool[] a, bool[] b) -> bool"
+    "name": "aten::ne.bool_list(bool[] a, bool[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::ne.str_list(str[] a, str[] b) -> bool"
+    "name": "aten::ne.str_list(str[] a, str[] b) -> bool",
+    "category": "Logic"
   },
   {
-    "name": "aten::neg(Tensor self) -> Tensor"
+    "name": "aten::neg(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::neg.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::neg.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::neg.int(int a) -> int"
+    "name": "aten::neg.int(int a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::neg.float(float a) -> float"
+    "name": "aten::neg.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::neg.complex(complex a) -> complex"
+    "name": "aten::neg.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::neg.Scalar(Scalar a) -> Scalar"
+    "name": "aten::neg.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::nested_to_padded_tensor(Tensor self, float padding, int[]? output_size=None) -> Tensor"
@@ -4972,40 +5725,52 @@
     "name": "aten::nonzero_numpy(Tensor self) -> Tensor[]"
   },
   {
-    "name": "aten::norm.Scalar(Tensor self, Scalar p=2) -> Tensor"
+    "name": "aten::norm.Scalar(Tensor self, Scalar p=2) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.ScalarOpt_dim(Tensor self, Scalar? p, int[1] dim, bool keepdim=False) -> Tensor"
+    "name": "aten::norm.ScalarOpt_dim(Tensor self, Scalar? p, int[1] dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.names_ScalarOpt_dim(Tensor self, Scalar? p, str[1] dim, bool keepdim=False) -> Tensor"
+    "name": "aten::norm.names_ScalarOpt_dim(Tensor self, Scalar? p, str[1] dim, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.ScalarOpt_dim_dtype(Tensor self, Scalar? p, int[1] dim, bool keepdim, *, ScalarType dtype) -> Tensor"
+    "name": "aten::norm.ScalarOpt_dim_dtype(Tensor self, Scalar? p, int[1] dim, bool keepdim, *, ScalarType dtype) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.dtype_out(Tensor self, Scalar? p, int[1] dim, bool keepdim, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.dtype_out(Tensor self, Scalar? p, int[1] dim, bool keepdim, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.out(Tensor self, Scalar? p, int[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.out(Tensor self, Scalar? p, int[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.ScalarOpt_dtype(Tensor self, Scalar? p, *, ScalarType dtype) -> Tensor"
+    "name": "aten::norm.ScalarOpt_dtype(Tensor self, Scalar? p, *, ScalarType dtype) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.ScalarOpt_dtype_out(Tensor self, Scalar? p, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.ScalarOpt_dtype_out(Tensor self, Scalar? p, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.Scalar_out(Tensor self, Scalar p=2, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.Scalar_out(Tensor self, Scalar p=2, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.names_ScalarOpt_dim_dtype(Tensor self, Scalar? p, str[1] dim, bool keepdim, *, ScalarType dtype) -> Tensor"
+    "name": "aten::norm.names_ScalarOpt_dim_dtype(Tensor self, Scalar? p, str[1] dim, bool keepdim, *, ScalarType dtype) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.names_dtype_out(Tensor self, Scalar? p, str[1] dim, bool keepdim, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.names_dtype_out(Tensor self, Scalar? p, str[1] dim, bool keepdim, *, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::norm.names_out(Tensor self, Scalar? p, str[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::norm.names_out(Tensor self, Scalar? p, str[1] dim, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::normal.Tensor_float(Tensor mean, float std=1., *, Generator? generator=None) -> Tensor"
@@ -5211,49 +5976,64 @@
     "name": "aten::pop.Dict_default_Tensor(Dict(Tensor, t)(a!) self, Tensor key, t default_value) -> t(*)"
   },
   {
-    "name": "aten::pow.Tensor_Tensor(Tensor self, Tensor exponent) -> Tensor"
+    "name": "aten::pow.Tensor_Tensor(Tensor self, Tensor exponent) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Tensor_Scalar(Tensor self, Scalar exponent) -> Tensor"
+    "name": "aten::pow.Tensor_Scalar(Tensor self, Scalar exponent) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Scalar(Scalar self, Tensor exponent) -> Tensor"
+    "name": "aten::pow.Scalar(Scalar self, Tensor exponent) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Scalar_out(Scalar self, Tensor exponent, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::pow.Scalar_out(Scalar self, Tensor exponent, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Tensor_Scalar_out(Tensor self, Scalar exponent, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::pow.Tensor_Scalar_out(Tensor self, Scalar exponent, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Tensor_Tensor_out(Tensor self, Tensor exponent, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::pow.Tensor_Tensor_out(Tensor self, Tensor exponent, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.int(int a, int b) -> float"
+    "name": "aten::pow.int(int a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.complex(complex a, complex b) -> complex"
+    "name": "aten::pow.complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.float(float a, float b) -> float"
+    "name": "aten::pow.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.int_float(int a, float b) -> float"
+    "name": "aten::pow.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.float_int(float a, int b) -> float"
+    "name": "aten::pow.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.float_complex(float a, complex b) -> complex"
+    "name": "aten::pow.float_complex(float a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.complex_float(complex a, float b) -> complex"
+    "name": "aten::pow.complex_float(complex a, float b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.Scalar_Scalar(Scalar a, Scalar b) -> float"
+    "name": "aten::pow.Scalar_Scalar(Scalar a, Scalar b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::pow.int_to_int(int a, int b) -> int"
+    "name": "aten::pow.int_to_int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::pow_.Scalar(Tensor(a!) self, Scalar exponent) -> Tensor(a!)"
@@ -5266,22 +6046,28 @@
     "category": "Activation"
   },
   {
-    "name": "aten::prod(Tensor self, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::prod(Tensor self, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::prod.dim_int(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::prod.dim_int(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::prod.dim_Dimname(Tensor self, str dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::prod.dim_Dimname(Tensor self, str dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::prod.Dimname_out(Tensor self, str dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::prod.Dimname_out(Tensor self, str dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::prod.out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::prod.out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::put_(Tensor(a!) self, Tensor index, Tensor source, bool accumulate=False) -> Tensor(a!)"
@@ -5543,10 +6329,12 @@
     "name": "aten::real(Tensor(a) self) -> Tensor(a)"
   },
   {
-    "name": "aten::reciprocal(Tensor self) -> Tensor"
+    "name": "aten::reciprocal(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::reciprocal.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::reciprocal.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::reciprocal_(Tensor(a!) self) -> Tensor(a!)"
@@ -5759,25 +6547,32 @@
     "name": "aten::rot90.out(Tensor self, int k=1, int[] dims=[0, 1], *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::round(Tensor self) -> Tensor"
+    "name": "aten::round(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.decimals(Tensor self, *, int decimals) -> Tensor"
+    "name": "aten::round.decimals(Tensor self, *, int decimals) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::round.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.decimals_out(Tensor self, *, int decimals, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::round.decimals_out(Tensor self, *, int decimals, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.int(int a) -> float"
+    "name": "aten::round.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.float(float a) -> float"
+    "name": "aten::round.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::round.Scalar(Scalar a) -> Scalar"
+    "name": "aten::round.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::round_(Tensor(a!) self) -> Tensor(a!)"
@@ -5794,10 +6589,12 @@
     "category": "Activation"
   },
   {
-    "name": "aten::rsqrt(Tensor self) -> Tensor"
+    "name": "aten::rsqrt(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::rsqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::rsqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::rsqrt_(Tensor(a!) self) -> Tensor(a!)"
@@ -5976,10 +6773,12 @@
     "category": "Activation"
   },
   {
-    "name": "aten::sign(Tensor self) -> Tensor"
+    "name": "aten::sign(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sign.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sign.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::sign_(Tensor(a!) self) -> Tensor(a!)"
@@ -6008,22 +6807,28 @@
     "name": "aten::silu_backward.grad_input(Tensor grad_output, Tensor self, *, Tensor(a!) grad_input) -> Tensor(a!)"
   },
   {
-    "name": "aten::sin(Tensor self) -> Tensor"
+    "name": "aten::sin(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sin.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sin.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sin.int(int a) -> float"
+    "name": "aten::sin.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sin.float(float a) -> float"
+    "name": "aten::sin.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sin.complex(complex a) -> complex"
+    "name": "aten::sin.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sin.Scalar(Scalar a) -> Scalar"
+    "name": "aten::sin.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::sinc(Tensor self) -> Tensor"
@@ -6032,22 +6837,28 @@
     "name": "aten::sinc.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::sinh(Tensor self) -> Tensor"
+    "name": "aten::sinh(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sinh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sinh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sinh.int(int a) -> float"
+    "name": "aten::sinh.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sinh.float(float a) -> float"
+    "name": "aten::sinh.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sinh.complex(complex a) -> complex"
+    "name": "aten::sinh.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sinh.Scalar(Scalar a) -> Scalar"
+    "name": "aten::sinh.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::size.int(Tensor self, int dim) -> int"
@@ -6268,22 +7079,28 @@
     "name": "aten::splitlines(str self, bool keepends=False) -> str[]"
   },
   {
-    "name": "aten::sqrt(Tensor self) -> Tensor"
+    "name": "aten::sqrt(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sqrt.int(int a) -> float"
+    "name": "aten::sqrt.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sqrt.float(float a) -> float"
+    "name": "aten::sqrt.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sqrt.complex(complex a) -> complex"
+    "name": "aten::sqrt.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sqrt.Scalar(Scalar a) -> Scalar"
+    "name": "aten::sqrt.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::sqrt_(Tensor(a!) self) -> Tensor(a!)"
@@ -6357,31 +7174,40 @@
     "name": "aten::startswith(str self, str substr, int start=0, int end=-1) -> bool"
   },
   {
-    "name": "aten::std(Tensor self, bool unbiased=True) -> Tensor"
+    "name": "aten::std(Tensor self, bool unbiased=True) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.dim(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False) -> Tensor"
+    "name": "aten::std.dim(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False) -> Tensor"
+    "name": "aten::std.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.names_dim(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False) -> Tensor"
+    "name": "aten::std.names_dim(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.names_out(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::std.names_out(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.out(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::std.out(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.correction_out(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::std.correction_out(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.correction_names(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False) -> Tensor"
+    "name": "aten::std.correction_names(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::std.correction_names_out(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::std.correction_names_out(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::std_mean(Tensor self, bool unbiased=True) -> (Tensor, Tensor)"
@@ -6423,46 +7249,60 @@
     "name": "aten::strip(str self, str chars=\" \\n\\t\\f\\v\") -> str"
   },
   {
-    "name": "aten::sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor"
+    "name": "aten::sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor"
+    "name": "aten::sub.Scalar(Tensor self, Scalar other, Scalar alpha=1) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sub.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.Scalar_out(Tensor self, Scalar other, Scalar alpha=1, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sub.Scalar_out(Tensor self, Scalar other, Scalar alpha=1, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.int(int a, int b) -> int"
+    "name": "aten::sub.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.complex(complex a, complex b) -> complex"
+    "name": "aten::sub.complex(complex a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.float(float a, float b) -> float"
+    "name": "aten::sub.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.int_complex(int a, complex b) -> complex"
+    "name": "aten::sub.int_complex(int a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.complex_int(complex a, int b) -> complex"
+    "name": "aten::sub.complex_int(complex a, int b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.float_complex(float a, complex b) -> complex"
+    "name": "aten::sub.float_complex(float a, complex b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.complex_float(complex a, float b) -> complex"
+    "name": "aten::sub.complex_float(complex a, float b) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.int_float(int a, float b) -> float"
+    "name": "aten::sub.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub.float_int(float a, int b) -> float"
+    "name": "aten::sub.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sub(Scalar a, Scalar b) -> Scalar"
+    "name": "aten::sub(Scalar a, Scalar b) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::sub_.Tensor(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)"
@@ -6471,34 +7311,44 @@
     "name": "aten::sub_.Scalar(Tensor(a!) self, Scalar other, Scalar alpha=1) -> Tensor(a!)"
   },
   {
-    "name": "aten::sum.dim_IntList(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::sum.dim_IntList(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum(Tensor self, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::sum(Tensor self, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.dim_DimnameList(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"
+    "name": "aten::sum.dim_DimnameList(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.DimnameList_out(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sum.DimnameList_out(Tensor self, str[1] dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.IntList_out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sum.IntList_out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::sum.out(Tensor self, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.int(int[] self) -> int"
+    "name": "aten::sum.int(int[] self) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.float(float[] self) -> float"
+    "name": "aten::sum.float(float[] self) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.complex(complex[] self) -> complex"
+    "name": "aten::sum.complex(complex[] self) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::sum.bool(bool[] self) -> int"
+    "name": "aten::sum.bool(bool[] self) -> int",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::swapaxes(Tensor(a) self, int axis0, int axis1) -> Tensor(a)"
@@ -6535,22 +7385,28 @@
     "name": "aten::take_along_dim.out(Tensor self, Tensor indices, int? dim=None, *, Tensor(a!) out) -> Tensor(a!)"
   },
   {
-    "name": "aten::tan(Tensor self) -> Tensor"
+    "name": "aten::tan(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::tan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::tan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::tan.int(int a) -> float"
+    "name": "aten::tan.int(int a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::tan.float(float a) -> float"
+    "name": "aten::tan.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::tan.complex(complex a) -> complex"
+    "name": "aten::tan.complex(complex a) -> complex",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::tan.Scalar(Scalar a) -> Scalar"
+    "name": "aten::tan.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::tan_(Tensor(a!) self) -> Tensor(a!)"
@@ -6765,10 +7621,12 @@
     "name": "aten::true_divide_.Scalar(Tensor(a!) self, Scalar other) -> Tensor(a!)"
   },
   {
-    "name": "aten::trunc(Tensor self) -> Tensor"
+    "name": "aten::trunc(Tensor self) -> Tensor",
+    "category": "Arithmetic"
   },
   {
-    "name": "aten::trunc.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::trunc.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Arithmetic"
   },
   {
     "name": "aten::type_as(Tensor self, Tensor other) -> Tensor"
@@ -6988,31 +7846,40 @@
     "name": "aten::values.Tensor(Dict(Tensor, t) self) -> t[](*)"
   },
   {
-    "name": "aten::var(Tensor self, bool unbiased=True) -> Tensor"
+    "name": "aten::var(Tensor self, bool unbiased=True) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.dim(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False) -> Tensor"
+    "name": "aten::var.dim(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False) -> Tensor"
+    "name": "aten::var.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.names_dim(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False) -> Tensor"
+    "name": "aten::var.names_dim(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.names_out(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::var.names_out(Tensor self, str[1] dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.out(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::var.out(Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.correction_out(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::var.correction_out(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.correction_names(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False) -> Tensor"
+    "name": "aten::var.correction_names(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False) -> Tensor",
+    "category": "Reduce"
   },
   {
-    "name": "aten::var.correction_names_out(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)"
+    "name": "aten::var.correction_names_out(Tensor self, str[1] dim, *, Scalar? correction=None, bool keepdim=False, Tensor(a!) out) -> Tensor(a!)",
+    "category": "Reduce"
   },
   {
     "name": "aten::var_mean(Tensor self, bool unbiased=True) -> (Tensor, Tensor)"
@@ -7903,19 +8770,24 @@
     "name": "prim::VarStack(...) -> Tensor"
   },
   {
-    "name": "prim::abs.int(int a) -> int"
+    "name": "prim::abs.int(int a) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::abs.float(float a) -> float"
+    "name": "prim::abs.float(float a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::abs.complex(complex a) -> float"
+    "name": "prim::abs.complex(complex a) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::abs.Scalar(Scalar a) -> Scalar"
+    "name": "prim::abs.Scalar(Scalar a) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::abs(Tensor x) -> Tensor"
+    "name": "prim::abs(Tensor x) -> Tensor",
+    "category": "Arithmetic"
   },
   {
     "name": "prim::data(Tensor(a) a) -> Tensor(a)"
@@ -7990,70 +8862,92 @@
     "name": "prim::layout(Tensor a) -> Layout"
   },
   {
-    "name": "prim::max.int(int a, int b) -> int"
+    "name": "prim::max.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.float(float a, float b) -> float"
+    "name": "prim::max.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.int_float(int a, float b) -> float"
+    "name": "prim::max.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.float_int(float a, int b) -> float"
+    "name": "prim::max.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max(Scalar a, Scalar b) -> Scalar"
+    "name": "prim::max(Scalar a, Scalar b) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.int_list(int[] l, int[] r) -> int[]"
+    "name": "prim::max.int_list(int[] l, int[] r) -> int[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.self_int(int[] self) -> int"
+    "name": "prim::max.self_int(int[] self) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.float_list(float[] l, float[] r) -> float[]"
+    "name": "prim::max.float_list(float[] l, float[] r) -> float[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.self_float(float[] self) -> float"
+    "name": "prim::max.self_float(float[] self) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.bool_list(bool[] l, bool[] r) -> bool[]"
+    "name": "prim::max.bool_list(bool[] l, bool[] r) -> bool[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::max.self_bool(bool[] self) -> bool"
+    "name": "prim::max.self_bool(bool[] self) -> bool",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.int(int a, int b) -> int"
+    "name": "prim::min.int(int a, int b) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.float(float a, float b) -> float"
+    "name": "prim::min.float(float a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.int_float(int a, float b) -> float"
+    "name": "prim::min.int_float(int a, float b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.float_int(float a, int b) -> float"
+    "name": "prim::min.float_int(float a, int b) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min(Scalar a, Scalar b) -> Scalar"
+    "name": "prim::min(Scalar a, Scalar b) -> Scalar",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.int_list(int[] l, int[] r) -> int[]"
+    "name": "prim::min.int_list(int[] l, int[] r) -> int[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.self_int(int[] self) -> int"
+    "name": "prim::min.self_int(int[] self) -> int",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.float_list(float[] l, float[] r) -> float[]"
+    "name": "prim::min.float_list(float[] l, float[] r) -> float[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.self_float(float[] self) -> float"
+    "name": "prim::min.self_float(float[] self) -> float",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.bool_list(bool[] l, bool[] r) -> bool[]"
+    "name": "prim::min.bool_list(bool[] l, bool[] r) -> bool[]",
+    "category": "Arithmetic"
   },
   {
-    "name": "prim::min.self_bool(bool[] self) -> bool"
+    "name": "prim::min.self_bool(bool[] self) -> bool",
+    "category": "Arithmetic"
   },
   {
     "name": "prim::mkldnn_convolution(Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor"
