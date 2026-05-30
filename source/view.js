@@ -974,14 +974,18 @@ view.View = class {
                         // scrollTo().  Without this the browser may reset scrollLeft/
                         // scrollTop to 0 after our scroll call (zoom-then-scroll race).
                         requestAnimationFrame(() => {
-                            if (target !== this._target) { return; }
+                            if (target !== this._target) {
+                                return;
+                            }
                             // Scroll to input nodes if available, else center the graph.
                             const inputNodes = target._inputNodes;
                             let scrolled = false;
                             if (Array.isArray(inputNodes) && inputNodes.length > 0) {
                                 let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
                                 for (const node of inputNodes) {
-                                    if (!node.element || !node.element.isConnected) { continue; }
+                                    if (!node.element || !node.element.isConnected) {
+                                        continue;
+                                    }
                                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                                         const hw = (node.width || 0) / 2;
                                         const hh = (node.height || 0) / 2;
@@ -2662,7 +2666,9 @@ view.Graph = class extends grapher.Graph {
                 let bottom = Number.NEGATIVE_INFINITY;
                 let hasCoords = false;
                 for (const node of inputNodes) {
-                    if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
+                    if (!node.element || !node.element.isConnected) {
+                        continue; // guard: skip stale/detached nodes
+                    }
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
@@ -2704,7 +2710,9 @@ view.Graph = class extends grapher.Graph {
                 }
                 let bottom = -Infinity, left = Infinity, right = -Infinity, top = Infinity;
                 for (const node of inputNodes) {
-                    if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
+                    if (!node.element || !node.element.isConnected) {
+                        continue; // guard: skip stale/detached nodes
+                    }
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
@@ -2741,14 +2749,14 @@ view.Graph = class extends grapher.Graph {
                 // Safety net for ARM/Snapdragon: after the first idle cycle following the
                 // initial viewport scan, retry any edges that were rendered with empty paths
                 // due to node build chunks completing out-of-order.
-                if (typeof requestIdleCallback !== 'undefined') {
-                    requestIdleCallback(() => {
-                        this._retryEmptyEdges(this.view._host.document);
-                    }, { timeout: 600 });
-                } else {
+                if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => {
-                        this._retryEmptyEdges(this.view._host.document);
+                        this._retryEmptyEdges();
                     }, 200);
+                } else {
+                    requestIdleCallback(() => {
+                        this._retryEmptyEdges();
+                    }, { timeout: 600 });
                 }
             }, 100);
         }
@@ -2780,7 +2788,9 @@ view.Graph = class extends grapher.Graph {
                     if (Array.isArray(inputNodes) && inputNodes.length > 0) {
                         let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
                         for (const node of inputNodes) {
-                            if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
+                            if (!node.element || !node.element.isConnected) {
+                                continue; // guard: skip stale/detached nodes
+                            }
                             if (typeof node.x === 'number' && typeof node.y === 'number') {
                                 const hw = (node.width || 0) / 2;
                                 const hh = (node.height || 0) / 2;
