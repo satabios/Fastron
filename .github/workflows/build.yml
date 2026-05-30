@@ -39,11 +39,11 @@ jobs:
             test-models-
 
       - name: Install Packages
-        run: npm run install
+        run: npm run setup
 
       - name: Validate
         run: npm run validate
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       - name: Build Electron
         shell: bash

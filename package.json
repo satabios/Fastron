@@ -17,7 +17,7 @@
         "start": "node package.js start",
         "server": "python package.py build start",
         "clean": "node package.js clean",
-        "install": "node package.js install",
+        "setup": "node package.js install",
         "lint": "node package.js lint",
         "build": "node package.js build",
         "publish": "node package.js publish",
