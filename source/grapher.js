@@ -468,7 +468,7 @@ grapher.Graph = class {
     // Safety net: scan all currently-visible edges and re-trigger update() on any whose
     // SVG path is empty.  This catches edges that slipped through _buildVisibleEdges on
     // ARM/low-power hardware where idle chunks complete out-of-order.
-    _retryEmptyEdges(document) {
+    _retryEmptyEdges() {
         if (!this._visibleEdges) {
             return;
         }
