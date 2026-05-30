@@ -307,16 +307,12 @@ const installElectron = async () => {
     if (!verified) {
         writeLine('install electron');
         await rm('node_modules', 'electron');
-        await exec(`npm install --no-save electron@${electronVersion}`);
+        await rm('node_modules', '.bin', 'electron');
+        await rm('node_modules', '.bin', 'electron.cmd');
+        const env = { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '', npm_config_build_from_source: 'true' };
+        delete env.ELECTRON_SKIP_BINARY_DOWNLOAD;
+        await exec(`npm install --no-save --no-ignore-scripts electron@${electronVersion}`, undefined, dirname());
         verified = await verifyElectron();
-        if (!verified) {
-            const installScript = dirname('node_modules', 'electron', 'install.js');
-            if (await access(installScript)) {
-                writeLine('download electron binary');
-                await exec('node -e "delete process.env.ELECTRON_SKIP_BINARY_DOWNLOAD; require(\'./node_modules/electron/install.js\');"');
-                verified = await verifyElectron();
-            }
-        }
         if (!verified && await repairElectronPath()) {
             verified = await verifyElectron();
         }
