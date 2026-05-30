@@ -10,7 +10,7 @@
     "date": "2026-04-30 08:34:00",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
-    "repository": "satabios/netron",
+    "repository": "satabios/Fastron",
     "type": "module",
     "main": "source/app.js",
     "scripts": {
