@@ -28,6 +28,7 @@ grapher.Graph = class {
         this._detachInvisible = false;
         this._visibilityVersion = 0;
         this._mainThreadLayoutThreshold = 5000;
+        this._pendingEdgeUpdates = new Set(); // edges deferred because endpoint nodes weren't built yet
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -365,11 +366,31 @@ grapher.Graph = class {
                     }
                 }
             }
+            // Drain pending edges whose endpoint nodes just got built in this chunk.
+            if (this._pendingEdgeUpdates.size > 0) {
+                const readyEdges = [];
+                for (const edgeKey of this._pendingEdgeUpdates) {
+                    const pendingEdge = this._edges.get(edgeKey);
+                    if (!pendingEdge) {
+                        this._pendingEdgeUpdates.delete(edgeKey);
+                        continue;
+                    }
+                    const vEntry = this._nodes.get(pendingEdge.v);
+                    const wEntry = this._nodes.get(pendingEdge.w);
+                    if (vEntry && vEntry.label.element && wEntry && wEntry.label.element) {
+                        readyEdges.push(edgeKey);
+                        this._pendingEdgeUpdates.delete(edgeKey);
+                    }
+                }
+                if (readyEdges.length > 0) {
+                    this._buildVisibleEdges(readyEdges, document);
+                }
+            }
             if (ids.length > 0) {
                 if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => process(ids), 0);
                 } else {
-                    requestIdleCallback(() => process(ids), { timeout: 300 });
+                    requestIdleCallback(() => process(ids), { timeout: 500 });
                 }
             }
         };
@@ -393,6 +414,15 @@ grapher.Graph = class {
                 const label = edgeEntry.label;
                 const wasBuilt = Boolean(label.element);
                 if (!label.element && this._deferredEdgeBuild) {
+                    // Guard: if either endpoint node hasn't been built yet, defer this edge.
+                    // This prevents intersectRect() from running against a null element on
+                    // ARM/Snapdragon where idle chunks complete out-of-order with edge builds.
+                    const vEntry = this._nodes.get(edgeEntry.v);
+                    const wEntry = this._nodes.get(edgeEntry.w);
+                    if ((vEntry && !vEntry.label.element) || (wEntry && !wEntry.label.element)) {
+                        this._pendingEdgeUpdates.add(edgeKey);
+                        continue;
+                    }
                     this._ensureEdgeElementBuildOnly(edgeEntry, document);
                 }
                 builtEdges.push({ label, wasBuilt });
@@ -428,11 +458,42 @@ grapher.Graph = class {
                 if (typeof requestIdleCallback === 'undefined') {
                     setTimeout(() => process(keys), 0);
                 } else {
-                    requestIdleCallback(() => process(keys), { timeout: 300 });
+                    requestIdleCallback(() => process(keys), { timeout: 500 });
                 }
             }
         };
         process(edgeKeys);
+    }
+
+    // Safety net: scan all currently-visible edges and re-trigger update() on any whose
+    // SVG path is empty.  This catches edges that slipped through _buildVisibleEdges on
+    // ARM/low-power hardware where idle chunks complete out-of-order.
+    _retryEmptyEdges(document) {
+        if (!this._visibleEdges) {
+            return;
+        }
+        const requeue = [];
+        for (const edgeKey of this._visibleEdges) {
+            const edgeEntry = this._edges.get(edgeKey);
+            if (!edgeEntry || !edgeEntry.label.element) {
+                continue;
+            }
+            const pathEl = edgeEntry.label.element.querySelector('path');
+            if (pathEl && (!pathEl.getAttribute('d') || pathEl.getAttribute('d') === '')) {
+                // Endpoint nodes should be built by now; just re-invoke update().
+                const vEntry = this._nodes.get(edgeEntry.v);
+                const wEntry = this._nodes.get(edgeEntry.w);
+                if (vEntry && vEntry.label.element && wEntry && wEntry.label.element) {
+                    edgeEntry.label.update();
+                } else {
+                    // Still waiting for a node — push back to _pendingEdgeUpdates
+                    requeue.push(edgeKey);
+                }
+            }
+        }
+        for (const key of requeue) {
+            this._pendingEdgeUpdates.add(key);
+        }
     }
 
     updateViewportVisibility(viewportBounds) {
