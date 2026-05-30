@@ -586,7 +586,6 @@ const test = async (target) => {
             target = null;
             models = false;
             await installElectron();
-            await exec('npx playwright install');
             const host = process.platform === 'linux' && (process.env.GITHUB_ACTIONS || process.env.CI) ? 'xvfb-run -a ' : '';
             await exec(`${host}npx playwright test --config=test/playwright.config.js --project=desktop`);
             continue;
