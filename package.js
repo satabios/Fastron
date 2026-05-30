@@ -260,25 +260,67 @@ const installElectron = async () => {
     if (!electronVersion) {
         return;
     }
-    const probe = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
-    if (probe.status !== 0) {
+    const verifyElectron = async () => {
+        const result = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        return result.status === 0;
+    };
+    const findElectronBinary = async (dir, candidates) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        /* eslint-disable no-await-in-loop */
+        for (const entry of entries) {
+            const location = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                const match = await findElectronBinary(location, candidates);
+                if (match) {
+                    return match;
+                }
+                continue;
+            }
+            if (entry.isFile() && candidates.has(entry.name)) {
+                return location;
+            }
+        }
+        /* eslint-enable no-await-in-loop */
+        return null;
+    };
+    const repairElectronPath = async () => {
+        const root = dirname('node_modules', 'electron');
+        const dist = path.join(root, 'dist');
+        if (!(await access(dist))) {
+            return false;
+        }
+        let names = ['electron'];
+        if (process.platform === 'darwin') {
+            names = ['Electron'];
+        } else if (process.platform === 'win32') {
+            names = ['electron.exe'];
+        }
+        const binary = await findElectronBinary(dist, new Set(names));
+        if (!binary) {
+            return false;
+        }
+        const relative = path.relative(dist, binary).split(path.sep).join('/');
+        await fs.writeFile(path.join(root, 'path.txt'), relative, 'utf-8');
+        return true;
+    };
+    let verified = await verifyElectron();
+    if (!verified) {
         writeLine('install electron');
         await rm('node_modules', 'electron');
         await exec(`npm install --no-save electron@${electronVersion}`);
-        let verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
-        if (verify.status !== 0) {
+        verified = await verifyElectron();
+        if (!verified) {
             const installScript = dirname('node_modules', 'electron', 'install.js');
             if (await access(installScript)) {
                 writeLine('download electron binary');
                 await exec('node -e "delete process.env.ELECTRON_SKIP_BINARY_DOWNLOAD; require(\'./node_modules/electron/install.js\');"');
-                verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+                verified = await verifyElectron();
             }
         }
-        if (verify.status !== 0) {
-            await exec('node -e "const fs=require(\'fs\'); const path=require(\'path\'); const root=path.resolve(\'node_modules/electron\'); const candidates=process.platform===\'darwin\'?[\'Electron.app/Contents/MacOS/Electron\']:(process.platform===\'win32\'?[\'electron.exe\']:[\'electron\']); for (const candidate of candidates) { if (fs.existsSync(path.join(root, \'dist\', candidate))) { fs.writeFileSync(path.join(root, \'path.txt\'), candidate); process.exit(0); } } process.exit(1);"', 'utf-8');
-            verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        if (!verified && await repairElectronPath()) {
+            verified = await verifyElectron();
         }
-        if (verify.status !== 0) {
+        if (!verified) {
             throw new Error('Electron failed to install correctly.');
         }
     }
