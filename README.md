@@ -67,6 +67,21 @@ This optimized fork introduces several critical performance improvements:
 
 **Python**: `pip install fastron`, then run `fastron [FILE]` or `fastron.start('[FILE]')`.
 
+## Models
+
+Sample model files to download:
+
+ * **ONNX**: [squeezenet](https://github.com/onnx/models/raw/main/validated/vision/classification/squeezenet/model/squeezenet1.0-3.onnx)
+ * **TorchScript**: [traced_online_pred_layer](https://github.com/ApolloAuto/apollo/raw/master/modules/prediction/data/traced_online_pred_layer.pt)
+ * **TensorFlow Lite**: [yamnet](https://huggingface.co/thelou1s/yamnet/resolve/main/lite-model_yamnet_tflite_1.tflite)
+ * **TensorFlow**: [chessbot](https://github.com/srom/chessbot/raw/master/model/chessbot.pb)
+ * **Keras**: [mobilenet](https://github.com/aio-libs/aiohttp-demos/raw/master/demos/imagetagger/tests/data/mobilenet.h5)
+ * **MLIR**: [edge_detection](https://github.com/iree-org/iree/raw/main/tests/e2e/stablehlo_models/edge_detection.mlir)
+
+ * **Core ML**: [exermote](https://github.com/Lausbert/Exermote/raw/master/ExermoteInference/ExermoteCoreML/ExermoteCoreML/Model/Exermote.mlmodel)
+ * **Darknet**: [yolo](https://github.com/AlexeyAB/darknet/raw/master/cfg/yolo.cfg)
+
+
 ## Citation
 
 This project is an optimized fork of [Netron](https://github.com/lutzroeder/netron) by Lutz Roeder. Netron is an excellent open-source neural network visualizer that has been enhanced with performance optimizations for handling extremely large models.
