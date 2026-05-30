@@ -270,7 +270,7 @@ const installElectron = async () => {
             const installScript = dirname('node_modules', 'electron', 'install.js');
             if (await access(installScript)) {
                 writeLine('download electron binary');
-                await exec('node node_modules/electron/install.js');
+                await exec('node -e "delete process.env.ELECTRON_SKIP_BINARY_DOWNLOAD; require(\'./node_modules/electron/install.js\');"');
                 verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
             }
         }
