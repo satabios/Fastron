@@ -247,6 +247,19 @@ const install = async () => {
     if (!exists) {
         await exec('npm install');
     }
+    const electronVersion = configuration.devDependencies ? configuration.devDependencies.electron : null;
+    if (electronVersion) {
+        const probe = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        if (probe.status !== 0) {
+            writeLine('install electron');
+            await rm('node_modules', 'electron');
+            await exec(`npm install --no-save electron@${electronVersion}`);
+            const verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+            if (verify.status !== 0) {
+                throw new Error('Electron failed to install correctly.');
+            }
+        }
+    }
     try {
         await exec('python --version', 'utf-8');
         await exec('python -m pip install --upgrade --quiet setuptools ruff');
