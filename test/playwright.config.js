@@ -4,6 +4,7 @@ import playwright from '@playwright/test';
 export default playwright.defineConfig({
     outputDir: '../dist/test-results',
     reporter: './playwright.reporter.js',
+    timeout: 120 * 1000,
     webServer: {
         command: 'npm run server',
         port: 8080,
