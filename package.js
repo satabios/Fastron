@@ -544,7 +544,9 @@ const test = async (target) => {
         if (target === 'desktop' || read('desktop')) {
             target = null;
             models = false;
-            await exec('npx playwright install');
+            if (process.platform === 'linux') {
+                await exec('npx playwright install-deps');
+            }
             const host = process.platform === 'linux' && (process.env.GITHUB_ACTIONS || process.env.CI) ? 'xvfb-run -a ' : '';
             await exec(`${host}npx playwright test --config=test/playwright.config.js --project=desktop`);
             continue;
@@ -553,7 +555,7 @@ const test = async (target) => {
             target = null;
             models = false;
             if (process.platform !== 'win32') {
-                await exec('npx playwright install');
+                await exec('npx playwright install chromium');
                 const headed = process.env.GITHUB_ACTIONS || process.env.CI ? '' :  ' --headed';
                 await exec(`npx playwright test --config=test/playwright.config.js --project=browser${headed}`);
             }
