@@ -246,7 +246,7 @@ const install = async () => {
     }
     exists = await access(node_modules);
     if (!exists) {
-        await exec('npm install --ignore-scripts');
+        await exec('npm install');
     }
     try {
         await exec('python --version', 'utf-8');
