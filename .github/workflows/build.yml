@@ -15,6 +15,7 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
       matrix:
@@ -29,12 +30,20 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Cache test models
+        uses: actions/cache@v4
+        with:
+          path: third_party/test
+          key: test-models-${{ hashFiles('test/models.json') }}
+          restore-keys: |
+            test-models-
 
       - name: Install Packages
         run: npm run install
 
       - name: Validate
         run: npm run validate
+        timeout-minutes: 15
 
       - name: Build Electron
         shell: bash
