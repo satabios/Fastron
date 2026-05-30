@@ -120,8 +120,17 @@ export class Target {
     }
 
     async request(url, init) {
-        const response = await fetch(url, init);
+        const TIMEOUT_MS = 30000;
+        let timer = null;
+        const controller = new AbortController();
+        const resetTimer = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => controller.abort(new Error(`Download stalled for ${TIMEOUT_MS}ms: ${url}`)), TIMEOUT_MS);
+        };
+        resetTimer();
+        const response = await fetch(url, { ...init, signal: controller.signal });
         if (!response.ok) {
+            clearTimeout(timer);
             throw new Error(response.status.toString());
         }
         if (response.body) {
@@ -137,6 +146,7 @@ export class Target {
                         try {
                             const result = await reader.read();
                             if (result.done) {
+                                clearTimeout(timer);
                                 target.status({ name: 'download' });
                                 controller.close();
                             } else {
@@ -147,10 +157,12 @@ export class Target {
                                 } else {
                                     target.status({ name: 'download', target: url, position });
                                 }
+                                resetTimer();
                                 controller.enqueue(result.value);
                                 return await read();
                             }
                         } catch (error) {
+                            clearTimeout(timer);
                             controller.error(error);
                             throw error;
                         }
