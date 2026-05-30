@@ -969,33 +969,43 @@ view.View = class {
                         const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
                         target._zoom = zoom;
                         target._updateZoom(zoom);
-                        // Scroll to input nodes if available, else center the graph.
-                        const inputNodes = target._inputNodes;
-                        let scrolled = false;
-                        if (Array.isArray(inputNodes) && inputNodes.length > 0) {
-                            let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
-                            for (const node of inputNodes) {
-                                if (typeof node.x === 'number' && typeof node.y === 'number') {
-                                    const hw = (node.width || 0) / 2;
-                                    const hh = (node.height || 0) / 2;
-                                    l = Math.min(l, node.x - hw);
-                                    r = Math.max(r, node.x + hw);
-                                    t = Math.min(t, node.y - hh);
-                                    b = Math.max(b, node.y + hh);
+                        // Defer scroll to next frame so the CSS transform applied by
+                        // _updateZoom has flushed to the compositor before we issue
+                        // scrollTo().  Without this the browser may reset scrollLeft/
+                        // scrollTop to 0 after our scroll call (zoom-then-scroll race).
+                        requestAnimationFrame(() => {
+                            if (target !== this._target) { return; }
+                            // Scroll to input nodes if available, else center the graph.
+                            const inputNodes = target._inputNodes;
+                            let scrolled = false;
+                            if (Array.isArray(inputNodes) && inputNodes.length > 0) {
+                                let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
+                                for (const node of inputNodes) {
+                                    if (!node.element || !node.element.isConnected) { continue; }
+                                    if (typeof node.x === 'number' && typeof node.y === 'number') {
+                                        const hw = (node.width || 0) / 2;
+                                        const hh = (node.height || 0) / 2;
+                                        l = Math.min(l, node.x - hw);
+                                        r = Math.max(r, node.x + hw);
+                                        t = Math.min(t, node.y - hh);
+                                        b = Math.max(b, node.y + hh);
+                                    }
+                                }
+                                if (isFinite(l)) {
+                                    target._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
+                                    scrolled = true;
                                 }
                             }
-                            if (isFinite(l)) {
-                                target._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
-                                scrolled = true;
+                            if (!scrolled) {
+                                const cw2 = container.clientWidth;
+                                const ch2 = container.clientHeight;
+                                container.scrollTo({
+                                    left: Math.max(0, (zoom * w - cw2) / 2),
+                                    top: Math.max(0, (zoom * h - ch2) / 2),
+                                    behavior: 'auto'
+                                });
                             }
-                        }
-                        if (!scrolled) {
-                            container.scrollTo({
-                                left: Math.max(0, (zoom * w - cw) / 2),
-                                top: Math.max(0, (zoom * h - ch) / 2),
-                                behavior: 'auto'
-                            });
-                        }
+                        });
                         return;
                     }
                     if (retriesLeft > 0) {
@@ -2240,6 +2250,9 @@ view.Graph = class extends grapher.Graph {
     }
 
     add(graph, signature) {
+        // Reset input nodes list so stale objects from a previous render do not
+        // pollute the scroll-to-input logic on reload / model switch.
+        this._inputNodes = [];
         this.identifier = this.model.identifier;
         this.identifier += graph && graph.name ? `.${graph.name.replace(/\/|\\/g, '.')}` : '';
         const clusters = new Set();
@@ -2649,6 +2662,7 @@ view.Graph = class extends grapher.Graph {
                 let bottom = Number.NEGATIVE_INFINITY;
                 let hasCoords = false;
                 for (const node of inputNodes) {
+                    if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
@@ -2690,6 +2704,7 @@ view.Graph = class extends grapher.Graph {
                 }
                 let bottom = -Infinity, left = Infinity, right = -Infinity, top = Infinity;
                 for (const node of inputNodes) {
+                    if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
@@ -2723,6 +2738,18 @@ view.Graph = class extends grapher.Graph {
             setTimeout(() => {
                 const viewport = this._getViewportBounds();
                 this._onViewportChange(viewport);
+                // Safety net for ARM/Snapdragon: after the first idle cycle following the
+                // initial viewport scan, retry any edges that were rendered with empty paths
+                // due to node build chunks completing out-of-order.
+                if (typeof requestIdleCallback !== 'undefined') {
+                    requestIdleCallback(() => {
+                        this._retryEmptyEdges(this.view._host.document);
+                    }, { timeout: 600 });
+                } else {
+                    setTimeout(() => {
+                        this._retryEmptyEdges(this.view._host.document);
+                    }, 200);
+                }
             }, 100);
         }
     }
@@ -2753,6 +2780,7 @@ view.Graph = class extends grapher.Graph {
                     if (Array.isArray(inputNodes) && inputNodes.length > 0) {
                         let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
                         for (const node of inputNodes) {
+                            if (!node.element || !node.element.isConnected) { continue; } // guard: skip stale/detached nodes
                             if (typeof node.x === 'number' && typeof node.y === 'number') {
                                 const hw = (node.width || 0) / 2;
                                 const hh = (node.height || 0) / 2;
