@@ -265,7 +265,15 @@ const installElectron = async () => {
         writeLine('install electron');
         await rm('node_modules', 'electron');
         await exec(`npm install --no-save electron@${electronVersion}`);
-        const verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        let verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        if (verify.status !== 0) {
+            const installScript = dirname('node_modules', 'electron', 'install.js');
+            if (await access(installScript)) {
+                writeLine('download electron binary');
+                await exec('node node_modules/electron/install.js');
+                verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+            }
+        }
         if (verify.status !== 0) {
             throw new Error('Electron failed to install correctly.');
         }
