@@ -275,6 +275,10 @@ const installElectron = async () => {
             }
         }
         if (verify.status !== 0) {
+            await exec('node -e "const fs=require(\'fs\'); const path=require(\'path\'); const root=path.resolve(\'node_modules/electron\'); const candidates=process.platform===\'darwin\'?[\'Electron.app/Contents/MacOS/Electron\']:(process.platform===\'win32\'?[\'electron.exe\']:[\'electron\']); for (const candidate of candidates) { if (fs.existsSync(path.join(root, \'dist\', candidate))) { fs.writeFileSync(path.join(root, \'path.txt\'), candidate); process.exit(0); } } process.exit(1);"', 'utf-8');
+            verify = await exec('node -e "const fs=require(\'fs\'); const electron=require(\'electron\'); if (typeof electron !== \'string\' || !fs.existsSync(electron)) { process.exit(1); }"', 'utf-8');
+        }
+        if (verify.status !== 0) {
             throw new Error('Electron failed to install correctly.');
         }
     }
