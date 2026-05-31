@@ -15,7 +15,6 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
 
     strategy:
       matrix:
@@ -32,14 +31,6 @@ jobs:
 
       - name: Install Packages
         run: npm run install
-
-      - name: Cache test models
-        uses: actions/cache@v4
-        with:
-          path: third_party/test
-          key: test-models-${{ runner.os }}-${{ hashFiles('test/models.json') }}
-          restore-keys: |
-            test-models-${{ runner.os }}-
 
       - name: Validate
         run: npm run validate
