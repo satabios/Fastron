@@ -261,7 +261,24 @@ const installElectron = async () => {
         return;
     }
     writeLine('install electron');
-    await exec('node node_modules/electron/install.js');
+    const electronDir = dirname('node_modules', 'electron');
+    const pathTxtFile = path.join(electronDir, 'path.txt');
+    const distDir = path.join(electronDir, 'dist');
+    let installed = false;
+    try {
+        const pathContent = await fs.readFile(pathTxtFile, 'utf-8');
+        const binaryPath = path.join(distDir, pathContent.trim());
+        installed = await access(binaryPath);
+    } catch {
+        installed = false;
+    }
+    if (!installed) {
+        await fs.rm(distDir, { recursive: true, force: true }).catch(() => {});
+        await fs.unlink(pathTxtFile).catch(() => {});
+        const env = { ...process.env };
+        delete env.ELECTRON_SKIP_BINARY_DOWNLOAD;
+        child_process.execSync('node node_modules/electron/install.js', { cwd: dirname(), stdio: [0, 1, 2], env });
+    }
 };
 
 const start = async () => {
