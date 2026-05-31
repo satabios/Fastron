@@ -260,45 +260,8 @@ const installElectron = async () => {
     if (!electronVersion) {
         return;
     }
-    const repairElectronPath = async () => {
-        const root = dirname('node_modules', 'electron');
-        const dist = path.join(root, 'dist');
-        if (!(await access(dist))) {
-            return false;
-        }
-        let names = ['electron'];
-        if (process.platform === 'darwin') {
-            names = ['Electron'];
-        } else if (process.platform === 'win32') {
-            names = ['electron.exe'];
-        }
-        const entries = await fs.readdir(dist, { withFileTypes: true });
-        /* eslint-disable no-await-in-loop */
-        for (const entry of entries) {
-            if (names.includes(entry.name)) {
-                await fs.writeFile(path.join(root, 'path.txt'), entry.name, 'utf-8');
-                return true;
-            }
-            if (entry.isDirectory()) {
-                const subpath = path.join(dist, entry.name);
-                const subentries = await fs.readdir(subpath, { withFileTypes: true });
-                for (const subentry of subentries) {
-                    if (names.includes(subentry.name)) {
-                        await fs.writeFile(path.join(root, 'path.txt'), `${entry.name}/${subentry.name}`, 'utf-8');
-                        return true;
-                    }
-                }
-            }
-        }
-        /* eslint-enable no-await-in-loop */
-        return false;
-    };
-    writeLine('repair electron metadata');
-    if (!(await repairElectronPath())) {
-        writeLine('download electron');
-        await exec('node node_modules/electron/install.js');
-        await repairElectronPath();
-    }
+    writeLine('install electron');
+    await exec('node node_modules/electron/install.js');
 };
 
 const start = async () => {
