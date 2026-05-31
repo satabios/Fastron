@@ -32,6 +32,16 @@ jobs:
       - name: Install Packages
         run: npm run install
 
+      - name: Ensure Electron is installed
+        shell: bash
+        run: |
+          rm -rf node_modules/electron
+          npm install electron --no-save
+
+      - name: Install Playwright system dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps
+
       - name: Validate
         run: npm run validate
 

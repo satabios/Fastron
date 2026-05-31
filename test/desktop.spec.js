@@ -16,7 +16,12 @@ playwright.test('desktop', async () => {
     // Launch app
     const electron = await playwright._electron;
     const args = ['.', '--no-sandbox'];
-    const app = await electron.launch({ args });
+    let app;
+    try {
+        app = await electron.launch({ args });
+    } catch (error) {
+        throw new Error(`Electron failed to launch in CI. Ensure the Electron package is installed correctly. Original error: ${error.message}`);
+    }
     const page = await app.firstWindow();
 
     playwright.expect(page).toBeDefined();
