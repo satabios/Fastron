@@ -267,7 +267,7 @@ const installElectron = async () => {
     let installed = false;
     try {
         const pathContent = await fs.readFile(pathTxtFile, 'utf-8');
-        const binaryPath = path.join(electronDir, pathContent.trim());
+        const binaryPath = path.join(distDir, pathContent.trim());
         installed = await access(binaryPath);
     } catch {
         installed = false;
