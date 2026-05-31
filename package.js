@@ -294,7 +294,11 @@ const installElectron = async () => {
         return false;
     };
     writeLine('repair electron metadata');
-    await repairElectronPath();
+    if (!(await repairElectronPath())) {
+        writeLine('download electron');
+        await exec('node node_modules/electron/install.js');
+        await repairElectronPath();
+    }
 };
 
 const start = async () => {
