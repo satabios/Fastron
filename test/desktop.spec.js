@@ -16,7 +16,7 @@ playwright.test('desktop', async () => {
     // Launch app
     const electron = await playwright._electron;
     const args = ['.', '--no-sandbox'];
-    let app;
+    let app = null;
     try {
         app = await electron.launch({ args });
     } catch (error) {
