@@ -117,21 +117,6 @@
     "configuration": {
       "title": "Fastron",
       "properties": {
-        "fastron.onnxSimplification.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable ONNX model simplification before viewing (reduces nodes and memory usage)"
-        },
-        "fastron.onnxSimplification.pythonPath": {
-          "type": "string",
-          "default": "python3",
-          "description": "Path to Python executable (must have onnx and onnxsim packages installed)"
-        },
-        "fastron.onnxSimplification.thresholdMB": {
-          "type": "number",
-          "default": 50,
-          "description": "Minimum file size (MB) to trigger simplification"
-        },
         "fastron.rendering.viewportCulling": {
           "type": "boolean",
           "default": true,
@@ -156,26 +141,6 @@
           "type": "number",
           "default": 1,
           "description": "Maximum cache size in GB"
-        },
-        "fastron.onnxSimplification.sizeThresholdMB": {
-          "type": "number",
-          "default": 50,
-          "description": "Minimum model size in MB to trigger simplification"
-        },
-        "fastron.onnxSimplification.largeModelThresholdGB": {
-          "type": "number",
-          "default": 2,
-          "description": "Size in GB above which to use large model simplification strategy"
-        },
-        "fastron.onnxSimplification.inputShapes": {
-          "type": "object",
-          "default": {},
-          "description": "Optional input shapes for simplification (e.g., {\"input\": [1, 3, 224, 224]})"
-        },
-        "fastron.onnxSimplification.skipOptimizers": {
-          "type": "array",
-          "default": [],
-          "description": "List of optimizers to skip during simplification"
         },
         "fastron.rendering.skipWeightData": {
           "type": "boolean",
