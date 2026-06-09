@@ -969,33 +969,47 @@ view.View = class {
                         const zoom = Math.min(1, Math.max(0.15, Math.min(cw / w, ch / h) * 0.92));
                         target._zoom = zoom;
                         target._updateZoom(zoom);
-                        // Scroll to input nodes if available, else center the graph.
-                        const inputNodes = target._inputNodes;
-                        let scrolled = false;
-                        if (Array.isArray(inputNodes) && inputNodes.length > 0) {
-                            let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
-                            for (const node of inputNodes) {
-                                if (typeof node.x === 'number' && typeof node.y === 'number') {
-                                    const hw = (node.width || 0) / 2;
-                                    const hh = (node.height || 0) / 2;
-                                    l = Math.min(l, node.x - hw);
-                                    r = Math.max(r, node.x + hw);
-                                    t = Math.min(t, node.y - hh);
-                                    b = Math.max(b, node.y + hh);
+                        // Defer scroll to next frame so the CSS transform applied by
+                        // _updateZoom has flushed to the compositor before we issue
+                        // scrollTo().  Without this the browser may reset scrollLeft/
+                        // scrollTop to 0 after our scroll call (zoom-then-scroll race).
+                        requestAnimationFrame(() => {
+                            if (target !== this._target) {
+                                return;
+                            }
+                            // Scroll to input nodes if available, else center the graph.
+                            // Use layout coordinates directly — DOM elements may not exist yet
+                            // in deferred rendering mode (nodes are built lazily on viewport
+                            // entry), so no element-existence check here.
+                            const inputNodes = target._inputNodes;
+                            let scrolled = false;
+                            if (Array.isArray(inputNodes) && inputNodes.length > 0) {
+                                let b = -Infinity, l = Infinity, r = -Infinity, t = Infinity;
+                                for (const node of inputNodes) {
+                                    if (typeof node.x === 'number' && typeof node.y === 'number') {
+                                        const hw = (node.width || 0) / 2;
+                                        const hh = (node.height || 0) / 2;
+                                        l = Math.min(l, node.x - hw);
+                                        r = Math.max(r, node.x + hw);
+                                        t = Math.min(t, node.y - hh);
+                                        b = Math.max(b, node.y + hh);
+                                    }
+                                }
+                                if (isFinite(l)) {
+                                    target._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
+                                    scrolled = true;
                                 }
                             }
-                            if (isFinite(l)) {
-                                target._scrollToGraphBounds({ x: l, y: t, width: r - l, height: b - t }, 'auto');
-                                scrolled = true;
+                            if (!scrolled) {
+                                const cw2 = container.clientWidth;
+                                const ch2 = container.clientHeight;
+                                container.scrollTo({
+                                    left: Math.max(0, (zoom * w - cw2) / 2),
+                                    top: Math.max(0, (zoom * h - ch2) / 2),
+                                    behavior: 'auto'
+                                });
                             }
-                        }
-                        if (!scrolled) {
-                            container.scrollTo({
-                                left: Math.max(0, (zoom * w - cw) / 2),
-                                top: Math.max(0, (zoom * h - ch) / 2),
-                                behavior: 'auto'
-                            });
-                        }
+                        });
                         return;
                     }
                     if (retriesLeft > 0) {
@@ -2240,6 +2254,9 @@ view.Graph = class extends grapher.Graph {
     }
 
     add(graph, signature) {
+        // Reset input nodes list so stale objects from a previous render do not
+        // pollute the scroll-to-input logic on reload / model switch.
+        this._inputNodes = [];
         this.identifier = this.model.identifier;
         this.identifier += graph && graph.name ? `.${graph.name.replace(/\/|\\/g, '.')}` : '';
         const clusters = new Set();
@@ -2363,23 +2380,32 @@ view.Graph = class extends grapher.Graph {
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
         if (config && config.gpuAcceleration && config.gpuAvailable) {
             element.style.willChange = 'scroll-position, transform';
-            canvas.style.willChange = 'transform';
-            canvas.style.transform = 'translateZ(0)';
-            canvas.style.transformOrigin = '0 0';
-            canvas.style.backfaceVisibility = 'hidden';
 
-            // WebGPU path: promote to its own compositor layer for maximum throughput
-            if (config.gpuBackend === 'webgpu') {
+            // Do NOT promote the SVG canvas to its own compositor layer on Qualcomm Adreno.
+            // Adreno GPU drivers have a known issue: when the SVG element is composited into
+            // its own layer (via translateZ / will-change:transform), the SVG <defs> section
+            // (which holds the #arrowhead <marker> elements) is not correctly composited with
+            // the rest of the SVG tree.  The result is that all edge connector paths whose
+            // CSS marker-end references url(#arrowhead) are silently dropped — connectors do
+            // not appear on screen.  Avoid all layer-promotion CSS on the SVG canvas for
+            // Adreno; isolate only the container element (safe stacking-context hint).
+            if (!config.adrenoAvailable) {
+                canvas.style.willChange = 'transform';
+                canvas.style.transform = 'translateZ(0)';
+                canvas.style.transformOrigin = '0 0';
+                canvas.style.backfaceVisibility = 'hidden';
+            }
+
+            // WebGPU path: promote to its own compositor layer for maximum throughput.
+            // Only applied on non-Adreno hardware (Adreno devices above are excluded).
+            if (config.gpuBackend === 'webgpu' && !config.adrenoAvailable) {
                 element.style.isolation = 'isolate';
                 canvas.style.contain = 'strict';
             }
 
-            // Qualcomm Adreno: tile-based deferred renderer — avoid overdraw and large repaints.
-            // Contain the SVG canvas to its own stacking context so the TBDR only repaints
-            // the changed tile rather than the full viewport.
+            // Qualcomm Adreno: isolate only the container element to create a new stacking
+            // context for the TBDR compositor without touching the SVG canvas at all.
             if (config.adrenoAvailable) {
-                canvas.style.contain = 'strict';
-                canvas.style.contentVisibility = 'auto';
                 element.style.isolation = 'isolate';
             }
 
@@ -2649,6 +2675,9 @@ view.Graph = class extends grapher.Graph {
                 let bottom = Number.NEGATIVE_INFINITY;
                 let hasCoords = false;
                 for (const node of inputNodes) {
+                    if (!node.element || !node.element.isConnected) {
+                        continue; // guard: skip stale/detached nodes
+                    }
                     if (typeof node.x === 'number' && typeof node.y === 'number') {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
@@ -2682,7 +2711,9 @@ view.Graph = class extends grapher.Graph {
                 }
             }
         } else {
-            // Fresh load: scroll to input nodes if available, else center the graph.
+            // Fresh load: scroll to input nodes if available, else show the graph top.
+            // Use layout coordinates (node.x/y/width/height) directly — DOM elements
+            // may not exist yet in deferred rendering mode, so skip the element check.
             const scrolledToInputs = (() => {
                 const inputNodes = this._inputNodes;
                 if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
@@ -2723,6 +2754,18 @@ view.Graph = class extends grapher.Graph {
             setTimeout(() => {
                 const viewport = this._getViewportBounds();
                 this._onViewportChange(viewport);
+                // Safety net for ARM/Snapdragon: after the first idle cycle following the
+                // initial viewport scan, retry any edges that were rendered with empty paths
+                // due to node build chunks completing out-of-order.
+                if (typeof requestIdleCallback === 'undefined') {
+                    setTimeout(() => {
+                        this._retryEmptyEdges();
+                    }, 200);
+                } else {
+                    requestIdleCallback(() => {
+                        this._retryEmptyEdges();
+                    }, { timeout: 600 });
+                }
             }, 100);
         }
     }
@@ -2747,7 +2790,8 @@ view.Graph = class extends grapher.Graph {
                     this._updateZoom(zoom);
                     // Re-apply scroll: scroll to input nodes if available, else center.
                     // restore() already attempted this but the container was hidden so
-                    // the scrollTo() had no effect.
+                    // the scrollTo() had no effect.  Use layout coordinates directly —
+                    // DOM elements may not exist in deferred rendering mode.
                     const inputNodes = this._inputNodes;
                     let scrolled = false;
                     if (Array.isArray(inputNodes) && inputNodes.length > 0) {
