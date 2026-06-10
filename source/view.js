@@ -3161,6 +3161,15 @@ view.Graph = class extends grapher.Graph {
         // Compute visibility delta and apply only the changed nodes/edges (O(delta) not O(N)).
         const delta = this.updateViewportVisibility(viewportBounds);
         this.updateVisibleElements(document, delta);
+
+        // ARM/Snapdragon safety net: after the deferred edge build for this viewport
+        // settles, repair any edges that rendered with an empty path because their
+        // build/update raced with node building. Scans only currently-visible edges.
+        if (typeof requestIdleCallback === 'undefined') {
+            setTimeout(() => this._retryEmptyEdges(), 200);
+        } else {
+            requestIdleCallback(() => this._retryEmptyEdges(), { timeout: 600 });
+        }
     }
 
     _getOriginTranslate(origin) {
