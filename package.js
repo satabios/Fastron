@@ -355,11 +355,23 @@ const publish = async (target) => {
             // Azure Trusted Signing requires AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET.
             // Without them electron-builder aborts the whole publish; fall back to an unsigned
             // Windows build (matching the macOS branch's "skip signing if unconfigured" behavior)
-            // instead of failing the release.
+            // instead of failing the release. A CLI `--config.win.azureSignOptions=` override is
+            // not reliable here: electron-builder only special-cases `=null` coercion for
+            // `mac.identity` (see coerceValue in electron-builder/out/builder.js), not
+            // `win.azureSignOptions`, so the object key can survive the merge. Instead, write a
+            // standalone config with that key actually deleted and point --config at it.
             const hasAzureCredentials = process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET;
-            const windowsCommand = hasAzureCredentials ?
-                'npx electron-builder --win --x64 --arm64 --publish always' :
-                'npx electron-builder --win --x64 --arm64 --publish always --config.win.azureSignOptions=';
+            let windowsCommand = 'npx electron-builder --win --x64 --arm64 --publish always';
+            if (!hasAzureCredentials) {
+                const baseConfig = JSON.parse(await fs.readFile('publish/electron-builder.json', 'utf-8'));
+                if (baseConfig.win) {
+                    delete baseConfig.win.azureSignOptions;
+                }
+                const unsignedConfigPath = dirname('dist', 'electron-builder.unsigned.json');
+                await fs.mkdir(path.dirname(unsignedConfigPath), { recursive: true });
+                await fs.writeFile(unsignedConfigPath, JSON.stringify(baseConfig, null, 2), 'utf-8');
+                windowsCommand += ` --config ${unsignedConfigPath}`;
+            }
             const table = new Map([
                 ['mac',     'npx electron-builder --mac --universal --publish always'],
                 ['windows', windowsCommand],
