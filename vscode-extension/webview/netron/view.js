@@ -21,6 +21,12 @@ if (typeof window !== 'undefined') {
         fileReadChunkSizeMB: 512,         // Browser file read chunk size (MB)
         streamWindowSizeMB: 512,          // Buffered stream window size (MB)
         maxLayoutWorkers: Math.max(1, Math.min(4, hardwareConcurrency - 1)),
+        // Lower-core devices (common on Snapdragon/ARM64 laptops) get smaller render
+        // chunks so each requestIdleCallback slice finishes within its idle budget,
+        // and fall back to the cheap synchronous layout sooner to avoid long stalls.
+        renderChunkNodeSize: hardwareConcurrency <= 4 ? 15 : 30,
+        renderChunkEdgeSize: hardwareConcurrency <= 4 ? 30 : 60,
+        fastLayoutNodeThreshold: hardwareConcurrency <= 4 ? 4000 : 9000,
         gpuAcceleration: true,            // Enable GPU compositing hints for rendering
         gpuAvailable: false,              // Runtime-detected GPU availability
         gpuBackend: 'cpu',                // Runtime backend: webgpu|webgl2|webgl|cpu
@@ -3161,6 +3167,15 @@ view.Graph = class extends grapher.Graph {
         // Compute visibility delta and apply only the changed nodes/edges (O(delta) not O(N)).
         const delta = this.updateViewportVisibility(viewportBounds);
         this.updateVisibleElements(document, delta);
+
+        // ARM/Snapdragon safety net: after the deferred edge build for this viewport
+        // settles, repair any edges that rendered with an empty path because their
+        // build/update raced with node building. Scans only currently-visible edges.
+        if (typeof requestIdleCallback === 'undefined') {
+            setTimeout(() => this._retryEmptyEdges(), 200);
+        } else {
+            requestIdleCallback(() => this._retryEmptyEdges(), { timeout: 600 });
+        }
     }
 
     _getOriginTranslate(origin) {
