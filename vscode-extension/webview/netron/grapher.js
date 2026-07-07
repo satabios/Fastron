@@ -309,7 +309,10 @@ grapher.Graph = class {
     }
 
     _buildVisibleNodes(nodeIds, document) {
-        const CHUNK = 30;
+        // Smaller chunks on lower-core hardware (e.g. Snapdragon/ARM64) so each
+        // requestIdleCallback slice finishes within its idle time budget.
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        const CHUNK = (config && config.renderChunkNodeSize) || 30;
         const process = (ids) => {
             const batch = ids.splice(0, CHUNK);
             // Pass 1: Build/show DOM elements (writes only — no getBBox reads).
@@ -398,7 +401,10 @@ grapher.Graph = class {
     }
 
     _buildVisibleEdges(edgeKeys, document) {
-        const CHUNK = 60;
+        // Smaller chunks on lower-core hardware (e.g. Snapdragon/ARM64) so each
+        // requestIdleCallback slice finishes within its idle time budget.
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        const CHUNK = (config && config.renderChunkEdgeSize) || 60;
         const process = (keys) => {
             const batch = keys.splice(0, CHUNK);
             // Pass 1: Build edge DOM elements (writes only — no getBBox reads).
@@ -414,15 +420,12 @@ grapher.Graph = class {
                 const label = edgeEntry.label;
                 const wasBuilt = Boolean(label.element);
                 if (!label.element && this._deferredEdgeBuild) {
-                    // Guard: if either endpoint node hasn't been built yet, defer this edge.
-                    // This prevents intersectRect() from running against a null element on
-                    // ARM/Snapdragon where idle chunks complete out-of-order with edge builds.
-                    const vEntry = this._nodes.get(edgeEntry.v);
-                    const wEntry = this._nodes.get(edgeEntry.w);
-                    if ((vEntry && !vEntry.label.element) || (wEntry && !wEntry.label.element)) {
-                        this._pendingEdgeUpdates.add(edgeKey);
-                        continue;
-                    }
+                    // Build the edge element on the fly as it enters the viewport.
+                    // Like upstream Netron, edge geometry (Edge.update -> intersectRect)
+                    // depends only on the endpoint nodes' layout coordinates
+                    // (x/y/width/height), which are always set by layout()/measure(),
+                    // not on whether the node DOM element exists yet. So there is no
+                    // need to defer the edge until its endpoint nodes are built.
                     this._ensureEdgeElementBuildOnly(edgeEntry, document);
                 }
                 builtEdges.push({ label, wasBuilt });
@@ -449,7 +452,11 @@ grapher.Graph = class {
                     label.y = label.points[midIndex].y;
                 }
                 this._showEdge(label);
-                if (label.element && this._skipHiddenUpdate && label._needsUpdate !== false) {
+                // Always compute geometry for a built edge, matching upstream Netron
+                // where every visible edge's path `d` is set unconditionally. Gating
+                // this on `_needsUpdate !== false` previously left freshly-built edges
+                // with an empty path on ARM/Snapdragon when build/update raced.
+                if (label.element) {
                     label.update();
                     label._needsUpdate = false;
                 }
@@ -467,32 +474,50 @@ grapher.Graph = class {
 
     // Safety net: scan all currently-visible edges and re-trigger update() on any whose
     // SVG path is empty.  This catches edges that slipped through _buildVisibleEdges on
-    // ARM/low-power hardware where idle chunks complete out-of-order.
-    _retryEmptyEdges() {
+    // ARM/low-power hardware where idle chunks complete out-of-order. A single pass can
+    // still land before a slow device finishes building; reschedule itself (bounded) until
+    // no empty-path edges remain, instead of firing once and hoping the timing worked out.
+    _retryEmptyEdges(remainingPasses = 5) {
         if (!this._visibleEdges) {
             return;
         }
         const requeue = [];
+        let stillEmpty = false;
         for (const edgeKey of this._visibleEdges) {
             const edgeEntry = this._edges.get(edgeKey);
             if (!edgeEntry || !edgeEntry.label.element) {
                 continue;
             }
-            const pathEl = edgeEntry.label.element.querySelector('path');
-            if (pathEl && (!pathEl.getAttribute('d') || pathEl.getAttribute('d') === '')) {
+            // edgeEntry.label.element IS the <path> element (created in Edge.build as
+            // createElement('path')), so read its own `d` attribute directly. A previous
+            // version called element.querySelector('path'), which always returned null
+            // (a <path> has no descendant <path>), so this safety net never fired and
+            // empty-path edges on ARM/Snapdragon were never repaired.
+            const pathEl = edgeEntry.label.element;
+            if (!pathEl.getAttribute('d') || pathEl.getAttribute('d') === '') {
                 // Endpoint nodes should be built by now; just re-invoke update().
                 const vEntry = this._nodes.get(edgeEntry.v);
                 const wEntry = this._nodes.get(edgeEntry.w);
                 if (vEntry && vEntry.label.element && wEntry && wEntry.label.element) {
                     edgeEntry.label.update();
+                    stillEmpty = stillEmpty || !pathEl.getAttribute('d');
                 } else {
                     // Still waiting for a node — push back to _pendingEdgeUpdates
                     requeue.push(edgeKey);
+                    stillEmpty = true;
                 }
             }
         }
         for (const key of requeue) {
             this._pendingEdgeUpdates.add(key);
+        }
+        if (stillEmpty && remainingPasses > 1) {
+            const next = () => this._retryEmptyEdges(remainingPasses - 1);
+            if (typeof requestIdleCallback === 'undefined') {
+                setTimeout(next, 200);
+            } else {
+                requestIdleCallback(next, { timeout: 600 });
+            }
         }
     }
 
@@ -981,8 +1006,11 @@ grapher.Graph = class {
         const edgeDensity = edgeCount / Math.max(1, nodeCount);
         // Keep Dagre for medium-size sparse graphs where it materially improves
         // placement, but keep the fast fallback for huge or dense graphs so
-        // loading performance does not regress.
-        const FAST_LAYOUT_NODE_THRESHOLD = 9000;
+        // loading performance does not regress. Lower-core devices (e.g.
+        // Snapdragon/ARM64) use a lower threshold so heavy graphs fall back to
+        // the cheap synchronous layout sooner instead of stalling on dagre/elk.
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        const FAST_LAYOUT_NODE_THRESHOLD = (config && config.fastLayoutNodeThreshold) || 9000;
         const FAST_LAYOUT_EDGE_DENSITY = 4;
         const preferFastLayout = nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
         // Widen spacing only when using the fast fallback so long edges have
