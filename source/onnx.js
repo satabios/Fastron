@@ -52,6 +52,11 @@ onnx.Model = class {
         this._modules = [];
         this._format = target.format;
         this._producer = model.producer_name && model.producer_name.length > 0 ? model.producer_name + (model.producer_version && model.producer_version.length > 0 ? ` ${model.producer_version}` : '') : null;
+        if (this._producer && this._producer.startsWith('CatBoost Git info:')) {
+            const version = this._producer.match(/Branch: tags\/v([\d.]+)/);
+            const commit = this._producer.match(/Commit: ([a-f0-9]{7})/);
+            this._producer = `CatBoost${version ? ` v${version[1]}` : ''}${commit ? `+${commit[1]}` : ''}`;
+        }
         this._domain = model.domain;
         this._version = typeof model.model_version === 'number' || typeof model.model_version === 'bigint' ? model.model_version.toString() : '';
         this._description = model.doc_string;
@@ -1721,7 +1726,7 @@ onnx.ProtoReader = class {
                     return new onnx.ProtoReader(context, 'binary', 'model');
                 }
             }
-            const length = buffer[0] | (buffer[1] << 8) | (buffer[2] << 16) | (buffer[3] << 24);
+            const length = (buffer[0] | buffer[1] << 8 | buffer[2] << 16 | buffer[3] << 24) >>> 0;
             if (length === stream.length - 4 && (buffer[4] === 0x08 || buffer[4] === 0x0A)) {
                 offset = 4;
             }
