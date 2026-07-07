@@ -352,9 +352,17 @@ const publish = async (target) => {
             writeLine(`publish electron ${target}`);
             await install();
             await exec('npx electron-builder install-app-deps');
+            // Azure Trusted Signing requires AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET.
+            // Without them electron-builder aborts the whole publish; fall back to an unsigned
+            // Windows build (matching the macOS branch's "skip signing if unconfigured" behavior)
+            // instead of failing the release.
+            const hasAzureCredentials = process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET;
+            const windowsCommand = hasAzureCredentials ?
+                'npx electron-builder --win --x64 --arm64 --publish always' :
+                'npx electron-builder --win --x64 --arm64 --publish always --config.win.azureSignOptions=';
             const table = new Map([
                 ['mac',     'npx electron-builder --mac --universal --publish always'],
-                ['windows', 'npx electron-builder --win --x64 --arm64 --publish always'],
+                ['windows', windowsCommand],
                 ['linux',   'npx electron-builder --linux --publish always']
             ]);
             const targets = table.has(key) ? [table.get(key)] : Array.from(table.values());
