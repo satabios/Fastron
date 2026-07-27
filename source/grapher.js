@@ -239,8 +239,14 @@ grapher.Graph = class {
             return;
         }
         if (this._detachInvisible) {
-            if (!node.element.parentNode && this._nodeGroupElement) {
-                this._nodeGroupElement.appendChild(node.element);
+            if (!node.element.parentNode) {
+                // Re-attach to the group the element was detached from — clusters
+                // live in the clusters group, not the nodes group, and re-parenting
+                // them into the nodes group would draw them on top of nodes/edges.
+                const parent = node._detachedParent || this._nodeGroupElement;
+                if (parent) {
+                    parent.appendChild(node.element);
+                }
             }
         } else {
             node.element.style.display = '';
@@ -253,6 +259,7 @@ grapher.Graph = class {
         }
         if (this._detachInvisible) {
             if (node.element.parentNode) {
+                node._detachedParent = node.element.parentNode;
                 node.element.parentNode.removeChild(node.element);
             }
         } else {
