@@ -652,7 +652,7 @@ view.View = class {
     // Opt-1: Build an IndexedDB cache key for the given graph module.
     // Key encodes model filename, module index, layout direction, and engine
     // so that different models and layout settings never collide.
-    _layoutCacheKey(target) {
+    _layoutCacheKey(target, signature) {
         if (!this._model) {
             return null;
         }
@@ -663,9 +663,19 @@ view.View = class {
         }
         const idx = modules.indexOf(target);
         const moduleIdx = idx >= 0 ? idx : 0;
-        const direction = this._options.direction || 'vertical';
-        const engine = this._options.layout || 'dagre';
-        return `${identifier}::${moduleIdx}::${direction}::${engine}`;
+        const sig = signature && signature.name ? signature.name : '';
+        // The key must cover everything that changes node contents or sizes —
+        // names/attributes/weights toggles alter node dimensions, so a layout
+        // cached under different options would misplace and mis-size every node.
+        return `${identifier}::${moduleIdx}::${sig}::${this._renderOptionsKey()}`;
+    }
+
+    // Fingerprint of every option that affects graph rendering output. Used to
+    // invalidate the render cache and the IndexedDB layout cache when a display
+    // option changes between renders of the same graph.
+    _renderOptionsKey() {
+        const options = this._options;
+        return `${options.direction || 'vertical'}::${options.layout || 'dagre'}::n${options.names ? 1 : 0}a${options.attributes ? 1 : 0}w${options.weights ? 1 : 0}l${options.lazyRender ? 1 : 0}`;
     }
 
     _timeout(delay) {
@@ -1136,6 +1146,7 @@ view.View = class {
             this._renderCache.push({
                 target: prevViewGraph._renderTarget,
                 signature: prevViewGraph._renderSignature,
+                options: prevViewGraph._renderOptions,
                 viewGraph: prevViewGraph,
                 canvas
             });
@@ -1147,10 +1158,14 @@ view.View = class {
 
         let status = '';
         if (target) {
-            // Check render cache — hit means the graph was rendered before.
-            // Reattach the cached canvas and restore scroll/zoom state instantly.
+            // Check render cache — hit means the graph was rendered before with the
+            // same display options. Reattach the cached canvas and restore scroll/zoom
+            // state instantly. The options fingerprint must match: toggling names,
+            // attributes, direction, or layout engine reloads the same target/signature
+            // and must not resurrect a canvas rendered under the old options.
+            const optionsKey = this._renderOptionsKey();
             const cached = this._renderCache && this._renderCache.find(
-                (e) => e.target === target && e.signature === signature
+                (e) => e.target === target && e.signature === signature && e.options === optionsKey
             );
             if (cached) {
                 element.appendChild(cached.canvas);
@@ -1182,6 +1197,7 @@ view.View = class {
             // Tag the viewGraph so we can key the cache on next navigation.
             viewGraph._renderTarget = target;
             viewGraph._renderSignature = signature;
+            viewGraph._renderOptions = optionsKey;
 
             // Enable viewport culling if lazy rendering is on
             if (this._options.lazyRender) {
@@ -1204,7 +1220,7 @@ view.View = class {
             this.progress(45);
 
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
-            const idbKey = this._layoutCacheKey(target);
+            const idbKey = this._layoutCacheKey(target, signature);
             const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
             if (idbHit) {
                 // Apply cached positions + edge routing directly — skip measure()+layout().
@@ -2919,9 +2935,11 @@ view.Graph = class extends grapher.Graph {
     _updateZoom(zoom, e) {
         const container = this._containerElement;
         const canvas = this._canvasElement;
-        const limit = this.view.options.direction === 'vertical' ?
-            container.clientHeight / this._height :
-            container.clientWidth / this._width;
+        // Allow zooming out until the whole graph fits the viewport on both axes.
+        // A single-axis limit (by direction) would always clamp away the whole-graph
+        // auto-fit zoom computed in restore(), since that fit is the minimum of both
+        // axis ratios times a 0.92 margin. The 0.9 factor keeps that margin reachable.
+        const limit = Math.min(container.clientWidth / this._width, container.clientHeight / this._height) * 0.9;
         const min = Math.min(Math.max(limit, 0.15), 1);
         zoom = Math.max(min, Math.min(zoom, 1.4));
         const scrollLeft = this._scrollLeft || container.scrollLeft;

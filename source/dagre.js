@@ -634,7 +634,15 @@ dagre.layout = (nodes, edges, layout, state) => {
             }
         };
         const depths = treeDepths(g);
-        const height = Math.max(...Object.values(depths)) - 1; // Note: depths is an Object not an array
+        // Iterate instead of spreading into Math.max: spreading one argument per
+        // node overflows the call stack on very large graphs (~100k+ nodes).
+        let height = 0;
+        for (const value of Object.values(depths)) {
+            if (value > height) {
+                height = value;
+            }
+        }
+        height -= 1;
         const nodeSep = 2 * height + 1;
         state.nestingRoot = root;
         // Multiply minlen by nodeSep to align nodes on non-border ranks.
