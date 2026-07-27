@@ -97,7 +97,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_USER: ${{ secrets.PUBLISH_GITHUB_USER }}
-        run: git push origin HEAD:release --force
+        # Fully qualify the ref: tag builds run on a detached HEAD and the
+        # 'release' branch may not exist yet, so git cannot guess the ref type.
+        run: git push origin HEAD:refs/heads/release --force
 
       - if: false # startsWith(matrix.os, 'macos')
         name: Publish cask
