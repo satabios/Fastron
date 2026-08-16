@@ -27,6 +27,9 @@ if (typeof window !== 'undefined') {
         renderChunkNodeSize: hardwareConcurrency <= 4 ? 15 : 30,
         renderChunkEdgeSize: hardwareConcurrency <= 4 ? 30 : 60,
         fastLayoutNodeThreshold: hardwareConcurrency <= 4 ? 4000 : 9000,
+        lazyLayoutNodeThreshold: hardwareConcurrency <= 4 ? 1500 : 3000,
+        fastLayoutBarycenterSweeps: hardwareConcurrency <= 4 ? 4 : 6,
+        fastLayoutPositionSweeps: hardwareConcurrency <= 4 ? 2 : 3,
         gpuAcceleration: true,            // Enable GPU compositing hints for rendering
         gpuAvailable: false,              // Runtime-detected GPU availability
         gpuBackend: 'cpu',                // Runtime backend: webgpu|webgl2|webgl|cpu
@@ -1217,6 +1220,11 @@ view.View = class {
             viewGraph.add(graph, signature);
             this.progress(25);
             viewGraph.build(document);
+            if (this._options.lazyRender) {
+                // Graph edges are created during build(); index them before
+                // viewport batches materialize their deferred node DOM.
+                viewGraph.prepareLayerLoading();
+            }
             this.progress(45);
 
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
