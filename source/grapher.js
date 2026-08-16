@@ -29,6 +29,7 @@ grapher.Graph = class {
         this._visibilityVersion = 0;
         this._mainThreadLayoutThreshold = 5000;
         this._pendingEdgeUpdates = new Set(); // edges deferred because endpoint nodes weren't built yet
+        this._nodeDepths = null;
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -54,6 +55,63 @@ grapher.Graph = class {
         if (Number.isFinite(options.estimatedNodeHeight)) {
             this._estimatedNodeHeight = options.estimatedNodeHeight;
         }
+    }
+
+    prepareLayerLoading() {
+        const depths = new Map();
+        const indegree = new Map();
+        const outgoing = new Map();
+        for (const nodeId of this.nodes.keys()) {
+            if (this._isLeafNode(nodeId)) {
+                indegree.set(nodeId, 0);
+                outgoing.set(nodeId, []);
+            }
+        }
+        for (const edge of this.edges.values()) {
+            if (!indegree.has(edge.v) || !indegree.has(edge.w)) {
+                continue;
+            }
+            indegree.set(edge.w, indegree.get(edge.w) + 1);
+            outgoing.get(edge.v).push(edge.w);
+        }
+        const queue = [];
+        for (const [nodeId, degree] of indegree) {
+            if (degree === 0) {
+                queue.push(nodeId);
+                depths.set(nodeId, 0);
+            }
+        }
+        for (let index = 0; index < queue.length; index++) {
+            const nodeId = queue[index];
+            const depth = depths.get(nodeId);
+            for (const target of outgoing.get(nodeId)) {
+                depths.set(target, Math.max(depths.get(target) || 0, depth + 1));
+                const degree = indegree.get(target) - 1;
+                indegree.set(target, degree);
+                if (degree === 0) {
+                    queue.push(target);
+                }
+            }
+        }
+        // Cyclic graphs have no topological source for their cycle. Keeping
+        // those nodes at depth zero preserves a deterministic, safe fallback.
+        for (const nodeId of indegree.keys()) {
+            if (!depths.has(nodeId)) {
+                depths.set(nodeId, 0);
+            }
+        }
+        this._nodeDepths = depths;
+    }
+
+    _prioritizeNodeBuild(nodeIds) {
+        if (!this._nodeDepths || nodeIds.length < 2) {
+            return nodeIds;
+        }
+        return nodeIds.sort((a, b) => {
+            const aDepth = this._nodeDepths.get(a) || 0;
+            const bDepth = this._nodeDepths.get(b) || 0;
+            return aDepth - bDepth || String(a).localeCompare(String(b));
+        });
     }
 
     useEstimatedNodeSizes() {
@@ -636,7 +694,7 @@ grapher.Graph = class {
                 }
             }
             if (newNodeIds.length > 0) {
-                this._buildVisibleNodes(newNodeIds, document);
+                this._buildVisibleNodes(this._prioritizeNodeBuild(newNodeIds), document);
             }
 
             // Hide edges that left the viewport
@@ -688,7 +746,7 @@ grapher.Graph = class {
 
         // Build newly visible nodes in idle-time chunks to avoid jank
         if (newNodeIds.length > 0) {
-            this._buildVisibleNodes(newNodeIds, document);
+            this._buildVisibleNodes(this._prioritizeNodeBuild(newNodeIds), document);
         }
 
         const newEdgeKeys = [];
@@ -1018,8 +1076,12 @@ grapher.Graph = class {
         // the cheap synchronous layout sooner instead of stalling on dagre/elk.
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
         const FAST_LAYOUT_NODE_THRESHOLD = (config && config.fastLayoutNodeThreshold) || 9000;
+        const LAZY_LAYOUT_NODE_THRESHOLD = (config && config.lazyLayoutNodeThreshold) || 3000;
         const FAST_LAYOUT_EDGE_DENSITY = 4;
-        const preferFastLayout = nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
+        const layoutThreshold = this._viewportCulling
+            ? Math.min(FAST_LAYOUT_NODE_THRESHOLD, LAZY_LAYOUT_NODE_THRESHOLD)
+            : FAST_LAYOUT_NODE_THRESHOLD;
+        const preferFastLayout = nodeCount > layoutThreshold || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
         // Widen spacing only when using the fast fallback so long edges have
         // room to route between nodes rather than converging into a dense band.
         if (preferFastLayout) {
@@ -1287,7 +1349,8 @@ grapher.Graph = class {
                 incoming.get(edge.w).push(edge.v);
             }
         }
-        const SWEEPS = 12;
+        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
+        const SWEEPS = (config && config.fastLayoutBarycenterSweeps) || 12;
         for (let sweep = 0; sweep < SWEEPS; sweep++) {
             const keys = sweep % 2 === 0 ? rankKeys : [...rankKeys].reverse();
             for (let ri = 1; ri < keys.length; ri++) {
@@ -1402,7 +1465,8 @@ grapher.Graph = class {
                 node._secondary -= mean;
             }
         }
-        for (let sweep = 0; sweep < 6; sweep++) {
+        const positionSweeps = (config && config.fastLayoutPositionSweeps) || 6;
+        for (let sweep = 0; sweep < positionSweeps; sweep++) {
             for (let index = 1; index < rankKeys.length; index++) {
                 const rank = rankKeys[index];
                 placeRank(ranks.get(rank), desiredFromNeighbors(ranks.get(rank), incoming));
