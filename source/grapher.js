@@ -30,6 +30,8 @@ grapher.Graph = class {
         this._mainThreadLayoutThreshold = 5000;
         this._pendingEdgeUpdates = new Set(); // edges deferred because endpoint nodes weren't built yet
         this._nodeDepths = null;
+        this._hierarchyIndex = null;
+        this._initialRenderStats = null;
     }
 
     enableViewportCulling(enabled = true, tileSize = undefined) {
@@ -55,6 +57,15 @@ grapher.Graph = class {
         if (Number.isFinite(options.estimatedNodeHeight)) {
             this._estimatedNodeHeight = options.estimatedNodeHeight;
         }
+    }
+
+    createHierarchyIndex() {
+        this._hierarchyIndex = new grapher.HierarchyIndex(this);
+        return this._hierarchyIndex;
+    }
+
+    getRenderStats() {
+        return { ...(this._initialRenderStats || {}) };
     }
 
     prepareLayerLoading() {
@@ -910,6 +921,14 @@ grapher.Graph = class {
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
         const nodesToRender = Array.from(this.nodes.keys());
+        const initialRenderStats = {
+            nodeCount: nodesToRender.length,
+            edgeCount: this.edges.size,
+            domNodeCount: 0,
+            deferredNodeCount: 0,
+            zeroDomNodeCount: 0,
+            domEdgeCount: 0
+        };
         // For very large graphs, skip placeholder DOM creation entirely to avoid
         // O(N) createElement calls.  Nodes get their DOM elements on first viewport
         // visibility via _ensureNodeElement().
@@ -922,12 +941,22 @@ grapher.Graph = class {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this._isLeafNode(nodeId)) {
-                if (zeroDomBuild) {
+                // Contracted hierarchy proxies are the only representation of
+                // their hidden leaves. Build them eagerly so a projection can
+                // never hide leaves behind metadata with no usable SVG target.
+                const eagerHierarchyNode = Boolean(node._hierarchyProxy || node._hierarchyControl);
+                if (eagerHierarchyNode) {
+                    node.build(document, nodeGroup);
+                    this._renderedNodes.add(nodeId);
+                    initialRenderStats.domNodeCount++;
+                } else if (zeroDomBuild) {
                     // Zero-DOM: no placeholder element, just mark as simplified.
                     // _ensureNodeElement() will create the full DOM on demand.
                     node.element = null;
                     node._simplified = true;
                     this._renderedNodes.add(nodeId);
+                    initialRenderStats.deferredNodeCount++;
+                    initialRenderStats.zeroDomNodeCount++;
                 } else if (deferLeafNodeBuild) {
                     // Create simplified placeholder shape for deferred nodes
                     node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -939,9 +968,12 @@ grapher.Graph = class {
                     node._simplified = true;
                     deferredFragment.appendChild(node.element);
                     this._renderedNodes.add(nodeId);
+                    initialRenderStats.domNodeCount++;
+                    initialRenderStats.deferredNodeCount++;
                 } else {
                     node.build(document, nodeGroup);
                     this._renderedNodes.add(nodeId);
+                    initialRenderStats.domNodeCount++;
                 }
             } else {
                 // cluster
@@ -957,6 +989,7 @@ grapher.Graph = class {
                 node.element.appendChild(node.rectangle);
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
+                initialRenderStats.domNodeCount++;
             }
         }
 
@@ -971,7 +1004,9 @@ grapher.Graph = class {
         const deferEdgeBuild = this._viewportCulling && this._deferredEdgeBuild;
 
         for (const edge of this.edges.values()) {
-            if (!deferEdgeBuild) {
+            // A proxy boundary edge must be present with its proxy immediately.
+            // Deferring it would leave the contracted representation incomplete.
+            if (!deferEdgeBuild || edge.label._hierarchyBundle) {
                 // Tunnel edges go into the dedicated tunnel SVG group so they
                 // render behind regular edges and nodes.
                 const pathGroup = edge.label._tunnel ? tunnelGroup : edgePathGroup;
@@ -980,6 +1015,7 @@ grapher.Graph = class {
                     this._focusable.set(edge.label.hitTest, edge.label);
                 }
                 this._renderedEdges.add(`${edge.v}:${edge.w}`);
+                initialRenderStats.domEdgeCount++;
             }
         }
         origin.appendChild(clusterGroup);
@@ -990,6 +1026,7 @@ grapher.Graph = class {
         // above edge labels on dense layouts.
         origin.appendChild(edgeLabelGroup);
         origin.appendChild(nodeGroup);
+        this._initialRenderStats = initialRenderStats;
     }
 
     async measure() {
@@ -1076,12 +1113,8 @@ grapher.Graph = class {
         // the cheap synchronous layout sooner instead of stalling on dagre/elk.
         const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
         const FAST_LAYOUT_NODE_THRESHOLD = (config && config.fastLayoutNodeThreshold) || 9000;
-        const LAZY_LAYOUT_NODE_THRESHOLD = (config && config.lazyLayoutNodeThreshold) || 3000;
         const FAST_LAYOUT_EDGE_DENSITY = 4;
-        const layoutThreshold = this._viewportCulling
-            ? Math.min(FAST_LAYOUT_NODE_THRESHOLD, LAZY_LAYOUT_NODE_THRESHOLD)
-            : FAST_LAYOUT_NODE_THRESHOLD;
-        const preferFastLayout = nodeCount > layoutThreshold || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
+        const preferFastLayout = nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
         // Widen spacing only when using the fast fallback so long edges have
         // room to route between nodes rather than converging into a dense band.
         if (preferFastLayout) {
@@ -1206,6 +1239,9 @@ grapher.Graph = class {
                 node.layout();
             }
         }
+        if (this._hierarchyIndex && !this._hierarchyProjectionActive) {
+            this._hierarchyIndex.updateBounds();
+        }
         return '';
     }
 
@@ -1265,6 +1301,9 @@ grapher.Graph = class {
             }
         }
         this._layoutBounds = cachedBounds;
+        if (this._hierarchyIndex && !this._hierarchyProjectionActive) {
+            this._hierarchyIndex.updateBounds();
+        }
     }
 
     _fastLayout(nodes, edges, rotate, layout) {
@@ -1349,8 +1388,7 @@ grapher.Graph = class {
                 incoming.get(edge.w).push(edge.v);
             }
         }
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) ? window.NETRON_CONFIG : null;
-        const SWEEPS = (config && config.fastLayoutBarycenterSweeps) || 12;
+        const SWEEPS = 12;
         for (let sweep = 0; sweep < SWEEPS; sweep++) {
             const keys = sweep % 2 === 0 ? rankKeys : [...rankKeys].reverse();
             for (let ri = 1; ri < keys.length; ri++) {
@@ -1465,8 +1503,7 @@ grapher.Graph = class {
                 node._secondary -= mean;
             }
         }
-        const positionSweeps = (config && config.fastLayoutPositionSweeps) || 6;
-        for (let sweep = 0; sweep < positionSweeps; sweep++) {
+        for (let sweep = 0; sweep < 6; sweep++) {
             for (let index = 1; index < rankKeys.length; index++) {
                 const rank = rankKeys[index];
                 placeRank(ranks.get(rank), desiredFromNeighbors(ranks.get(rank), incoming));
@@ -1999,6 +2036,302 @@ grapher.Graph = class {
                 edge.label._needsUpdate = true;
             }
         }
+    }
+};
+
+grapher.HierarchyIndex = class {
+
+    constructor(graph) {
+        this.graph = graph;
+        this.groups = new Map();
+        this._leafNodeIds = [];
+        this._ancestors = new Map();
+        // Projection consumers can temporarily swap graph maps for their active
+        // render graph. Keep the canonical topology here so later expand/collapse
+        // operations never derive a projection from an earlier projection.
+        this._edges = Array.from(graph.edges.values());
+        this._parents = new Map();
+        for (const nodeId of graph.nodes.keys()) {
+            this._parents.set(nodeId, graph.parent(nodeId));
+        }
+
+        for (const nodeId of graph.nodes.keys()) {
+            if (graph.children(nodeId).length === 0) {
+                this._leafNodeIds.push(nodeId);
+            }
+        }
+        this._leafNodeIds.sort(grapher.HierarchyIndex._compareIds);
+
+        const groupIds = [];
+        for (const nodeId of graph.nodes.keys()) {
+            if (graph.children(nodeId).length > 0) {
+                groupIds.push(nodeId);
+            }
+        }
+        groupIds.sort(grapher.HierarchyIndex._compareIds);
+
+        for (const groupId of groupIds) {
+            const childIds = graph.children(groupId).sort(grapher.HierarchyIndex._compareIds);
+            const memberNodeIds = this._leafDescendants(groupId);
+            const depth = this._depth(groupId);
+            this.groups.set(groupId, {
+                id: groupId,
+                proxyId: `\x00hierarchy:${encodeURIComponent(groupId)}`,
+                name: grapher.HierarchyIndex._groupName(groupId),
+                childIds,
+                memberNodeIds,
+                depth,
+                inputPorts: [],
+                outputPorts: [],
+                internalEdgeCount: 0,
+                inputEdgeCount: 0,
+                outputEdgeCount: 0,
+                bounds: null
+            });
+        }
+
+        for (const nodeId of this._leafNodeIds) {
+            const ancestors = [];
+            for (let parent = graph.parent(nodeId); parent; parent = graph.parent(parent)) {
+                if (this.groups.has(parent)) {
+                    ancestors.push(parent);
+                }
+            }
+            this._ancestors.set(nodeId, ancestors);
+        }
+
+        const groupStats = new Map();
+        for (const groupId of this.groups.keys()) {
+            groupStats.set(groupId, {
+                inputs: new Map(),
+                outputs: new Map(),
+                internalEdgeCount: 0,
+                inputEdgeCount: 0,
+                outputEdgeCount: 0
+            });
+        }
+        for (const edge of this._edges) {
+            const sourceGroups = new Set(this._ancestors.get(edge.v) || []);
+            const targetGroups = new Set(this._ancestors.get(edge.w) || []);
+            for (const groupId of sourceGroups) {
+                const stats = groupStats.get(groupId);
+                if (targetGroups.has(groupId)) {
+                    stats.internalEdgeCount++;
+                } else {
+                    stats.outputEdgeCount++;
+                    grapher.HierarchyIndex._addPort(stats.outputs, edge.v);
+                }
+            }
+            for (const groupId of targetGroups) {
+                if (!sourceGroups.has(groupId)) {
+                    const stats = groupStats.get(groupId);
+                    stats.inputEdgeCount++;
+                    grapher.HierarchyIndex._addPort(stats.inputs, edge.w);
+                }
+            }
+        }
+        for (const [groupId, group] of this.groups) {
+            const stats = groupStats.get(groupId);
+            group.inputPorts = grapher.HierarchyIndex._ports(stats.inputs);
+            group.outputPorts = grapher.HierarchyIndex._ports(stats.outputs);
+            group.internalEdgeCount = stats.internalEdgeCount;
+            group.inputEdgeCount = stats.inputEdgeCount;
+            group.outputEdgeCount = stats.outputEdgeCount;
+        }
+    }
+
+    get leafNodeIds() {
+        return [...this._leafNodeIds];
+    }
+
+    project(options = {}) {
+        const requested = options.collapsedGroupIds || [];
+        const requestedGroups = new Set();
+        for (const groupId of requested) {
+            if (this.groups.has(groupId)) {
+                requestedGroups.add(groupId);
+            }
+        }
+        // A collapsed ancestor already represents its descendants, so keep only
+        // the outermost requested group. This makes the resulting proxy IDs and
+        // edge bundles independent of the caller's input order.
+        const collapsedGroupIds = Array.from(requestedGroups)
+            .sort((a, b) => this.groups.get(a).depth - this.groups.get(b).depth || grapher.HierarchyIndex._compareIds(a, b))
+            .filter((groupId) => {
+                for (let parent = this._parents.get(groupId); parent; parent = this._parents.get(parent)) {
+                    if (requestedGroups.has(parent)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        const collapsedNodeIds = new Set();
+        const nodeToProjection = new Map();
+        const nodes = [];
+        for (const groupId of collapsedGroupIds) {
+            const group = this.groups.get(groupId);
+            nodes.push({
+                id: group.proxyId,
+                groupId,
+                name: group.name,
+                nodeCount: group.memberNodeIds.length,
+                proxy: true
+            });
+            for (const nodeId of group.memberNodeIds) {
+                collapsedNodeIds.add(nodeId);
+                nodeToProjection.set(nodeId, group.proxyId);
+            }
+        }
+        for (const nodeId of this._leafNodeIds) {
+            if (!collapsedNodeIds.has(nodeId)) {
+                nodes.push({ id: nodeId, proxy: false });
+            }
+        }
+        nodes.sort((a, b) => grapher.HierarchyIndex._compareIds(a.id, b.id));
+
+        const bundles = new Map();
+        for (const edge of this._edges) {
+            const sourceId = nodeToProjection.get(edge.v) || edge.v;
+            const targetId = nodeToProjection.get(edge.w) || edge.w;
+            if (sourceId === targetId) {
+                continue;
+            }
+            if (!bundles.has(sourceId)) {
+                bundles.set(sourceId, new Map());
+            }
+            const targets = bundles.get(sourceId);
+            if (!targets.has(targetId)) {
+                targets.set(targetId, {
+                    v: sourceId,
+                    w: targetId,
+                    edgeCount: 0,
+                    sourcePorts: new Map(),
+                    targetPorts: new Map()
+                });
+            }
+            const bundle = targets.get(targetId);
+            bundle.edgeCount++;
+            grapher.HierarchyIndex._addPort(bundle.sourcePorts, edge.v);
+            grapher.HierarchyIndex._addPort(bundle.targetPorts, edge.w);
+        }
+        const edges = [];
+        for (const targets of bundles.values()) {
+            for (const bundle of targets.values()) {
+                edges.push({
+                    v: bundle.v,
+                    w: bundle.w,
+                    edgeCount: bundle.edgeCount,
+                    sourcePorts: grapher.HierarchyIndex._ports(bundle.sourcePorts),
+                    targetPorts: grapher.HierarchyIndex._ports(bundle.targetPorts)
+                });
+            }
+        }
+        edges.sort((a, b) => grapher.HierarchyIndex._compareIds(a.v, b.v) || grapher.HierarchyIndex._compareIds(a.w, b.w));
+        return {
+            nodes,
+            edges,
+            collapsedGroupIds,
+            collapsedNodeIds: Array.from(collapsedNodeIds).sort(grapher.HierarchyIndex._compareIds)
+        };
+    }
+
+    createInitialProjection(options = {}) {
+        const minimumGroupSize = Math.max(2, options.minimumGroupSize || 16);
+        const minimumSavedNodes = Math.max(1, options.minimumSavedNodes || 32);
+        const candidates = Array.from(this.groups.values())
+            .filter((group) => group.memberNodeIds.length >= minimumGroupSize)
+            .sort((a, b) => a.depth - b.depth || grapher.HierarchyIndex._compareIds(a.id, b.id));
+        const selected = [];
+        const selectedNodes = new Set();
+        for (const group of candidates) {
+            if (group.memberNodeIds.some((nodeId) => selectedNodes.has(nodeId))) {
+                continue;
+            }
+            selected.push(group.id);
+            for (const nodeId of group.memberNodeIds) {
+                selectedNodes.add(nodeId);
+            }
+        }
+        const projection = this.project({ collapsedGroupIds: selected });
+        const savedNodes = this._leafNodeIds.length - projection.nodes.length;
+        return savedNodes >= minimumSavedNodes && projection.collapsedGroupIds.length > 0 ? projection : null;
+    }
+
+    updateBounds() {
+        for (const group of this.groups.values()) {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            for (const nodeId of group.memberNodeIds) {
+                const entry = this.graph.node(nodeId);
+                const node = entry && entry.label;
+                if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+                    continue;
+                }
+                const width = Number.isFinite(node.width) ? node.width : 0;
+                const height = Number.isFinite(node.height) ? node.height : 0;
+                minX = Math.min(minX, node.x - (width / 2));
+                minY = Math.min(minY, node.y - (height / 2));
+                maxX = Math.max(maxX, node.x + (width / 2));
+                maxY = Math.max(maxY, node.y + (height / 2));
+            }
+            group.bounds = Number.isFinite(minX) ? {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            } : null;
+        }
+    }
+
+    _leafDescendants(groupId) {
+        const result = [];
+        const stack = [...this.graph.children(groupId)];
+        while (stack.length > 0) {
+            const nodeId = stack.pop();
+            const children = this.graph.children(nodeId);
+            if (children.length === 0) {
+                result.push(nodeId);
+            } else {
+                stack.push(...children);
+            }
+        }
+        return result.sort(grapher.HierarchyIndex._compareIds);
+    }
+
+    _depth(groupId) {
+        let depth = 0;
+        for (let parent = this.graph.parent(groupId); parent; parent = this.graph.parent(parent)) {
+            depth++;
+        }
+        return depth;
+    }
+
+    static _addPort(ports, nodeId) {
+        ports.set(nodeId, (ports.get(nodeId) || 0) + 1);
+    }
+
+    static _ports(ports) {
+        return Array.from(ports, ([nodeId, edgeCount]) => ({ nodeId, edgeCount }))
+            .sort((a, b) => grapher.HierarchyIndex._compareIds(a.nodeId, b.nodeId));
+    }
+
+    static _groupName(groupId) {
+        const suffix = '\ngroup';
+        return String(groupId).endsWith(suffix) ? String(groupId).slice(0, -suffix.length) : String(groupId);
+    }
+
+    static _compareIds(a, b) {
+        const left = String(a);
+        const right = String(b);
+        if (left < right) {
+            return -1;
+        }
+        if (left > right) {
+            return 1;
+        }
+        return 0;
     }
 };
 
@@ -3074,4 +3407,4 @@ grapher.ViewportObserver = class {
     }
 };
 
-export const { Graph, Node, Edge, Argument, TileManager, ViewportObserver } = grapher;
+export const { Graph, HierarchyIndex, Node, Edge, Argument, TileManager, ViewportObserver } = grapher;

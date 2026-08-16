@@ -27,9 +27,6 @@ if (typeof window !== 'undefined') {
         renderChunkNodeSize: hardwareConcurrency <= 4 ? 15 : 30,
         renderChunkEdgeSize: hardwareConcurrency <= 4 ? 30 : 60,
         fastLayoutNodeThreshold: hardwareConcurrency <= 4 ? 4000 : 9000,
-        lazyLayoutNodeThreshold: hardwareConcurrency <= 4 ? 1500 : 3000,
-        fastLayoutBarycenterSweeps: hardwareConcurrency <= 4 ? 4 : 6,
-        fastLayoutPositionSweeps: hardwareConcurrency <= 4 ? 2 : 3,
         gpuAcceleration: true,            // Enable GPU compositing hints for rendering
         gpuAvailable: false,              // Runtime-detected GPU availability
         gpuBackend: 'cpu',                // Runtime backend: webgpu|webgl2|webgl|cpu
@@ -47,6 +44,12 @@ const view = {};
 const markdown = {};
 const metadata = {};
 const metrics = {};
+const now = () => typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+const boundedMetric = (value, maximum = 600000) => Number.isFinite(value) ? Math.max(0, Math.min(maximum, Math.round(value))) : undefined;
+const heapMegabytes = () => {
+    const memory = typeof performance === 'undefined' ? null : performance.memory;
+    return memory && Number.isFinite(memory.usedJSHeapSize) ? boundedMetric(memory.usedJSHeapSize / (1024 * 1024), 32768) : undefined;
+};
 
 view.View = class {
 
@@ -475,6 +478,31 @@ view.View = class {
         return this._host;
     }
 
+    _reportGraphPerformance(values) {
+        const params = {
+            graph_node_count: boundedMetric(values.nodeCount, 1000000),
+            graph_edge_count: boundedMetric(values.edgeCount, 10000000),
+            graph_construction_ms: boundedMetric(values.constructionMs),
+            graph_dom_build_ms: boundedMetric(values.domBuildMs),
+            graph_measure_ms: boundedMetric(values.measureMs),
+            graph_layout_ms: boundedMetric(values.layoutMs),
+            graph_layout_cache_hit: values.layoutCacheHit ? 1 : 0,
+            graph_initial_dom_node_count: boundedMetric(values.domNodeCount, 1000000),
+            graph_initial_deferred_node_count: boundedMetric(values.deferredNodeCount, 1000000),
+            graph_initial_zero_dom_node_count: boundedMetric(values.zeroDomNodeCount, 1000000),
+            graph_initial_dom_edge_count: boundedMetric(values.domEdgeCount, 10000000),
+            graph_hierarchy_enabled: values.hierarchyEnabled ? 1 : 0,
+            graph_hierarchy_canonical_node_count: boundedMetric(values.hierarchyCanonicalNodeCount, 1000000),
+            graph_hierarchy_projected_node_count: boundedMetric(values.hierarchyProjectedNodeCount, 1000000),
+            graph_hierarchy_collapsed_group_count: boundedMetric(values.hierarchyCollapsedGroupCount, 100000)
+        };
+        const heap = heapMegabytes();
+        if (heap !== undefined) {
+            params.graph_heap_mb = heap;
+        }
+        this._host.event('graph_performance', params);
+    }
+
     show(page) {
         if (!page) {
             page = (!this._model && !this.activeTarget) ? 'welcome' : 'default';
@@ -655,7 +683,7 @@ view.View = class {
     // Opt-1: Build an IndexedDB cache key for the given graph module.
     // Key encodes model filename, module index, layout direction, and engine
     // so that different models and layout settings never collide.
-    _layoutCacheKey(target, signature) {
+    _layoutCacheKey(target, signature, hierarchyProjection = false) {
         if (!this._model) {
             return null;
         }
@@ -670,7 +698,7 @@ view.View = class {
         // The key must cover everything that changes node contents or sizes —
         // names/attributes/weights toggles alter node dimensions, so a layout
         // cached under different options would misplace and mis-size every node.
-        return `${identifier}::${moduleIdx}::${sig}::${this._renderOptionsKey()}`;
+        return `${identifier}::${moduleIdx}::${sig}::${this._renderOptionsKey()}::h${hierarchyProjection ? 1 : 0}`;
     }
 
     // Fingerprint of every option that affects graph rendering output. Used to
@@ -864,7 +892,9 @@ view.View = class {
         this._sidebar.close();
         await this._timeout(2);
         try {
+            const modelOpenStart = now();
             const model = await this._modelFactoryService.open(context);
+            const modelParseMs = boundedMetric(now() - modelOpenStart);
             const format = [];
             if (model.format) {
                 format.push(model.format);
@@ -875,7 +905,8 @@ view.View = class {
             if (format.length > 0) {
                 this._host.event('model_open', {
                     model_format: model.format || '',
-                    model_producer: model.producer || ''
+                    model_producer: model.producer || '',
+                    model_load_ms: modelParseMs
                 });
             }
             await this._timeout(20);
@@ -885,12 +916,27 @@ view.View = class {
                 modules = modules.concat(model.functions);
             }
             let target = modules.length > 0 ? modules[0] : null;
+            let graphNodeCount = 0;
+            let selectedGraph = false;
             for (const module of modules) {
                 if (Array.isArray(module.nodes) && module.nodes.length > 0) {
-                    target = module;
-                    break;
+                    graphNodeCount += module.nodes.length;
+                    if (!selectedGraph) {
+                        target = module;
+                        selectedGraph = true;
+                    }
                 }
             }
+            const modelPerformance = {
+                model_parse_ms: modelParseMs,
+                model_module_count: boundedMetric(modules.length, 1000000),
+                model_graph_node_count: boundedMetric(graphNodeCount, 1000000)
+            };
+            const heap = heapMegabytes();
+            if (heap !== undefined) {
+                modelPerformance.model_heap_mb = heap;
+            }
+            this._host.event('model_performance', modelPerformance);
             if (target) {
                 const signature = Array.isArray(target.signatures) && target.signatures.length > 0 ? target.signatures[0] : null;
                 path.push({ target, signature });
@@ -1161,6 +1207,7 @@ view.View = class {
 
         let status = '';
         if (target) {
+            const renderStart = now();
             // Check render cache — hit means the graph was rendered before with the
             // same display options. Reattach the cached canvas and restore scroll/zoom
             // state instantly. The options fingerprint must match: toggling names,
@@ -1217,9 +1264,19 @@ view.View = class {
                 });
             }
 
+            const constructionStart = now();
             viewGraph.add(graph, signature);
+            // Contract only large, lazy-rendered compound graphs. The graph keeps
+            // its complete flat maps as canonical state; enableHierarchyRendering()
+            // leaves those maps active whenever the projection is not safe/useful.
+            if (this._options.lazyRender) {
+                viewGraph.requestHierarchyRendering();
+            }
+            const constructionMs = now() - constructionStart;
             this.progress(25);
+            const domBuildStart = now();
             viewGraph.build(document);
+            const domBuildMs = now() - domBuildStart;
             if (this._options.lazyRender) {
                 // Graph edges are created during build(); index them before
                 // viewport batches materialize their deferred node DOM.
@@ -1228,16 +1285,22 @@ view.View = class {
             this.progress(45);
 
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
-            const idbKey = this._layoutCacheKey(target, signature);
+            const idbKey = this._layoutCacheKey(target, signature, viewGraph._hierarchyProjectionActive);
             const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
+            let measureMs = 0;
+            let layoutMs = 0;
             if (idbHit) {
                 // Apply cached positions + edge routing directly — skip measure()+layout().
                 viewGraph.applyLayout(idbHit.nodes, idbHit.edges, idbHit.bounds);
                 status = '';
             } else {
+                const measureStart = now();
                 await viewGraph.measure();
+                measureMs = now() - measureStart;
                 this.progress(65);
+                const layoutStart = now();
                 status = await viewGraph.layout(this._worker);
+                layoutMs = now() - layoutStart;
             }
 
             this.progress(90);
@@ -1257,6 +1320,17 @@ view.View = class {
 
                 this.target = viewGraph;
                 this.progress(100);
+                viewGraph.beginPerformance(renderStart);
+                this._reportGraphPerformance({
+                    nodeCount: nodes.length,
+                    edgeCount: viewGraph.edges.size,
+                    constructionMs,
+                    domBuildMs,
+                    measureMs,
+                    layoutMs,
+                    layoutCacheHit: Boolean(idbHit),
+                    ...viewGraph.getRenderStats()
+                });
 
                 const state = this._path && this._path.length > 0 && this._path[0] && this._path[0].state ? this._path[0].state : null;
                 // restore() uses getBBox()/getBoundingClientRect() so nodes must be visible.
@@ -2198,6 +2272,101 @@ view.Worker = class {
     }
 };
 
+view.HierarchyNode = class extends grapher.Node {
+
+    constructor(context, group, control) {
+        super();
+        this.context = context;
+        this.group = group;
+        this.control = control;
+        this._hierarchyProxy = !control;
+        this._hierarchyControl = control;
+        this.class = control ? 'hierarchy-control' : 'hierarchy-proxy';
+        this.width = Math.max(150, Math.min(320, (group.name.length * 7) + 88));
+        this.height = 40;
+    }
+
+    build(document, parent) {
+        this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        this.element.setAttribute('class', `node ${this.class}`);
+        this.element.setAttribute('role', 'button');
+        this.element.setAttribute('tabindex', '0');
+        this.element.setAttribute('aria-label', `${this.control ? 'Collapse' : 'Expand'} group ${this.group.name}, ${this.group.memberNodeIds.length} nodes`);
+        this.element.style.opacity = 0;
+        this.border = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        this.border.setAttribute('class', 'node node-border');
+        this.element.appendChild(this.border);
+        this.text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        this.text.textContent = this.control
+            ? `Collapse ${this.group.name} (${this.group.memberNodeIds.length})`
+            : `${this.group.name} (${this.group.memberNodeIds.length} nodes)`;
+        this.element.appendChild(this.text);
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${this.control ? 'Collapse' : 'Expand'} group ${this.group.name}`;
+        this.element.appendChild(title);
+        const toggle = (event) => {
+            this.context.toggleHierarchyGroup(this.group.id).catch(() => {});
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        this.element.addEventListener('click', toggle);
+        this.element.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                toggle(event);
+            }
+        });
+        parent.appendChild(this.element);
+    }
+
+    measure() {
+        // The compact proxy has fixed geometry so its first render does not
+        // depend on SVG text measurement or deferred leaf-node DOM.
+    }
+
+    layout() {
+    }
+
+    update() {
+        const x = grapher.Node.snap(this.x - (this.width / 2));
+        const y = grapher.Node.snap(this.y - (this.height / 2));
+        this.element.setAttribute('transform', `translate(${x},${y})`);
+        this.border.setAttribute('x', 0);
+        this.border.setAttribute('y', 0);
+        this.border.setAttribute('width', this.width);
+        this.border.setAttribute('height', this.height);
+        this.border.setAttribute('rx', 5);
+        this.border.setAttribute('ry', 5);
+        this.text.setAttribute('x', 10);
+        this.text.setAttribute('y', 25);
+        this.element.style.removeProperty('opacity');
+    }
+};
+
+view.HierarchyEdge = class extends grapher.Edge {
+
+    constructor(from, to, bundle) {
+        super(from, to);
+        this.v = from.name;
+        this.w = to.name;
+        this.id = `hierarchy-edge-${encodeURIComponent(JSON.stringify([this.v, this.w]))}`;
+        this.class = 'hierarchy-edge';
+        this.bundle = bundle;
+        this._hierarchyBundle = Boolean(from._hierarchyProxy || to._hierarchyProxy);
+        this._strokeWidth = 1 + Math.min(3, Math.log2(bundle.edgeCount));
+        if (bundle.edgeCount > 1) {
+            this.label = String(bundle.edgeCount);
+        }
+    }
+
+    build(document, edgePathGroupElement, edgePathHitTestGroupElement, edgeLabelGroupElement) {
+        super.build(document, edgePathGroupElement, edgePathHitTestGroupElement, edgeLabelGroupElement);
+        this.element.setAttribute('data-edge-count', this.bundle.edgeCount);
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${this.bundle.edgeCount} bundled edge${this.bundle.edgeCount === 1 ? '' : 's'}`;
+        this.element.appendChild(title);
+    }
+};
+
 view.Graph = class extends grapher.Graph {
 
     constructor(view, compound) {
@@ -2213,6 +2382,10 @@ view.Graph = class extends grapher.Graph {
         this._viewportObserver = null;
         this._originTranslate = null; // cached origin translate; invalidated on layout change
         this._pendingViewportUpdate = false;
+        this._performanceStart = 0;
+        this._viewportMetricsReported = false;
+        this._hierarchy = null;
+        this._hierarchyStats = null;
     }
 
     get model() {
@@ -2225,6 +2398,405 @@ view.Graph = class extends grapher.Graph {
 
     get options() {
         return this.view.options;
+    }
+
+    beginPerformance(start) {
+        this._performanceStart = start;
+        this._viewportMetricsReported = false;
+    }
+
+    getRenderStats() {
+        return { ...super.getRenderStats(), ...(this._hierarchyStats || {}) };
+    }
+
+    requestHierarchyRendering(options = {}) {
+        this._hierarchyOptions = { ...options };
+    }
+
+    enableHierarchyRendering(options = {}) {
+        const minimumNodeCount = Math.max(2, options.minimumNodeCount || 500);
+        const minimumGroupSize = Math.max(2, options.minimumGroupSize || 16);
+        const minimumSavedNodes = Math.max(1, options.minimumSavedNodes || 32);
+        const fallback = (reason) => {
+            this._hierarchyStats = {
+                hierarchyEnabled: false,
+                hierarchyFallback: reason
+            };
+            return false;
+        };
+        if (!this._compound || !this.isViewportCullingEnabled()) {
+            return fallback('not-eligible');
+        }
+        const leafNodeCount = Array.from(this.nodes.keys()).filter((nodeId) => this.children(nodeId).length === 0).length;
+        if (leafNodeCount < minimumNodeCount) {
+            return fallback('below-threshold');
+        }
+        const canonical = {
+            nodes: this._nodes,
+            edges: this._edges,
+            nodeEdges: this._nodeEdges,
+            children: this._children,
+            parent: this._parent
+        };
+        const index = this.createHierarchyIndex();
+        const projection = index.createInitialProjection({ minimumGroupSize, minimumSavedNodes });
+        if (!projection) {
+            return fallback('no-useful-groups');
+        }
+        this._hierarchy = {
+            canonical,
+            index,
+            collapsedGroupIds: new Set(projection.collapsedGroupIds),
+            expandedGroupIds: new Set(),
+            proxyNodes: new Map(),
+            controlNodes: new Map()
+        };
+        if (!this._applyHierarchyProjection(projection)) {
+            this._restoreCanonicalHierarchy();
+            return fallback('unsafe-projection');
+        }
+        this._hierarchyStats = {
+            hierarchyEnabled: true,
+            hierarchyFallback: '',
+            hierarchyCanonicalNodeCount: leafNodeCount,
+            hierarchyProjectedNodeCount: this.nodes.size,
+            hierarchyCollapsedGroupCount: projection.collapsedGroupIds.length
+        };
+        return true;
+    }
+
+    async toggleHierarchyGroup(groupId) {
+        const hierarchy = this._hierarchy;
+        if (!hierarchy || !hierarchy.index.groups.has(groupId) || hierarchy.transition) {
+            return false;
+        }
+        hierarchy.transition = true;
+        try {
+            if (hierarchy.collapsedGroupIds.has(groupId)) {
+                hierarchy.collapsedGroupIds.delete(groupId);
+                hierarchy.expandedGroupIds.add(groupId);
+            } else if (hierarchy.expandedGroupIds.has(groupId)) {
+                hierarchy.expandedGroupIds.delete(groupId);
+                hierarchy.collapsedGroupIds.add(groupId);
+            } else {
+                return false;
+            }
+            const projection = hierarchy.index.project({
+                collapsedGroupIds: Array.from(hierarchy.collapsedGroupIds)
+            });
+            if (!this._applyHierarchyProjection(projection)) {
+                this._restoreCanonicalHierarchy();
+                this._hierarchyStats = {
+                    hierarchyEnabled: false,
+                    hierarchyFallback: 'unsafe-projection'
+                };
+                await this._rebuildHierarchyRendering();
+                return false;
+            }
+            this._hierarchyStats = {
+                hierarchyEnabled: true,
+                hierarchyFallback: '',
+                hierarchyCanonicalNodeCount: hierarchy.index.leafNodeIds.length,
+                hierarchyProjectedNodeCount: this.nodes.size,
+                hierarchyCollapsedGroupCount: projection.collapsedGroupIds.length
+            };
+            await this._rebuildHierarchyRendering();
+            return true;
+        } finally {
+            hierarchy.transition = false;
+        }
+    }
+
+    _applyHierarchyProjection(projection) {
+        const hierarchy = this._hierarchy;
+        if (!hierarchy || !this._isSafeHierarchyProjection(projection)) {
+            return false;
+        }
+        const nodes = new Map();
+        const children = new Map([['\x00', new Map()]]);
+        const parent = new Map();
+        const visibleNodeIds = new Set();
+        for (const projectedNode of projection.nodes) {
+            let label = null;
+            if (projectedNode.proxy) {
+                const group = hierarchy.index.groups.get(projectedNode.groupId);
+                label = hierarchy.proxyNodes.get(projectedNode.id);
+                if (!label) {
+                    label = new view.HierarchyNode(this, group, false);
+                    hierarchy.proxyNodes.set(projectedNode.id, label);
+                }
+            } else {
+                const entry = hierarchy.canonical.nodes.get(projectedNode.id);
+                label = entry ? entry.label : null;
+            }
+            if (!label || visibleNodeIds.has(projectedNode.id)) {
+                return false;
+            }
+            label.name = projectedNode.id;
+            nodes.set(projectedNode.id, { v: projectedNode.id, label });
+            children.set(projectedNode.id, new Map());
+            children.get('\x00').set(projectedNode.id, true);
+            parent.set(projectedNode.id, '\x00');
+            visibleNodeIds.add(projectedNode.id);
+        }
+        for (const groupId of hierarchy.expandedGroupIds) {
+            if (this._hierarchyHasCollapsedAncestor(groupId, projection.collapsedGroupIds)) {
+                continue;
+            }
+            const group = hierarchy.index.groups.get(groupId);
+            const controlId = `\x00hierarchy-control:${encodeURIComponent(groupId)}`;
+            let label = hierarchy.controlNodes.get(controlId);
+            if (!label) {
+                label = new view.HierarchyNode(this, group, true);
+                hierarchy.controlNodes.set(controlId, label);
+            }
+            label.name = controlId;
+            nodes.set(controlId, { v: controlId, label });
+            children.set(controlId, new Map());
+            children.get('\x00').set(controlId, true);
+            parent.set(controlId, '\x00');
+            visibleNodeIds.add(controlId);
+        }
+        const edges = new Map();
+        const nodeEdges = new Map();
+        for (const projectedEdge of projection.edges) {
+            const from = nodes.get(projectedEdge.v);
+            const to = nodes.get(projectedEdge.w);
+            if (!from || !to || projectedEdge.v === projectedEdge.w) {
+                return false;
+            }
+            const key = `${projectedEdge.v}:${projectedEdge.w}`;
+            if (edges.has(key)) {
+                return false;
+            }
+            const sourcePorts = projectedEdge.sourcePorts;
+            const targetPorts = projectedEdge.targetPorts;
+            const canonical = projectedEdge.edgeCount === 1 &&
+                Array.isArray(sourcePorts) && sourcePorts.length === 1 &&
+                Array.isArray(targetPorts) && targetPorts.length === 1 &&
+                sourcePorts[0].nodeId === projectedEdge.v &&
+                targetPorts[0].nodeId === projectedEdge.w
+                ? hierarchy.canonical.edges.get(key)
+                : null;
+            // A one-to-one edge between visible leaves is not a bundle. Preserve
+            // its label so its identifier, text, and semantic styling survive.
+            const label = canonical ? canonical.label : new view.HierarchyEdge(from.label, to.label, projectedEdge);
+            edges.set(key, { v: projectedEdge.v, w: projectedEdge.w, label });
+            for (const nodeId of [projectedEdge.v, projectedEdge.w]) {
+                if (!nodeEdges.has(nodeId)) {
+                    nodeEdges.set(nodeId, new Set());
+                }
+                nodeEdges.get(nodeId).add(key);
+            }
+        }
+        this._nodes = nodes;
+        this._edges = edges;
+        this._nodeEdges = nodeEdges;
+        this._children = children;
+        this._parent = parent;
+        this._hierarchyProjectionActive = true;
+        return true;
+    }
+
+    _isSafeHierarchyProjection(projection) {
+        const hierarchy = this._hierarchy;
+        if (!projection || !hierarchy || !Array.isArray(projection.nodes) || !Array.isArray(projection.edges)) {
+            return false;
+        }
+        const projectedNodeIds = new Set();
+        const collapsedNodeIds = new Set();
+        const collapsedGroupIds = new Set(projection.collapsedGroupIds || []);
+        const proxyGroupIds = new Set();
+        for (const groupId of collapsedGroupIds) {
+            const group = hierarchy.index.groups.get(groupId);
+            if (!group) {
+                return false;
+            }
+            for (const nodeId of group.memberNodeIds) {
+                collapsedNodeIds.add(nodeId);
+            }
+        }
+        for (const projectedNode of projection.nodes) {
+            if (!projectedNode || typeof projectedNode.id !== 'string' || projectedNodeIds.has(projectedNode.id)) {
+                return false;
+            }
+            projectedNodeIds.add(projectedNode.id);
+            if (projectedNode.proxy) {
+                const group = hierarchy.index.groups.get(projectedNode.groupId);
+                if (!group || !collapsedGroupIds.has(group.id) || proxyGroupIds.has(group.id) ||
+                    group.proxyId !== projectedNode.id || group.memberNodeIds.length === 0) {
+                    return false;
+                }
+                proxyGroupIds.add(group.id);
+            } else {
+                const entry = hierarchy.canonical.nodes.get(projectedNode.id);
+                const children = entry && hierarchy.canonical.children.get(projectedNode.id);
+                if (!entry || !children || children.size !== 0 || collapsedNodeIds.has(projectedNode.id)) {
+                    return false;
+                }
+            }
+        }
+        if (proxyGroupIds.size !== collapsedGroupIds.size) {
+            return false;
+        }
+        for (const nodeId of hierarchy.index.leafNodeIds) {
+            if (!collapsedNodeIds.has(nodeId) && !projectedNodeIds.has(nodeId)) {
+                return false;
+            }
+        }
+        const expectedCollapsedNodeIds = Array.from(collapsedNodeIds).sort();
+        const actualCollapsedNodeIds = Array.from(projection.collapsedNodeIds || []).sort();
+        if (expectedCollapsedNodeIds.length !== actualCollapsedNodeIds.length ||
+            expectedCollapsedNodeIds.some((nodeId, index) => nodeId !== actualCollapsedNodeIds[index])) {
+            return false;
+        }
+        const edgeIds = new Set();
+        for (const edge of projection.edges) {
+            if (!edge || !projectedNodeIds.has(edge.v) || !projectedNodeIds.has(edge.w) || edge.v === edge.w ||
+                !Number.isInteger(edge.edgeCount) || edge.edgeCount < 1) {
+                return false;
+            }
+            const id = `${edge.v}:${edge.w}`;
+            if (edgeIds.has(id)) {
+                return false;
+            }
+            edgeIds.add(id);
+        }
+        return true;
+    }
+
+    _hierarchyHasCollapsedAncestor(groupId, collapsedGroupIds) {
+        const collapsed = new Set(collapsedGroupIds);
+        for (let parent = this._hierarchy.canonical.parent.get(groupId); parent && parent !== '\x00'; parent = this._hierarchy.canonical.parent.get(parent)) {
+            if (collapsed.has(parent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    _projectedEdge(v, w) {
+        const direct = this.edge(v, w);
+        if (direct) {
+            return direct;
+        }
+        if (!this._hierarchyProjectionActive) {
+            return null;
+        }
+        for (const entry of this.edges.values()) {
+            const bundle = entry.label.bundle;
+            if (!bundle || !bundle.sourcePorts.some((port) => port.nodeId === v) ||
+                !bundle.targetPorts.some((port) => port.nodeId === w)) {
+                continue;
+            }
+            return entry;
+        }
+        return null;
+    }
+
+    _projectedNode(node) {
+        if (!node || typeof node.name !== 'string' || this.hasNode(node.name) || !this._hierarchyProjectionActive) {
+            return node;
+        }
+        for (const entry of this.nodes.values()) {
+            const group = entry.label.group;
+            if (entry.label._hierarchyProxy && group && group.memberNodeIds.includes(node.name)) {
+                return entry.label;
+            }
+        }
+        return node;
+    }
+
+    _restoreCanonicalHierarchy() {
+        const hierarchy = this._hierarchy;
+        if (!hierarchy) {
+            return;
+        }
+        this._nodes = hierarchy.canonical.nodes;
+        this._edges = hierarchy.canonical.edges;
+        this._nodeEdges = hierarchy.canonical.nodeEdges;
+        this._children = hierarchy.canonical.children;
+        this._parent = hierarchy.canonical.parent;
+        this._hierarchyProjectionActive = false;
+    }
+
+    _resetHierarchyElements() {
+        const hierarchy = this._hierarchy;
+        if (!hierarchy) {
+            return;
+        }
+        const nodeLabels = new Set();
+        for (const entry of hierarchy.canonical.nodes.values()) {
+            nodeLabels.add(entry.label);
+        }
+        for (const node of hierarchy.proxyNodes.values()) {
+            nodeLabels.add(node);
+        }
+        for (const node of hierarchy.controlNodes.values()) {
+            nodeLabels.add(node);
+        }
+        for (const node of nodeLabels) {
+            node.element = null;
+            node.rectangle = null;
+            node.border = null;
+            node._simplified = false;
+        }
+        for (const edge of this.edges.values()) {
+            const label = edge.label;
+            label.element = null;
+            label.hitTest = null;
+            label.labelElement = null;
+        }
+        this._renderedNodes.clear();
+        this._renderedEdges.clear();
+        this._focusable.clear();
+        this._pendingEdgeUpdates.clear();
+        // The SVG was discarded, so its old visible sets cannot be used to
+        // calculate the next viewport delta.
+        this._visibleNodes = null;
+        this._visibleEdges = null;
+    }
+
+    async _rebuildHierarchyRendering() {
+        if (!this._originElement) {
+            return;
+        }
+        const selected = Array.from(this._selection);
+        const container = this._containerElement;
+        const scrollLeft = container ? container.scrollLeft : 0;
+        const scrollTop = container ? container.scrollTop : 0;
+        const zoom = this._zoom;
+        this._resetHierarchyElements();
+        while (this._originElement.lastChild) {
+            this._originElement.removeChild(this._originElement.lastChild);
+        }
+        grapher.Graph.prototype.build.call(this, this.host.document, this._originElement);
+        await super.measure();
+        const status = await this.layout(this.view._worker);
+        if (status !== '') {
+            return;
+        }
+        this.update();
+        if (this.isViewportCullingEnabled()) {
+            this.populateTiles();
+        }
+        if (this._canvasElement && container) {
+            this.restore({ zoom });
+            container.scrollLeft = scrollLeft;
+            container.scrollTop = scrollTop;
+        }
+        this._selection.clear();
+        for (const element of selected) {
+            if (element && typeof element.select === 'function') {
+                const selectedElements = element.select();
+                if (selectedElements.length > 0) {
+                    this._selection.add(element);
+                }
+            }
+        }
+        if (this.isViewportCullingEnabled()) {
+            this._onViewportChange(this._getViewportBounds());
+        }
     }
 
     createNode(node) {
@@ -2344,14 +2916,15 @@ view.Graph = class extends grapher.Graph {
                     this.createValue(value).controlDependency(viewNode);
                 }
             }
-            const createCluster = (name) => {
+            const createCluster = (groupName) => {
+                const name = `${groupName}\ngroup`;
                 if (!clusters.has(name)) {
                     this.setNode({ name, rx: 5, ry: 5 });
                     clusters.add(name);
-                    const parent = clusterParentMap.get(name);
+                    const parent = clusterParentMap.get(groupName);
                     if (parent) {
                         createCluster(parent);
-                        this.setParent(name, parent);
+                        this.setParent(name, `${parent}\ngroup`);
                     }
                 }
             };
@@ -2370,7 +2943,7 @@ view.Graph = class extends grapher.Graph {
                         }
                     }
                     if (groupName) {
-                        createCluster(`${groupName}\ngroup`);
+                        createCluster(groupName);
                         this.setParent(viewNode.name, `${groupName}\ngroup`);
                     }
                 }
@@ -2470,6 +3043,11 @@ view.Graph = class extends grapher.Graph {
         for (const value of this._values.values()) {
             value.build();
         }
+        if (this._hierarchyOptions) {
+            const options = this._hierarchyOptions;
+            this._hierarchyOptions = null;
+            this.enableHierarchyRendering(options);
+        }
         super.build(document, origin);
     }
 
@@ -2530,7 +3108,7 @@ view.Graph = class extends grapher.Graph {
             for (const value of selection) {
                 if (this._table.has(value)) {
                     this._ensureSelectionMaterialized(value);
-                    const element = this._table.get(value);
+                    const element = this._projectedNode(this._table.get(value));
                     array = array.concat(element.select());
                     this._selection.add(element);
                 } else if (value && value.name && this._values.has(value.name)) {
@@ -2572,8 +3150,9 @@ view.Graph = class extends grapher.Graph {
         for (const value of selection) {
             this._ensureSelectionMaterialized(value);
             const element = this._table.get(value);
-            if (element && !this._selection.has(element)) {
-                element.select();
+            const projected = this._projectedNode(element);
+            if (projected && !this._selection.has(projected)) {
+                projected.select();
             }
         }
     }
@@ -2581,8 +3160,9 @@ view.Graph = class extends grapher.Graph {
     blur(selection) {
         for (const value of selection) {
             const element = this._table.get(value);
-            if (element && !this._selection.has(element)) {
-                element.deselect();
+            const projected = this._projectedNode(element);
+            if (projected && !this._selection.has(projected)) {
+                projected.deselect();
             }
         }
     }
@@ -2593,6 +3173,7 @@ view.Graph = class extends grapher.Graph {
         }
         const document = this.host.document;
         const materializeNode = (node) => {
+            node = this._projectedNode(node);
             if (!node || typeof node.name !== 'string' || !this.hasNode(node.name)) {
                 return;
             }
@@ -2612,7 +3193,7 @@ view.Graph = class extends grapher.Graph {
             if (!edge) {
                 return;
             }
-            const edgeEntry = this.edge(edge.v, edge.w);
+            const edgeEntry = this._projectedEdge(edge.v, edge.w);
             if (!edgeEntry || !edgeEntry.label) {
                 return;
             }
@@ -3182,6 +3763,7 @@ view.Graph = class extends grapher.Graph {
             return;
         }
 
+        const viewportStart = now();
         const document = this.host.document;
         const viewportBounds = {
             x: viewport.x,
@@ -3193,6 +3775,22 @@ view.Graph = class extends grapher.Graph {
         // Compute visibility delta and apply only the changed nodes/edges (O(delta) not O(N)).
         const delta = this.updateViewportVisibility(viewportBounds);
         this.updateVisibleElements(document, delta);
+        if (!this._viewportMetricsReported) {
+            this._viewportMetricsReported = true;
+            const params = {
+                graph_viewport_update_ms: boundedMetric(now() - viewportStart),
+                graph_time_to_viewport_ms: this._performanceStart ? boundedMetric(now() - this._performanceStart) : 0,
+                graph_viewport_visible_node_count: boundedMetric(this._visibleNodes ? this._visibleNodes.size : 0, 1000000),
+                graph_viewport_visible_edge_count: boundedMetric(this._visibleEdges ? this._visibleEdges.size : 10000000, 10000000),
+                graph_viewport_added_node_count: boundedMetric(delta.addedNodes.size, 1000000),
+                graph_viewport_added_edge_count: boundedMetric(delta.addedEdges.size, 10000000)
+            };
+            const heap = heapMegabytes();
+            if (heap !== undefined) {
+                params.graph_heap_mb = heap;
+            }
+            this.host.event('graph_viewport', params);
+        }
 
         // ARM/Snapdragon safety net: after the deferred edge build for this viewport
         // settles, repair any edges that rendered with an empty path because their
@@ -3802,8 +4400,14 @@ view.Value = class {
     select() {
         let array = [];
         if (Array.isArray(this._edges)) {
+            const selected = new Set();
             for (const edge of this._edges) {
-                array = array.concat(edge.select());
+                const projected = this.context._projectedEdge(edge.v, edge.w);
+                const label = projected ? projected.label : edge;
+                if (!selected.has(label)) {
+                    array = array.concat(label.select());
+                    selected.add(label);
+                }
             }
         }
         return array;
@@ -3811,8 +4415,14 @@ view.Value = class {
 
     deselect() {
         if (Array.isArray(this._edges)) {
+            const deselected = new Set();
             for (const edge of this._edges) {
-                edge.deselect();
+                const projected = this.context._projectedEdge(edge.v, edge.w);
+                const label = projected ? projected.label : edge;
+                if (!deselected.has(label)) {
+                    label.deselect();
+                    deselected.add(label);
+                }
             }
         }
     }
