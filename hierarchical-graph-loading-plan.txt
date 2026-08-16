@@ -1,0 +1,50 @@
+# Hierarchical Large-Graph Loading Plan
+
+## 1. Benchmark the current pipeline
+
+- [ ] Add timing and count telemetry for parsing, graph construction, layout, initial DOM creation, viewport updates, and memory use.
+- [ ] Create representative fixtures for 1k, 10k, and 50k node graphs, plus dense-model cases.
+- [ ] Define performance targets for initial interaction, initial DOM size, and expansion without full relayout.
+
+## 2. Build a hierarchy index
+
+- [ ] Derive stable groups from model scopes, repeated modules, control-flow blocks, or configurable layer ranges.
+- [ ] Store child IDs, boundary input/output ports, aggregate edge counts, bounds, depth, and a stable proxy-node ID per group.
+- [ ] Keep the flat graph as the canonical model and expose the hierarchy as a projection layer.
+
+## 3. Render a contracted graph by default
+
+- [ ] Replace each collapsed group with a proxy node.
+- [ ] Aggregate crossing edges into bundled proxy edges while retaining counts and port metadata.
+- [ ] Select the initial hierarchy level from graph size, while fully expanding small graphs.
+
+## 4. Upgrade the ELK worker to compound layout
+
+- [ ] Serialize groups as nested ELK children instead of a flat child list.
+- [ ] Lay out the contracted graph before any expanded child graph.
+- [ ] Preserve unaffected node positions when a group expands and request local layout plus boundary routing only.
+
+## 5. Implement progressive expansion
+
+- [ ] Show a lightweight placeholder immediately when a group expands.
+- [ ] Build the child projection and route local and boundary edges in the worker.
+- [ ] Materialize node and edge SVG in viewport and idle-time chunks.
+- [ ] Retain viewport culling and depth-prioritized node creation.
+
+## 6. Add interaction and recovery behavior
+
+- [ ] Support expand, collapse, expand-all-at-level, and breadcrumb navigation.
+- [ ] Cache local group layouts by graph signature and group ID.
+- [ ] Cancel obsolete worker requests during rapid navigation.
+- [ ] Fall back to the existing fast layout when local ELK layout exceeds the time budget.
+
+## 7. Validate and roll out
+
+- [ ] Add tests for hierarchy construction, edge aggregation, expansion state, and cache invalidation.
+- [ ] Add fixtures for nested, cyclic, disconnected, and high-fanout graphs.
+- [ ] Gate the feature behind an option initially.
+- [ ] Compare benchmark telemetry and enable automatic hierarchy selection above a conservative node threshold.
+
+## First milestone
+
+- [ ] Complete sections 1 through 3 before introducing compound or incremental ELK layout.

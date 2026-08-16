@@ -125,6 +125,12 @@
 .edge-paths { pointer-events: none; }
 .edge-path { stroke: #000; stroke-width: 1px; fill: none; marker-end: url("#arrowhead"); }
 .edge-paths-hit-test { pointer-events: stroke; stroke-width: 0.5em; fill: none; stroke: #000; stroke-opacity: 0.001; }
+.hierarchy-proxy .node-border { fill: #eef5ff; stroke: #2864a0; stroke-width: 1.5px; }
+.hierarchy-control .node-border { fill: #f8f8f8; stroke: #666; stroke-dasharray: 4, 2; }
+.hierarchy-proxy text, .hierarchy-control text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", sans-serif; font-size: 11px; font-weight: 600; }
+.hierarchy-proxy:hover, .hierarchy-control:hover { cursor: pointer; }
+.hierarchy-proxy:hover .node-border, .hierarchy-control:hover .node-border { stroke-width: 2px; }
+.hierarchy-edge { stroke: #2864a0; }
 
 .select > .node.node-border { stroke: rgba(220, 0, 0, 0.9); stroke-width: 2px; }
 .select.edge-path { stroke: rgba(220, 0, 0, 0.9); stroke-width: 1px; marker-end: url("#arrowhead-select"); }

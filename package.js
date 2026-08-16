@@ -558,6 +558,7 @@ const lint = async () => {
 
 const test = async (target) => {
     target = target || args.join(' ');
+    await exec('node test/grapher.js');
     await exec(`node test/models.js ${target}`);
 };
 
