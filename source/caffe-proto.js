@@ -55,11 +55,13 @@ caffe.BlobProto = class BlobProto {
         const message = new caffe.BlobProto();
         const end = length === undefined ? reader.length : reader.position + length;
         // Skip weight data fields when skipTensorWeights is enabled for faster loading
+        const buffered = reader._buffer && !reader._stream;
+        const source = reader._stream && typeof reader._stream.readAt === 'function' ? reader._stream : null;
         const lazy = !caffe.BlobProto._materializing &&
                      typeof window !== 'undefined' && window.NETRON_CONFIG &&
-                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
+                     window.NETRON_CONFIG.skipTensorWeights && (buffered || source);
         if (lazy) {
-            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+            message._deferred = source ? { source, start: reader.position, end } : { buffer: reader._buffer, start: reader.position, end };
         }
         while (reader.position < end) {
             const tag = reader.uint32();

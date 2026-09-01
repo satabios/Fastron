@@ -1,5 +1,12 @@
 
+import { getTextLayoutService } from './text-layout-service.js';
+
 const grapher = {};
+
+const textLayout = getTextLayoutService();
+const NODE_FONT = '11px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
+const ARGUMENT_FONT = '9px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
+const EDGE_FONT = '10px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
 
 grapher.Graph = class {
 
@@ -94,14 +101,16 @@ grapher.Graph = class {
         if (label.element || !this._deferredEdgeBuild || !this._edgePathGroupElement || !this._edgePathHitTestGroupElement || !this._edgeLabelGroupElement) {
             return label;
         }
-        label.build(document, this._edgePathGroupElement, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
+        const pathParent = label._tunnel ? this._tunnelGroupElement : this._edgePathGroupElement;
+        label.build(document, pathParent, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
         if (label.hitTest) {
             this._focusable.set(label.hitTest, label);
         }
         if (label.labelElement) {
             if (label.label) {
-                label.width = label.label.length * 6;
-                label.height = 14;
+                const metrics = textLayout.measureTextElement(label.labelElement, { text: label.label, font: EDGE_FONT });
+                label.width = metrics.width;
+                label.height = metrics.height;
             } else {
                 const box = label.labelElement.getBBox();
                 label.width = box.width;
@@ -118,7 +127,8 @@ grapher.Graph = class {
         if (label.element || !this._deferredEdgeBuild || !this._edgePathGroupElement || !this._edgePathHitTestGroupElement || !this._edgeLabelGroupElement) {
             return label;
         }
-        label.build(document, this._edgePathGroupElement, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
+        const pathParent = label._tunnel ? this._tunnelGroupElement : this._edgePathGroupElement;
+        label.build(document, pathParent, this._edgePathHitTestGroupElement, this._edgeLabelGroupElement);
         if (label.hitTest) {
             this._focusable.set(label.hitTest, label);
         }
@@ -238,8 +248,9 @@ grapher.Graph = class {
             return;
         }
         if (this._detachInvisible) {
-            if (!node.element.parentNode && this._nodeGroupElement) {
-                this._nodeGroupElement.appendChild(node.element);
+            const parent = node._parentElement || this._nodeGroupElement;
+            if (!node.element.parentNode && parent) {
+                parent.appendChild(node.element);
             }
         } else {
             node.element.style.display = '';
@@ -261,14 +272,17 @@ grapher.Graph = class {
 
     _showEdge(label) {
         if (this._detachInvisible) {
-            if (label.element && !label.element.parentNode && this._edgePathGroupElement) {
-                this._edgePathGroupElement.appendChild(label.element);
+            const pathParent = label._pathParentElement || this._edgePathGroupElement;
+            const hitTestParent = label._hitTestParentElement || this._edgePathHitTestGroupElement;
+            const labelParent = label._labelParentElement || this._edgeLabelGroupElement;
+            if (label.element && !label.element.parentNode && pathParent) {
+                pathParent.appendChild(label.element);
             }
-            if (label.hitTest && !label.hitTest.parentNode && this._edgePathHitTestGroupElement) {
-                this._edgePathHitTestGroupElement.appendChild(label.hitTest);
+            if (label.hitTest && !label.hitTest.parentNode && hitTestParent) {
+                hitTestParent.appendChild(label.hitTest);
             }
-            if (label.labelElement && !label.labelElement.parentNode && this._edgeLabelGroupElement) {
-                this._edgeLabelGroupElement.appendChild(label.labelElement);
+            if (label.labelElement && !label.labelElement.parentNode && labelParent) {
+                labelParent.appendChild(label.labelElement);
             }
         } else {
             if (label.element) {
@@ -332,7 +346,9 @@ grapher.Graph = class {
             // Because no DOM writes occur between calls, the browser can batch
             // the layout calculation instead of reflowing per-node.
             for (const { node } of builtNodes) {
-                node.measure();
+                if (!node._geometryLocked) {
+                    node.measure();
+                }
             }
             // Pass 3: Layout and update (writes only).
             const builtNodeIds = new Set();
@@ -401,8 +417,9 @@ grapher.Graph = class {
             for (const { label } of builtEdges) {
                 if (label.labelElement && label.width === undefined) {
                     if (label.label) {
-                        label.width = label.label.length * 6;
-                        label.height = 14;
+                        const metrics = textLayout.measureTextElement(label.labelElement, { text: label.label, font: EDGE_FONT });
+                        label.width = metrics.width;
+                        label.height = metrics.height;
                     } else {
                         const box = label.labelElement.getBBox();
                         label.width = box.width;
@@ -651,6 +668,54 @@ grapher.Graph = class {
         }
     }
 
+    resetViewportVisibility() {
+        this._visibleNodes = new Set();
+        this._visibleEdges = new Set();
+    }
+
+    async materializeAll(document) {
+        // Export and accessibility consumers need a complete SVG even when the
+        // interactive view only attaches elements intersecting the viewport.
+        this._visibilityVersion += 1;
+        let count = 0;
+        /* eslint-disable no-await-in-loop */
+        for (const nodeId of this.nodes.keys()) {
+            const entry = this.node(nodeId);
+            const node = this._ensureNodeElement(nodeId, document) || (entry && entry.label);
+            if (!node || !node.element) {
+                continue;
+            }
+            this._showNode(node);
+            if (this._isLeafNode(nodeId)) {
+                if (!node._geometryLocked) {
+                    node.measure();
+                }
+                node.layout();
+                node.update();
+                node._needsUpdate = false;
+            }
+            if (++count % 250 === 0) {
+                await new Promise((resolve) => {
+                    setTimeout(resolve, 0);
+                });
+            }
+        }
+        for (const edge of this.edges.values()) {
+            const label = this._ensureEdgeElement(edge, document);
+            this._showEdge(label);
+            if (label.element) {
+                label.update();
+                label._needsUpdate = false;
+            }
+            if (++count % 250 === 0) {
+                await new Promise((resolve) => {
+                    setTimeout(resolve, 0);
+                });
+            }
+        }
+        /* eslint-enable no-await-in-loop */
+    }
+
     populateTiles() {
         if (!this._tileManager) {
             return;
@@ -785,6 +850,7 @@ grapher.Graph = class {
                     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                     rect.setAttribute('class', 'node node-border');
                     node.element.appendChild(rect);
+                    node._parentElement = nodeGroup;
                     node._simplified = true;
                     deferredFragment.appendChild(node.element);
                     this._renderedNodes.add(nodeId);
@@ -804,6 +870,7 @@ grapher.Graph = class {
                 node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 node.element.setAttribute('class', 'cluster');
                 node.element.appendChild(node.rectangle);
+                node._parentElement = clusterGroup;
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
             }
@@ -842,17 +909,13 @@ grapher.Graph = class {
     }
 
     async measure() {
-        // Estimate edge label sizes from text length instead of calling
-        // getBBox() on each label element (Opt-5: avoids O(N) forced reflows).
-        // Average character width at 10px font ≈ 6px; line height ≈ 14px.
-        const AVG_CHAR_WIDTH = 6;
-        const LABEL_HEIGHT = 14;
         for (const edge of this.edges.values()) {
             const label = edge.label;
             if (!label.width) {
                 if (label.label) {
-                    label.width = label.label.length * AVG_CHAR_WIDTH;
-                    label.height = LABEL_HEIGHT;
+                    const metrics = textLayout.measureTextElement(label.labelElement, { text: label.label, font: EDGE_FONT });
+                    label.width = metrics.width;
+                    label.height = metrics.height;
                 } else if (label.labelElement) {
                     const box = label.labelElement.getBBox();
                     label.width = box.width;
@@ -866,8 +929,11 @@ grapher.Graph = class {
             if (this._isLeafNode(key)) {
                 const node = entry.label;
                 if (useEstimatedNodeSizes) {
-                    node.width = node.width || this._estimatedNodeWidth;
-                    node.height = node.height || this._estimatedNodeHeight;
+                    // Blocks can measure from their stored text without SVG DOM.
+                    // Lock these dimensions so materialization cannot invalidate
+                    // global placement or edge routing later.
+                    node.measure();
+                    node._geometryLocked = true;
                     node._needsUpdate = true;
                 } else {
                     node.measure();
@@ -923,7 +989,10 @@ grapher.Graph = class {
         // loading performance does not regress.
         const FAST_LAYOUT_NODE_THRESHOLD = 9000;
         const FAST_LAYOUT_EDGE_DENSITY = 4;
-        const preferFastLayout = nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY;
+        // The fast layout changes edge routing and visual emphasis, so it is
+        // opt-in. Default rendering always preserves the structural layout.
+        const allowFastLayout = this.options && this.options.fastLayout === true;
+        const preferFastLayout = allowFastLayout && (nodeCount > FAST_LAYOUT_NODE_THRESHOLD || edgeDensity > FAST_LAYOUT_EDGE_DENSITY);
         // Widen spacing only when using the fast fallback so long edges have
         // room to route between nodes rather than converging into a dense band.
         if (preferFastLayout) {
@@ -943,7 +1012,7 @@ grapher.Graph = class {
                 nodes = message.nodes;
                 edges = message.edges;
             } catch {
-                if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                if (allowFastLayout && (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3)) {
                     this._fastLayout(nodes, edges, rotate, layout);
                 } else {
                     const dagre = await import('./dagre.js');
@@ -968,7 +1037,7 @@ grapher.Graph = class {
                 } catch {
                     // Preserve responsiveness when the worker is unavailable or
                     // Dagre fails on graphs large enough to threaten interactivity.
-                    if (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3) {
+                    if (allowFastLayout && (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3)) {
                         this._fastLayout(nodes, edges, rotate, layout);
                     } else {
                         const dagre = await import('./dagre.js');
@@ -976,7 +1045,7 @@ grapher.Graph = class {
                     }
                 }
             }
-        } else if (nodes.length > this._mainThreadLayoutThreshold) {
+        } else if (allowFastLayout && nodes.length > this._mainThreadLayoutThreshold) {
             this._fastLayout(nodes, edges, rotate, layout);
         } else {
             const dagre = await import('./dagre.js');
@@ -1062,7 +1131,13 @@ grapher.Graph = class {
         for (const edge of this.edges.values()) {
             const label = edge.label;
             if (label) {
-                const e = { v: edge.v, w: edge.w, points: label.points || [] };
+                const e = {
+                    v: edge.v,
+                    w: edge.w,
+                    width: label.width || 0,
+                    height: label.height || 0,
+                    points: label.points || []
+                };
                 if (typeof label.x === 'number') {
                     e.x = label.x;
                     e.y = label.y;
@@ -1075,6 +1150,45 @@ grapher.Graph = class {
 
     // Opt-1: Apply cached node positions + edge routing, bypassing measure()+layout().
     applyLayout(cachedNodes, cachedEdges, cachedBounds) {
+        if (!Array.isArray(cachedNodes) || !Array.isArray(cachedEdges) ||
+            cachedNodes.length !== this.nodes.size || cachedEdges.length !== this.edges.size) {
+            return false;
+        }
+        const nodeIds = new Set();
+        for (const node of cachedNodes) {
+            const entry = node ? this.node(node.v) : null;
+            const current = entry && entry.label;
+            const leaf = node && this._isLeafNode(node.v);
+            const geometryChanged = leaf && current && Number.isFinite(current.width) && Number.isFinite(current.height) &&
+                (Math.abs(current.width - node.width) > 0.5 || Math.abs(current.height - node.height) > 0.5);
+            if (!node || !entry || nodeIds.has(node.v) || geometryChanged ||
+                !Number.isFinite(node.x) || !Number.isFinite(node.y) ||
+                !Number.isFinite(node.width) || !Number.isFinite(node.height) ||
+                node.width < 0 || node.height < 0) {
+                return false;
+            }
+            nodeIds.add(node.v);
+        }
+        const edgeIds = new Set();
+        for (const edge of cachedEdges) {
+            const key = edge ? `${edge.v}:${edge.w}` : '';
+            const entry = edge ? this.edge(edge.v, edge.w) : null;
+            const current = entry && entry.label;
+            const geometryChanged = current && Number.isFinite(current.width) && Number.isFinite(current.height) &&
+                (Math.abs(current.width - edge.width) > 0.5 || Math.abs(current.height - edge.height) > 0.5);
+            if (!edge || !entry || edgeIds.has(key) || geometryChanged ||
+                !Number.isFinite(edge.width) || !Number.isFinite(edge.height) || edge.width < 0 || edge.height < 0 || !Array.isArray(edge.points) ||
+                edge.points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) ||
+                ('x' in edge && (!Number.isFinite(edge.x) || !Number.isFinite(edge.y)))) {
+                return false;
+            }
+            edgeIds.add(key);
+        }
+        if (!cachedBounds || !Number.isFinite(cachedBounds.x) || !Number.isFinite(cachedBounds.y) ||
+            !Number.isFinite(cachedBounds.width) || !Number.isFinite(cachedBounds.height) ||
+            cachedBounds.width < 0 || cachedBounds.height < 0) {
+            return false;
+        }
         for (const n of cachedNodes) {
             const entry = this.node(n.v);
             if (!entry || !entry.label) {
@@ -1105,6 +1219,7 @@ grapher.Graph = class {
             }
         }
         this._layoutBounds = cachedBounds;
+        return true;
     }
 
     _fastLayout(nodes, edges, rotate, layout) {
@@ -1870,7 +1985,11 @@ grapher.Node = class {
             this.element.setAttribute('id', this.id);
         }
         this.element.setAttribute('class', this.class ? `node ${this.class}` : 'node');
+        if (this._diffClass) {
+            this.element.classList.add(this._diffClass);
+        }
         this.element.style.opacity = 0;
+        this._parentElement = parent;
         parent.appendChild(this.element);
         this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         this.border.setAttribute('class', 'node node-border');
@@ -2084,12 +2203,10 @@ grapher.Node.Header.Entry = class {
     }
 
     measure() {
-        if (!this.text) {
-            return;
-        }
         const yPadding = 4;
         const xPadding = 7;
-        const boundingBox = this.text.getBBox();
+        const content = this.content || '\u00A0';
+        const boundingBox = textLayout.measureTextElement(this.text, { text: content, font: NODE_FONT });
         this.width = boundingBox.width + xPadding + xPadding;
         this.height = boundingBox.height + yPadding + yPadding;
         this.tx = xPadding;
@@ -2275,12 +2392,25 @@ grapher.Argument = class {
     }
 
     measure() {
-        if (!this.text) {
-            return;
-        }
         const yPadding = 1;
         const xPadding = 6;
-        const size = this.text.getBBox();
+        let size = null;
+        if (this.text) {
+            size = textLayout.measureTextElement(this.text, { font: ARGUMENT_FONT });
+        } else {
+            const colon = this.type === 'node' || this.type === 'node[]';
+            const name = colon ? `${this.name}:` : this.name;
+            const bold = this.separator.trim() !== '=' && !colon;
+            const nameMetrics = textLayout.measureTextElement(null, { text: name, font: bold ? `bold ${ARGUMENT_FONT}` : ARGUMENT_FONT });
+            const content = this.content === undefined || this.content === null ? '' : this.content;
+            const value = colon ? '' : `${this.separator || ''}${content}`;
+            const valueMetrics = textLayout.measureTextElement(null, { text: value, font: ARGUMENT_FONT });
+            size = {
+                width: nameMetrics.width + valueMetrics.width,
+                height: Math.max(nameMetrics.height, valueMetrics.height),
+                y: Math.min(nameMetrics.y, valueMetrics.y)
+            };
+        }
         this.width = xPadding + size.width + xPadding;
         this.bottom = yPadding + size.height + yPadding;
         this.offset = size.y;
@@ -2390,8 +2520,10 @@ grapher.Edge = class {
             this.element.setAttribute('id', this.id);
         }
         this.element.setAttribute('class', this.class ? `edge-path ${this.class}` : 'edge-path');
+        this._pathParentElement = edgePathGroupElement;
         edgePathGroupElement.appendChild(this.element);
         this.hitTest = createElement('path');
+        this._hitTestParentElement = edgePathHitTestGroupElement;
         edgePathHitTestGroupElement.appendChild(this.hitTest);
         if (this.label) {
             const tspan = createElement('tspan');
@@ -2403,6 +2535,7 @@ grapher.Edge = class {
             this.labelElement.appendChild(tspan);
             this.labelElement.style.opacity = 0;
             this.labelElement.setAttribute('class', 'edge-label');
+            this._labelParentElement = edgeLabelGroupElement;
             if (this.id) {
                 this.labelElement.setAttribute('id', `edge-label-${this.id}`);
             }

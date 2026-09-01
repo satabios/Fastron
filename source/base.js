@@ -393,6 +393,13 @@ base.BinaryStream = class {
         this.skip(length === undefined ? this._length - this._position : length);
         return this._buffer.subarray(position, this._position);
     }
+
+    readAt(position, length) {
+        if (!Number.isInteger(position) || !Number.isInteger(length) || position < 0 || length < 0 || position + length > this._length) {
+            throw new Error('Invalid stream read range.');
+        }
+        return this._buffer.slice(position, position + length);
+    }
 };
 
 base.BinaryReader = class {

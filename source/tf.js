@@ -1236,8 +1236,8 @@ tf.Tensor = class {
 
     async read() {
         if (this._deferred) {
-            const { buffer, start, end } = this._deferred;
-            const subBuffer = new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
+            const { buffer, source, start, end } = this._deferred;
+            const subBuffer = source ? await source.readAt(start, end - start) : new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
             const reader = protobuf.BinaryReader.open(subBuffer);
             tf.proto.tensorflow.TensorProto._materializing = true;
             try {

@@ -12,12 +12,12 @@ def _build():
     source_dir = os.path.join(root_dir, "source")
     shutil.rmtree(os.path.join(source_dir, "__pycache__"), ignore_errors=True)
     shutil.rmtree(dist_pypi_dir, ignore_errors=True)
-    shutil.copytree(source_dir, os.path.join(dist_pypi_dir, "netron"))
+    shutil.copytree(source_dir, os.path.join(dist_pypi_dir, "fastron"))
     shutil.copyfile(
         os.path.join(root_dir, "pyproject.toml"),
         os.path.join(dist_pypi_dir, "pyproject.toml"))
-    os.remove(os.path.join(dist_pypi_dir, "netron", "desktop.mjs"))
-    os.remove(os.path.join(dist_pypi_dir, "netron", "app.js"))
+    os.remove(os.path.join(dist_pypi_dir, "fastron", "desktop.mjs"))
+    os.remove(os.path.join(dist_pypi_dir, "fastron", "app.js"))
 
 def _install():
     import pip._internal.cli.main
@@ -33,9 +33,9 @@ def _version():
     date = package["date"]
     entries = [
         ("pyproject.toml", '(version\\s*=\\s*")(.*)(")', version),
-        ("netron/server.py", '(__version__\\s=\\s")(.*)(")', version),
-        ("netron/index.html", '(<meta name="version" content=")(.*)(">)', version),
-        ("netron/index.html", '(<meta name="date" content=")(.*)(">)', date)
+        ("fastron/server.py", '(__version__\\s=\\s")(.*)(")', version),
+        ("fastron/index.html", '(<meta name="version" content=")(.*)(">)', version),
+        ("fastron/index.html", '(<meta name="date" content=")(.*)(">)', date)
     ]
     for path, regex, value in entries:
         path = os.path.join(dist_pypi_dir, path)
@@ -50,7 +50,7 @@ def _version():
 def _start():
     """ Start server """
     sys.path.insert(0, os.path.join(root_dir, "dist", "pypi"))
-    __import__("netron").main()
+    __import__("fastron").main()
     argv.clear()
 
 def main():

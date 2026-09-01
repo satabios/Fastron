@@ -57,7 +57,9 @@ text.TextLayoutService = class {
     constructor() {
         this._preparedCache = new Map();
         this._maxPreparedEntries = 10000;
+        this._legacyCache = new Map();
         this._canvasContext = null;
+        this._svgTextElement = null;
         this._shadowStats = {
             count: 0,
             totalDelta: 0,
@@ -113,6 +115,30 @@ text.TextLayoutService = class {
         return null;
     }
 
+    _getSvgTextElement() {
+        // `isConnected` is not available in some embedded webviews. Checking
+        // parentNode keeps the reusable fallback compatible with those hosts.
+        if (this._svgTextElement && this._svgTextElement.parentNode) {
+            return this._svgTextElement;
+        }
+        if (typeof document === 'undefined' || !document.documentElement) {
+            return null;
+        }
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.style.position = 'absolute';
+        svg.style.visibility = 'hidden';
+        svg.style.pointerEvents = 'none';
+        svg.style.width = '0';
+        svg.style.height = '0';
+        svg.style.overflow = 'visible';
+        const element = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        svg.appendChild(element);
+        (document.body || document.documentElement).appendChild(svg);
+        this._svgTextElement = element;
+        return element;
+    }
+
     _measureLegacy(element, textContent, font) {
         if (element && typeof element.getBBox === 'function') {
             try {
@@ -124,6 +150,29 @@ text.TextLayoutService = class {
                         y: box.y,
                         engine: 'legacy'
                     };
+                }
+            } catch {
+                // fall through to the reusable SVG/canvas fallback
+            }
+        }
+        const key = `${font}\u0000${textContent || ''}`;
+        const cached = this._legacyCache.get(key);
+        if (cached) {
+            return { ...cached };
+        }
+        const svgText = this._getSvgTextElement();
+        if (svgText && typeof svgText.getBBox === 'function') {
+            try {
+                svgText.style.font = font;
+                svgText.textContent = textContent || '';
+                const box = svgText.getBBox();
+                if (Number.isFinite(box.width) && Number.isFinite(box.height) && Number.isFinite(box.y)) {
+                    const metrics = { width: box.width, height: box.height, y: box.y, engine: 'legacy-svg' };
+                    this._legacyCache.set(key, metrics);
+                    if (this._legacyCache.size > this._maxPreparedEntries) {
+                        this._legacyCache.delete(this._legacyCache.keys().next().value);
+                    }
+                    return { ...metrics };
                 }
             } catch {
                 // fall through to canvas fallback
@@ -319,6 +368,7 @@ text.TextLayoutService = class {
     }
 
     clearCache() {
+        this._legacyCache.clear();
         this._preparedCache.clear();
         pretext.clearCache();
     }

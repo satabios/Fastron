@@ -798,7 +798,9 @@ desktop.ComparatorHost = class {
     }
 
     message() {
-        return new Promise(() => {});
+        // Comparator notifications are non-modal; callers must never wait on a
+        // promise that cannot settle (notably the worker timeout path).
+        return Promise.resolve();
     }
 
     _element(id) {

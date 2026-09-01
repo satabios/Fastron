@@ -18,8 +18,8 @@ if (typeof window !== 'undefined') {
         cacheMaxMemoryMB: 2048,           // Max cache memory (MB)
         streamingChunkSizeMB: 10,         // Chunk size for streaming (MB)
         streamingThresholdMB: 50,         // Stream files larger than this
-        fileReadChunkSizeMB: 512,         // Browser file read chunk size (MB)
-        streamWindowSizeMB: 512,          // Buffered stream window size (MB)
+        fileReadChunkSizeMB: 16,          // Browser file read chunk size (MB)
+        streamWindowSizeMB: 16,           // Buffered stream window size (MB)
         maxLayoutWorkers: Math.max(1, Math.min(4, hardwareConcurrency - 1)),
         gpuAcceleration: true,            // Enable GPU compositing hints for rendering
         gpuAvailable: false,              // Runtime-detected GPU availability
@@ -643,10 +643,65 @@ view.View = class {
         }
     }
 
-    // Opt-1: Build an IndexedDB cache key for the given graph module.
-    // Key encodes model filename, module index, layout direction, and engine
-    // so that different models and layout settings never collide.
-    _layoutCacheKey(target) {
+    _renderOptionsKey() {
+        const config = typeof window !== 'undefined' && window.NETRON_CONFIG ? window.NETRON_CONFIG : {};
+        return JSON.stringify({
+            weights: this._options.weights,
+            attributes: this._options.attributes,
+            names: this._options.names,
+            direction: this._options.direction || 'vertical',
+            layout: this._options.layout || 'dagre',
+            lazyRender: this._options.lazyRender,
+            skipTensorWeights: config.skipTensorWeights !== false
+        });
+    }
+
+    _graphFingerprint(target, signature) {
+        // Two lightweight FNV-1a passes make filename collisions harmless without
+        // serializing tensor values or retaining another copy of the graph.
+        let first = 0x811c9dc5;
+        let second = 0x9e3779b9;
+        const add = (value) => {
+            const text = value === undefined || value === null ? '' : String(value);
+            for (let i = 0; i < text.length; i++) {
+                const code = text.charCodeAt(i);
+                first = Math.imul(first ^ code, 0x01000193) >>> 0;
+                second = Math.imul(second ^ code, 0x85ebca6b) >>> 0;
+            }
+            first = Math.imul(first ^ 0xff, 0x01000193) >>> 0;
+            second = Math.imul(second ^ 0xff, 0xc2b2ae35) >>> 0;
+        };
+        add(signature);
+        const nodes = target && Array.isArray(target.nodes) ? target.nodes : [];
+        add(nodes.length);
+        for (const node of nodes) {
+            add(node && (node.name || node.identifier));
+            add(node && node.type && (node.type.name || node.type.identifier));
+            for (const list of [node && node.inputs, node && node.outputs]) {
+                if (!Array.isArray(list)) {
+                    add(0);
+                    continue;
+                }
+                add(list.length);
+                for (const argument of list) {
+                    add(argument && argument.name);
+                    const values = argument && Array.isArray(argument.value) ? argument.value : [];
+                    add(values.length);
+                    for (const value of values) {
+                        add(value && (value.name || value.identifier));
+                    }
+                }
+            }
+        }
+        const inputs = target && Array.isArray(target.inputs) ? target.inputs : [];
+        const outputs = target && Array.isArray(target.outputs) ? target.outputs : [];
+        add(inputs.length);
+        add(outputs.length);
+        return `${first.toString(16).padStart(8, '0')}${second.toString(16).padStart(8, '0')}`;
+    }
+
+    // Key includes graph structure and every option that can change geometry.
+    _layoutCacheKey(target, signature) {
         if (!this._model) {
             return null;
         }
@@ -659,7 +714,9 @@ view.View = class {
         const moduleIdx = idx >= 0 ? idx : 0;
         const direction = this._options.direction || 'vertical';
         const engine = this._options.layout || 'dagre';
-        return `${identifier}::${moduleIdx}::${direction}::${engine}`;
+        const display = `${this._options.names ? 1 : 0}${this._options.attributes ? 1 : 0}${this._options.weights ? 1 : 0}`;
+        const fingerprint = this._graphFingerprint(target, signature);
+        return `v2::${identifier}::${moduleIdx}::${direction}::${engine}::${display}::${fingerprint}`;
     }
 
     _timeout(delay) {
@@ -1039,6 +1096,7 @@ view.View = class {
     }
 
     async render(target, signature) {
+        const renderOptionsKey = this._renderOptionsKey();
         // Opt-3: Capture outgoing viewGraph before nulling this.target.
         // The setter triggers unregister() (disconnects observers/events).
         // We then detach its canvas from the DOM and store it in the render
@@ -1060,9 +1118,14 @@ view.View = class {
             if (this._renderCache.length >= 3) {
                 this._renderCache.shift();
             }
+            this._renderCache = this._renderCache.filter((entry) =>
+                entry.target !== prevViewGraph._renderTarget ||
+                entry.signature !== prevViewGraph._renderSignature ||
+                entry.optionsKey !== prevViewGraph._renderOptionsKey);
             this._renderCache.push({
                 target: prevViewGraph._renderTarget,
                 signature: prevViewGraph._renderSignature,
+                optionsKey: prevViewGraph._renderOptionsKey,
                 viewGraph: prevViewGraph,
                 canvas
             });
@@ -1077,7 +1140,7 @@ view.View = class {
             // Check render cache — hit means the graph was rendered before.
             // Reattach the cached canvas and restore scroll/zoom state instantly.
             const cached = this._renderCache && this._renderCache.find(
-                (e) => e.target === target && e.signature === signature
+                (e) => e.target === target && e.signature === signature && e.optionsKey === renderOptionsKey
             );
             if (cached) {
                 element.appendChild(cached.canvas);
@@ -1109,6 +1172,7 @@ view.View = class {
             // Tag the viewGraph so we can key the cache on next navigation.
             viewGraph._renderTarget = target;
             viewGraph._renderSignature = signature;
+            viewGraph._renderOptionsKey = renderOptionsKey;
 
             // Enable viewport culling if lazy rendering is on
             if (this._options.lazyRender) {
@@ -1131,14 +1195,23 @@ view.View = class {
             this.progress(45);
 
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
-            const idbKey = this._layoutCacheKey(target);
+            const idbKey = this._layoutCacheKey(target, signature);
             const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
+            let measured = false;
             if (idbHit) {
+                // Recompute text geometry before accepting cached coordinates. This
+                // also initializes deferred node blocks without creating their DOM.
+                await viewGraph.measure();
+                measured = true;
+            }
+            const restoredLayout = idbHit && viewGraph.applyLayout(idbHit.nodes, idbHit.edges, idbHit.bounds);
+            if (restoredLayout) {
                 // Apply cached positions + edge routing directly — skip measure()+layout().
-                viewGraph.applyLayout(idbHit.nodes, idbHit.edges, idbHit.bounds);
                 status = '';
             } else {
-                await viewGraph.measure();
+                if (!measured) {
+                    await viewGraph.measure();
+                }
                 this.progress(65);
                 status = await viewGraph.layout(this._worker);
             }
@@ -1148,7 +1221,7 @@ view.View = class {
                 viewGraph.update();
 
                 // Persist layout to IndexedDB (async, non-blocking) for future opens.
-                if (idbKey && !idbHit) {
+                if (idbKey && !restoredLayout) {
                     const snap = viewGraph.getLayoutSnapshot();
                     this._layoutCache.set(idbKey, snap.nodes, snap.edges, snap.bounds).catch(() => {});
                 }
@@ -1186,8 +1259,24 @@ view.View = class {
         const extension = lastIndex === -1 ? 'png' : file.substring(lastIndex + 1).toLowerCase();
         if (this.activeTarget && (extension === 'png' || extension === 'svg')) {
             const canvas = this._element('canvas');
-            const clone = canvas.cloneNode(true);
             const document = this._host.document;
+            const viewGraph = this._target;
+            const culling = viewGraph && viewGraph.isViewportCullingEnabled();
+            let clone = null;
+            try {
+                if (culling) {
+                    await viewGraph.materializeAll(document);
+                }
+                clone = canvas.cloneNode(true);
+            } finally {
+                if (culling) {
+                    viewGraph.hideAllNodes();
+                    viewGraph.markAllNeedsUpdate();
+                    viewGraph.resetViewportVisibility();
+                    const viewport = viewGraph._getViewportBounds();
+                    viewGraph._onViewportChange(viewport);
+                }
+            }
             const applyStyleSheet = (element, name) => {
                 let ruleMap = view.View._exportCSSCache.get(name);
                 if (!ruleMap) {
@@ -1225,7 +1314,10 @@ view.View = class {
             clone.style.removeProperty('width');
             clone.style.removeProperty('height');
             const background = clone.querySelector('#background');
-            clone.getElementById('edge-paths-hit-test').remove();
+            const hitTest = clone.querySelector('#edge-paths-hit-test');
+            if (hitTest) {
+                hitTest.remove();
+            }
             const origin = clone.querySelector('#origin');
             origin.setAttribute('transform', 'translate(0,0) scale(1)');
             background.removeAttribute('width');
@@ -2026,11 +2118,15 @@ view.Worker = class {
             this._create();
             this._worker.postMessage(message);
             this._timeout = setTimeout(async () => {
-                await this._host.message(notification, null, 'Cancel');
                 this.cancel(true);
                 delete this._resolve;
                 delete this._reject;
                 resolve({ type: 'cancel' });
+                try {
+                    await this._host.message(notification, null, 'Cancel');
+                } catch {
+                    // A notification must never keep the worker request pending.
+                }
             }, delay);
         });
     }
@@ -2493,7 +2589,9 @@ view.Graph = class extends grapher.Graph {
             }
             this._showNode(graphNode);
             if (graphNode._needsUpdate || !graphNode.element.getAttribute('transform')) {
-                graphNode.measure();
+                if (!graphNode._geometryLocked) {
+                    graphNode.measure();
+                }
                 graphNode.layout();
                 graphNode.update();
                 graphNode._needsUpdate = false;
@@ -3293,8 +3391,12 @@ view.Node = class extends grapher.Node {
                 }
             }
         }
-        if (Array.isArray(node.attributes)) {
-            const attributes = node.attributes.length > 1 ? node.attributes.slice().sort((a, b) => a.name.toUpperCase().localeCompare(b.name.toUpperCase())) : node.attributes;
+        // ONNX nodes expose scalar attributes through a one-shot lazy getter.
+        // Graph-valued attributes are already eager, so a collapsed node with
+        // attributes hidden does not need to materialize scalar values here.
+        const nodeAttributes = !options.attributes && Array.isArray(node._rawAttributes) ? [] : node.attributes;
+        if (Array.isArray(nodeAttributes)) {
+            const attributes = nodeAttributes.length > 1 ? nodeAttributes.slice().sort((a, b) => a.name.toUpperCase().localeCompare(b.name.toUpperCase())) : nodeAttributes;
             for (const argument of attributes) {
                 const type = argument.type;
                 if (argument.visible !== false &&
@@ -8263,7 +8365,8 @@ view.Error = class extends Error {
 // Opt-1: Persistent layout cache backed by IndexedDB.
 // Stores dagre node positions + edge routing for previously opened models so
 // that repeated opens of the same model can skip measure() + layout().
-// Cache key: "<modelIdentifier>::<moduleIndex>::<direction>::<layoutEngine>"
+// Cache key includes model/module identity, graph structure, display options,
+// direction, and layout engine.
 // LRU-like eviction: keeps at most 20 entries, removes oldest on overflow.
 view.LayoutCache = class {
 

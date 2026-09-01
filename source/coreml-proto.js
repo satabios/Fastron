@@ -8482,43 +8482,20 @@ CoreML.Specification.WeightParams = class WeightParams {
     static decode(reader, length) {
         const message = new CoreML.Specification.WeightParams();
         const end = length === undefined ? reader.length : reader.position + length;
-        // Skip weight data fields when skipTensorWeights is enabled
-        const lazy = !CoreML.Specification.WeightParams._materializing &&
-                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
-                     window.NETRON_CONFIG.skipTensorWeights && reader._buffer;
-        if (lazy) {
-            message._deferred = { buffer: reader._buffer, start: reader.position, end };
-        }
         while (reader.position < end) {
             const tag = reader.uint32();
             switch (tag >>> 3) {
                 case 1:
-                    if (lazy) {
-                        reader.skipType(tag & 7);
-                    } else {
-                        message.floatValue = reader.floats(message.floatValue, tag);
-                    }
+                    message.floatValue = reader.floats(message.floatValue, tag);
                     break;
                 case 2:
-                    if (lazy) {
-                        reader.skipType(tag & 7);
-                    } else {
-                        message.float16Value = reader.bytes();
-                    }
+                    message.float16Value = reader.bytes();
                     break;
                 case 30:
-                    if (lazy) {
-                        reader.skipType(tag & 7);
-                    } else {
-                        message.rawValue = reader.bytes();
-                    }
+                    message.rawValue = reader.bytes();
                     break;
                 case 31:
-                    if (lazy) {
-                        reader.skipType(tag & 7);
-                    } else {
-                        message.int8RawValue = reader.bytes();
-                    }
+                    message.int8RawValue = reader.bytes();
                     break;
                 case 40:
                     message.quantization = CoreML.Specification.QuantizationParams.decode(reader, reader.uint32());

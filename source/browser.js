@@ -730,6 +730,10 @@ browser.FileStream = class {
         return this._length;
     }
 
+    get windowSize() {
+        return this._windowSize;
+    }
+
     stream(length) {
         const file = new browser.FileStream(this._chunks, this._size, this._windowSize, this._start + this._position, length);
         this.skip(length);
@@ -738,11 +742,14 @@ browser.FileStream = class {
 
     seek(position) {
         this._position = position >= 0 ? position : this._length + position;
+        if (this._position > this._length || this._position < 0) {
+            throw new Error(`Expected ${this._position - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
+        }
     }
 
     skip(offset) {
         this._position += offset;
-        if (this._position > this._length) {
+        if (this._position > this._length || this._position < 0) {
             throw new Error(`Expected ${this._position - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
         }
     }
@@ -784,6 +791,18 @@ browser.FileStream = class {
         }
         const buffer = new Uint8Array(length);
         this._read(buffer, position);
+        return buffer;
+    }
+
+    readAt(position, length) {
+        if (!Number.isInteger(position) || !Number.isInteger(length) || position < 0 || length < 0 || position + length > this._length) {
+            throw new Error('Invalid file read range.');
+        }
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
+        const buffer = new Uint8Array(length);
+        this._read(buffer, this._start + position);
         return buffer;
     }
 
