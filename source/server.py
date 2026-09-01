@@ -2,6 +2,7 @@
 
 import errno
 import gzip
+import html
 import http.server
 import importlib
 import importlib.metadata
@@ -17,7 +18,10 @@ import time
 import urllib.parse
 import webbrowser
 
-__version__ = "0.0.0"
+try:
+    __version__ = importlib.metadata.version("fastron")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.0.0"
 
 logger = logging.getLogger(__name__)
 
@@ -35,30 +39,31 @@ _GZIP_TYPES = {
 _CACHE_CONTROL_STATIC = "public, max-age=3600"
 
 class _ContentProvider:
-    data = bytearray()
-    base_dir = ""
-    base = ""
-    identifier = ""
     def __init__(self, data, path, file, name):
-        self.data = data if data else bytearray()
+        self.data = data if data is not None else bytearray()
         self.identifier = os.path.basename(file) if file else ""
         self.name = name
+        self.dir = "."
+        self.base = ""
         if path:
             self.dir = os.path.dirname(path) if os.path.dirname(path) else "."
             self.base = os.path.basename(path)
-    def read(self, path):
-        if path == self.base and self.data:
-            return self.data
+
+    def resolve(self, path):
+        if path == self.base and self.data is not None and len(self.data) > 0:
+            return ("memory", self.data)
         base_dir = os.path.realpath(self.dir)
-        filename = os.path.normpath(os.path.realpath(base_dir + "/" + path))
-        if os.path.commonpath([ base_dir, filename ]) == base_dir:
+        filename = os.path.realpath(os.path.join(base_dir, path))
+        try:
+            inside = os.path.commonpath([base_dir, filename]) == base_dir
+        except ValueError:
+            inside = False
+        if inside:
             if os.path.exists(filename) and not os.path.isdir(filename):
-                with open(filename, "rb") as file:
-                    return file.read()
+                return ("file", filename)
         return None
 
 class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
-    content = None
     mime_types = {
         ".html": "text/html",
         ".js":   "text/javascript",
@@ -88,10 +93,8 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         is_static = False
         if path.startswith("/data/"):
             path = urllib.parse.unquote(path[len("/data/"):])
-            content = self.content.read(path)
-            if content:
-                content_type = "application/octet-stream"
-                status_code = 200
+            self._serve_data(path)
+            return
         else:
             base_dir = os.path.dirname(os.path.realpath(__file__))
             filename = os.path.normpath(os.path.realpath(base_dir + path))
@@ -121,15 +124,19 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                         '<meta name="type" content="Python">',
                         '<meta name="version" content="' + __version__ + '">'
                     ]
-                    base = self.content.base
+                    base = self.server.content.base
                     if base:
-                        meta.append('<meta name="file" content="/data/' + base + '">')
-                    name = self.content.name
+                        location = "/data/" + urllib.parse.quote(base, safe="")
+                        escaped = html.escape(location, quote=True)
+                        meta.append(f'<meta name="file" content="{escaped}">')
+                    name = self.server.content.name
                     if name:
-                        meta.append('<meta name="name" content="' + name + '">')
-                    identifier = self.content.identifier
+                        escaped = html.escape(str(name), quote=True)
+                        meta.append(f'<meta name="name" content="{escaped}">')
+                    identifier = self.server.content.identifier
                     if identifier:
-                        meta.append(f'<meta name="identifier" content="{identifier}">')
+                        escaped = html.escape(str(identifier), quote=True)
+                        meta.append(f'<meta name="identifier" content="{escaped}">')
                     meta = "\n".join(meta)
                     regex = r'<meta name="version" content=".*">'
                     content = re.sub(regex, lambda _: meta, content)
@@ -149,6 +156,70 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             status_code, content_type, content,
             gzipped=gzipped, is_static=is_static,
         )
+
+    def _serve_data(self, path):
+        resource = self.server.content.resolve(path)
+        if resource is None:
+            self._write(404, None, None)
+            return
+        kind, value = resource
+        total = len(value) if kind == "memory" else os.path.getsize(value)
+        start = 0
+        end = total - 1
+        status_code = 200
+        range_header = self.headers.get("Range")
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+            valid = (
+                match is not None
+                and (match.group(1) or match.group(2))
+                and total > 0
+            )
+            if valid:
+                first, last = match.groups()
+                if first:
+                    start = int(first)
+                    end = int(last) if last else total - 1
+                else:
+                    suffix = int(last)
+                    valid = suffix > 0
+                    start = max(0, total - suffix)
+                    end = total - 1
+                end = min(end, total - 1)
+                valid = valid and start < total and start <= end
+            if not valid:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{total}")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            status_code = 206
+        length = max(0, end - start + 1)
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if status_code == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+        self.end_headers()
+        if self.command == "HEAD" or length == 0:
+            return
+        try:
+            if kind == "memory":
+                self.wfile.write(value[start:end + 1])
+            else:
+                with open(value, "rb") as file:
+                    file.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = file.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
     def log_message(self, format, *args):
         logger.debug(" ".join(args))
     def _write(
@@ -156,9 +227,9 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         gzipped=False, is_static=False,
     ):
         self.send_response(status_code)
-        if content:
+        if content is not None:
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", len(content))
+            self.send_header("Content-Length", str(len(content)))
             if gzipped:
                 self.send_header("Content-Encoding", "gzip")
             if is_static:
@@ -171,7 +242,8 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(content)
 
 class _ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    pass
+    daemon_threads = True
+    allow_reuse_address = True
 
 class _HTTPServerThread(threading.Thread):
     def __init__(self, content, address):
@@ -180,9 +252,9 @@ class _HTTPServerThread(threading.Thread):
         self.address = address
         self.url = "http://" + address[0] + ":" + str(address[1])
         self.server = _ThreadedHTTPServer(address, _HTTPRequestHandler)
+        self.server.content = content
         self.server.timeout = 0.25
         self.server.block_on_close = False
-        self.server.RequestHandlerClass.content = content
         self.terminate_event = threading.Event()
         self.terminate_event.set()
         self.stop_event = threading.Event()
@@ -193,8 +265,8 @@ class _HTTPServerThread(threading.Thread):
         try:
             while not self.stop_event.is_set():
                 self.server.handle_request()
-        except: # noqa: E722
-            pass
+        except (OSError, ValueError):
+            logger.debug("Server loop stopped", exc_info=True)
         self.terminate_event.set()
         self.stop_event.clear()
 
@@ -323,12 +395,14 @@ def serve(file, data=None, address=None, browse=False):
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    if not data and file and not os.path.exists(file):
+    has_data = data is not None
+    if not has_data and file and not os.path.exists(file):
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file)
 
     content = _ContentProvider(data, file, file, file)
 
-    if data and not isinstance(data, bytearray) and isinstance(data.__class__, type):
+    if (has_data and not isinstance(data, (bytes, bytearray, memoryview))
+            and isinstance(data.__class__, type)):
         logger.info("Experimental")
         model = _open(data)
         if model:

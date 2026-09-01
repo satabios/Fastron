@@ -619,6 +619,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 	let modelDataPending = null;
 	let configDataPending = null;
 	let viewReady = false;
+	const asBytes = (value) => value instanceof Uint8Array ? value : new Uint8Array(value);
 
 	// Set up message handler immediately to avoid race condition
 	window.addEventListener('message', event => {
@@ -629,7 +630,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 				console.log('Received model data, length:', message.value.length);
 				if (viewReady && window.__view__._host._view) {
 					try {
-						const file1 = new File([Uint8Array.from(message.value)], "%GRAPHNAME%", {type: ''});
+							const file1 = new File([asBytes(message.value)], "%GRAPHNAME%", {type: ''});
 						window.__view__._host._open(file1, [file1]);
 					} catch (error) {
 						console.error('Error opening model:', error);
@@ -664,7 +665,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 		// Open pending model if any
 		if (modelDataPending) {
 			console.log('Opening pending model data');
-			const file1 = new File([Uint8Array.from(modelDataPending)], "%GRAPHNAME%", {type: ''});
+			const file1 = new File([asBytes(modelDataPending)], "%GRAPHNAME%", {type: ''});
 			window.__view__._host._open(file1, [file1]);
 			modelDataPending = null;
 		} else {

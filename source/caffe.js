@@ -532,9 +532,9 @@ caffe.Tensor = class {
 
     async read() {
         if (this._deferred) {
-            const { buffer, start, end } = this._deferred;
+            const { buffer, source, start, end } = this._deferred;
             const { BinaryReader } = await import('./protobuf.js');
-            const subBuffer = new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
+            const subBuffer = source ? await source.readAt(start, end - start) : new Uint8Array(buffer.buffer, buffer.byteOffset + start, end - start);
             const reader = BinaryReader.open(subBuffer);
             caffe.proto.BlobProto._materializing = true;
             try {

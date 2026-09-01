@@ -1400,18 +1400,16 @@ onnx.TensorProto = class TensorProto {
     static decode(reader, length) {
         const message = new onnx.TensorProto();
         const end = length === undefined ? reader.length : reader.position + length;
-        // When skipTensorWeights is enabled, skip parsing weight data fields entirely
-        // and store a deferred buffer reference for on-demand loading.
-        // The deferred path is only safe for BufferReader (entire file in memory as a
-        // flat Uint8Array).  StreamReader uses a sliding window buffer whose contents
-        // are overwritten on every fill, so storing a reference to reader._buffer would
-        // capture stale data.  Detect BufferReader by the absence of a _stream property.
+        // Skip tensor values while retaining either the immutable input buffer or a
+        // random-access stream range that can be materialized when the user opens it.
+        const buffered = reader._buffer && !reader._stream;
+        const source = reader._stream && typeof reader._stream.readAt === 'function' ? reader._stream : null;
         const lazy = !onnx.TensorProto._materializing &&
                      typeof window !== 'undefined' && window.NETRON_CONFIG &&
                      window.NETRON_CONFIG.skipTensorWeights &&
-                     reader._buffer && !reader._stream;
+                     (buffered || source);
         if (lazy) {
-            message._deferred = { buffer: reader._buffer, start: reader.position, end };
+            message._deferred = source ? { source, start: reader.position, end } : { buffer: reader._buffer, start: reader.position, end };
         }
         while (reader.position < end) {
             const tag = reader.uint32();

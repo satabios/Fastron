@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { OnnxSimplifier } from './simplifier';
 
 
 function getNonce() {
@@ -100,7 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
 			panel.webview.onDidReceiveMessage(
 				async message => {
 				  if (isDisposed) { return; }
-				  switch (message.command) {
+					  switch (message.command) {
 					case 'alert':
 						vscode.window.showErrorMessage(message.text);
 						return;
@@ -111,54 +110,14 @@ export function activate(context: vscode.ExtensionContext) {
 						}
 						return;
 					}
-					case 'request_model':
-						// Check if this is an ONNX file and simplification is enabled
-						let fileToLoad = modelFile!;
-						const ext = path.extname(modelFile!).toLowerCase();
-						
-						// Get file size for progress messages
-						const fileStats = fs.statSync(modelFile!);
-						const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
-						const fileSizeGB = (fileStats.size / (1024 * 1024 * 1024)).toFixed(2);
-						const sizeDisplay = fileStats.size > 1024 * 1024 * 1024 ? `${fileSizeGB}GB` : `${fileSizeMB}MB`;
-						
-						if (ext === '.onnx') {
-							const config = vscode.workspace.getConfiguration('fastron');
-							const simplificationEnabled = config.get('onnxSimplification.enabled', true);
-							
-							if (simplificationEnabled) {
-								try {
-									const result = await vscode.window.withProgress({
-										location: vscode.ProgressLocation.Notification,
-										title: `Optimizing ${sizeDisplay} ONNX model for viewing`,
-										cancellable: false
-									}, async (progress) => {
-										const simplifier = new OnnxSimplifier(context.extensionPath);
-										return await simplifier.simplify(modelFile!, progress);
-									});
+						case 'request_model':
+							// Get file size for progress messages
+							const fileStats = await fs.promises.stat(modelFile!);
+							const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
+							const fileSizeGB = (fileStats.size / (1024 * 1024 * 1024)).toFixed(2);
+							const sizeDisplay = fileStats.size > 1024 * 1024 * 1024 ? `${fileSizeGB}GB` : `${fileSizeMB}MB`;
 
-									if (isDisposed) { return; }
-
-									if (result.success && result.simplifiedPath) {
-										fileToLoad = result.simplifiedPath;
-										const reductionMsg = result.sizeReduction 
-											? ` (${result.sizeReduction.toFixed(1)}% reduction)` 
-											: '';
-										vscode.window.showInformationMessage(
-											`Model simplified in ${(result.timeTaken! / 1000).toFixed(1)}s${reductionMsg}`
-										);
-									} else if (result.error && !result.error.includes('below threshold')) {
-										// Only show error if it's not about threshold
-										console.warn('Simplification failed, using original model:', result.error);
-									}
-								} catch (error: any) {
-									console.error('Simplification error:', error);
-									// Fall back to original model
-								}
-							}
-						}
-
-						if (isDisposed) { return; }
+							if (isDisposed) { return; }
 
 						// Show progress while reading large file
 						await vscode.window.withProgress({
@@ -167,30 +126,17 @@ export function activate(context: vscode.ExtensionContext) {
 							cancellable: false
 						}, async (progress) => {
 							progress.report({ message: 'Reading file...' });
-							const modelData = fs.readFileSync(fileToLoad);
+								const modelData = await fs.promises.readFile(modelFile!);
 							progress.report({ message: 'Transmitting to viewer...' });
 							if (!isDisposed) {
 								panel.webview.postMessage({
 									command: "transmit_model", 
-									value: Uint8Array.from(modelData).subarray()
+									value: modelData
 								});
 							}
 						});
 						
-						// Cleanup temp files after transmission
-						if (fileToLoad !== modelFile) {
-							setTimeout(() => {
-								try {
-									const tempDir = path.dirname(fileToLoad);
-									if (tempDir.includes('fastron-simplify')) {
-										fs.rmSync(tempDir, { recursive: true, force: true });
-									}
-								} catch (e) {
-									console.error('Failed to cleanup temp files:', e);
-								}
-							}, 1000);
-						}
-						return;
+							return;
 				  }
 				},
 				undefined,
@@ -336,8 +282,10 @@ in the Console while viewing a model to see detailed statistics.`;
 					if (isDisposed) { return; }
 					switch (message.command) {
 						case 'comparator_ready': {
-							const statsA = fs.statSync(fileA!);
-							const statsB = fs.statSync(fileB);
+								const [statsA, statsB] = await Promise.all([
+									fs.promises.stat(fileA!),
+									fs.promises.stat(fileB)
+								]);
 							const sizeA = (statsA.size / (1024 * 1024)).toFixed(1);
 							const sizeB = (statsB.size / (1024 * 1024)).toFixed(1);
 
@@ -347,19 +295,21 @@ in the Console while viewing a model to see detailed statistics.`;
 								cancellable: false
 							}, async (progress) => {
 								progress.report({ message: 'Reading files...' });
-								const dataA = fs.readFileSync(fileA!);
-								const dataB = fs.readFileSync(fileB);
+									const [dataA, dataB] = await Promise.all([
+										fs.promises.readFile(fileA!),
+										fs.promises.readFile(fileB)
+									]);
 								progress.report({ message: 'Transmitting...' });
 								if (!isDisposed) {
 									panel.webview.postMessage({
 										command: 'transmit_model_a',
-										value: Uint8Array.from(dataA),
+										value: dataA,
 										name: nameA,
 										label: nameA
 									});
 									panel.webview.postMessage({
 										command: 'transmit_model_b',
-										value: Uint8Array.from(dataB),
+										value: dataB,
 										name: nameB,
 										label: nameB
 									});

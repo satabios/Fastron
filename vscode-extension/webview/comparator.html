@@ -171,6 +171,10 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
             return this._document;
         }
 
+        get window() {
+            return window;
+        }
+
         environment(name) {
             switch (name) {
                 case 'type': return 'Browser';
@@ -188,7 +192,7 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
         event() {}
 
         message() {
-            return new Promise(() => {});
+            return Promise.resolve();
         }
 
         async request(file, encoding, base) {
@@ -262,13 +266,13 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
         const msg = event.data;
         switch (msg.command) {
             case 'transmit_model_a':
-                host.storeModel('modelA', msg.name, new Uint8Array(msg.value));
+                host.storeModel('modelA', msg.name, msg.value instanceof Uint8Array ? msg.value : new Uint8Array(msg.value));
                 _labelA = msg.label || msg.name;
                 _aReady = true;
                 _tryCompare();
                 break;
             case 'transmit_model_b':
-                host.storeModel('modelB', msg.name, new Uint8Array(msg.value));
+                host.storeModel('modelB', msg.name, msg.value instanceof Uint8Array ? msg.value : new Uint8Array(msg.value));
                 _labelB = msg.label || msg.name;
                 _bReady = true;
                 _tryCompare();

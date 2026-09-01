@@ -121,10 +121,17 @@ comparator.Controller = class {
                 this._host._context(pathB.path)
             ]);
 
-            const [modelA, modelB] = await Promise.all([
-                this._modelFactory.open(contextA),
-                this._modelFactory.open(contextB)
-            ]);
+            let modelA = null;
+            let modelB = null;
+            try {
+                [modelA, modelB] = await Promise.all([
+                    this._modelFactory.open(contextA),
+                    this._modelFactory.open(contextB)
+                ]);
+            } finally {
+                this._disposeContext(contextA);
+                this._disposeContext(contextB);
+            }
 
             // Get primary graph target from each model
             const targetA = this._getPrimaryTarget(modelA);
@@ -152,6 +159,13 @@ comparator.Controller = class {
             const groupsA = targetA.groups || false;
             this._graphA = new Graph(viewProxyA, groupsA);
             this._graphA.enableViewportCulling(true);
+            this._graphA.configureDeferredRendering({
+                deferredNodeBuild: true,
+                deferredEdgeBuild: true,
+                skipHiddenUpdate: true,
+                detachInvisible: true,
+                estimatedNodeSizeThreshold: 500
+            });
             this._graphA.add(targetA, null);
             this._graphA.build(document, containerLeft);
 
@@ -160,6 +174,13 @@ comparator.Controller = class {
             const groupsB = targetB.groups || false;
             this._graphB = new Graph(viewProxyB, groupsB);
             this._graphB.enableViewportCulling(true);
+            this._graphB.configureDeferredRendering({
+                deferredNodeBuild: true,
+                deferredEdgeBuild: true,
+                skipHiddenUpdate: true,
+                detachInvisible: true,
+                estimatedNodeSizeThreshold: 500
+            });
             this._graphB.add(targetB, null);
             this._graphB.build(document, containerRight);
 
@@ -193,6 +214,10 @@ comparator.Controller = class {
             this._graphA.restore(null);
             this._graphB.update();
             this._graphB.restore(null);
+            this._graphA.resetViewportVisibility();
+            this._graphB.resetViewportVisibility();
+            this._graphA._onViewportChange(this._graphA._getViewportBounds());
+            this._graphB._onViewportChange(this._graphB._getViewportBounds());
 
             // Apply Phase 1 diff highlighting (works on elements with display:none)
             const phase1Result = phase1State.result;
@@ -274,6 +299,23 @@ comparator.Controller = class {
             }
         }
         return modules.length > 0 ? modules[0] : null;
+    }
+
+    _disposeContext(context) {
+        const streams = new Set();
+        if (context && context.stream) {
+            streams.add(context.stream);
+        }
+        if (context && context.entries && typeof context.entries.values === 'function') {
+            for (const stream of context.entries.values()) {
+                streams.add(stream);
+            }
+        }
+        for (const stream of streams) {
+            if (stream && typeof stream.dispose === 'function') {
+                stream.dispose();
+            }
+        }
     }
 
     _simpleHash(str) {
@@ -730,39 +772,41 @@ comparator.Controller = class {
     }
 
     _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
-        const costMatrix = groupA.map((idxA) =>
-            groupB.map((idxB) =>
-                100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
-            )
-        );
         if (Math.max(groupA.length, groupB.length) > 200) {
-            // Greedy fallback for very large groups
-            const allPairs = [];
-            for (let ai = 0; ai < groupA.length; ai++) {
-                for (let bi = 0; bi < groupB.length; bi++) {
-                    allPairs.push({ ai, bi, sim: 100 - costMatrix[ai][bi] });
-                }
-            }
-            allPairs.sort((a, b) => b.sim - a.sim);
-            const usedA = new Set();
+            // Greedy fallback for very large groups. Keep only the best candidate
+            // for each A node instead of allocating and sorting O(A*B) pair objects.
             const usedB = new Set();
-            for (const pair of allPairs) {
-                if (pair.sim < threshold) {
-                    break;
+            for (let ai = 0; ai < groupA.length; ai++) {
+                const idxA = groupA[ai];
+                let bestBi = -1;
+                let bestSimilarity = threshold;
+                for (let bi = 0; bi < groupB.length; bi++) {
+                    if (usedB.has(bi)) {
+                        continue;
+                    }
+                    const idxB = groupB[bi];
+                    const similarity = this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB]);
+                    if (similarity >= bestSimilarity) {
+                        bestBi = bi;
+                        bestSimilarity = similarity;
+                    }
                 }
-                if (usedA.has(pair.ai) || usedB.has(pair.bi)) {
+                if (bestBi === -1) {
                     continue;
                 }
-                usedA.add(pair.ai);
-                usedB.add(pair.bi);
-                const idxA = groupA[pair.ai];
-                const idxB = groupB[pair.bi];
+                usedB.add(bestBi);
+                const idxB = groupB[bestBi];
                 matchedA.add(idxA);
                 matchedB.add(idxB);
                 const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
                 result.pairs.push({ indexA: idxA, indexB: idxB, status });
             }
         } else {
+            const costMatrix = groupA.map((idxA) =>
+                groupB.map((idxB) =>
+                    100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
+                )
+            );
             const assignment = this._hungarianMatch(costMatrix);
             for (let k = 0; k < assignment.length; k++) {
                 const col = assignment[k];
@@ -957,30 +1001,32 @@ comparator.Controller = class {
         const getViewNode = (graph, modelNode) => {
             return graph._table.get(modelNode);
         };
+        const apply = (node, className) => {
+            if (!node) {
+                return;
+            }
+            node._diffClass = className;
+            if (node.element) {
+                node.element.classList.remove('node-diff-modified', 'node-diff-added', 'node-diff-removed');
+                node.element.classList.add(className);
+            }
+        };
 
         for (const pair of diffResult.pairs) {
             if (pair.status === 'modified') {
                 const viewNodeA = getViewNode(graphA, nodesA[pair.indexA]);
                 const viewNodeB = getViewNode(graphB, nodesB[pair.indexB]);
-                if (viewNodeA && viewNodeA.element) {
-                    viewNodeA.element.classList.add('node-diff-modified');
-                }
-                if (viewNodeB && viewNodeB.element) {
-                    viewNodeB.element.classList.add('node-diff-modified');
-                }
+                apply(viewNodeA, 'node-diff-modified');
+                apply(viewNodeB, 'node-diff-modified');
             }
         }
         for (const idx of diffResult.onlyInA) {
             const viewNode = getViewNode(graphA, nodesA[idx]);
-            if (viewNode && viewNode.element) {
-                viewNode.element.classList.add('node-diff-removed');
-            }
+            apply(viewNode, 'node-diff-removed');
         }
         for (const idx of diffResult.onlyInB) {
             const viewNode = getViewNode(graphB, nodesB[idx]);
-            if (viewNode && viewNode.element) {
-                viewNode.element.classList.add('node-diff-added');
-            }
+            apply(viewNode, 'node-diff-added');
         }
     }
 

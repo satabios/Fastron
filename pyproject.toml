@@ -48,19 +48,18 @@ content-type = "text/markdown"
 text = "MIT"
 
 [project.scripts]
-netron = "netron:main"
+fastron = "fastron:main"
+netron = "fastron:main"
 
 [tool.setuptools]
-package-dir = { "netron" = "netron" }
-
-[tool.setuptools.packages.find]
-namespaces = false
+packages = ["fastron"]
+package-dir = { "fastron" = "source" }
 
 [tool.setuptools.package-data]
-netron = ["*.*"]
+fastron = ["*.*"]
 
 [tool.setuptools.exclude-package-data]
-netron = ["app.js", "electron.*"]
+fastron = ["app.js", "electron.*"]
 
 [tool.ruff]
 lint.select = ["B", "E", "F", "I", "UP", "W", "Q"]

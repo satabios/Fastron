@@ -26,8 +26,8 @@ window.NETRON_CONFIG = {
     cacheMaxMemoryMB: 2048,            // Cache memory budget (MB)
     streamingChunkSizeMB: 10,          // Chunk size for streaming reads (MB)
     streamingThresholdMB: 50,          // Stream files larger than this (MB)
-    fileReadChunkSizeMB: 512,          // Browser file chunk read size (MB)
-    streamWindowSizeMB: 512,           // In-memory stream window size (MB)
+    fileReadChunkSizeMB: 16,            // Browser file chunk read size (MB)
+    streamWindowSizeMB: 16,             // In-memory stream window size (MB)
     maxLayoutWorkers: 4,               // Worker budget for graph/layout tasks
     gpuAcceleration: true,             // Enable GPU compositing hints when available
     gpuAvailable: false,               // Runtime-detected availability
