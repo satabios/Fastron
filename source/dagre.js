@@ -419,7 +419,12 @@ dagre.layout = (nodes, edges, layout, state) => {
                 }
             };
             const leaveEdge = (tree) => {
-                return Array.from(tree.edges.values()).find((e) => e.label.cutvalue < 0);
+                for (const e of tree.edges.values()) {
+                    if (e.label.cutvalue < 0) {
+                        return e;
+                    }
+                }
+                return undefined;
             };
             const enterEdge = (t, g, edge) => {
                 let v = edge.v;
@@ -465,7 +470,13 @@ dagre.layout = (nodes, edges, layout, state) => {
                 initLowLimValues(t);
                 initCutValues(t, g);
                 // update ranks
-                const root = Array.from(t.nodes.keys()).find((v) => !g.node(v).label.parent);
+                let root = null;
+                for (const v of t.nodes.keys()) {
+                    if (!g.node(v).label.parent) {
+                        root = v;
+                        break;
+                    }
+                }
                 const stack = [root];
                 const visited = new Set();
                 while (stack.length > 0) {
@@ -1846,47 +1857,6 @@ dagre.layout = (nodes, edges, layout, state) => {
             }
             return conflicts;
         };
-        const findType2Conflicts = (g, layering) => {
-            const conflicts = new Map();
-            const scan = (south, southPos, southEnd, prevNorthBorder, nextNorthBorder) => {
-                for (let i = southPos; i < southEnd; i++) {
-                    const v = south[i];
-                    if (g.node(v).labeldummy) {
-                        for (const u of g.predecessors(v).keys()) {
-                            const uNode = g.node(u).label;
-                            if (uNode.dummy && (uNode.order < prevNorthBorder || uNode.order > nextNorthBorder)) {
-                                addConflict(conflicts, u, v);
-                            }
-                        }
-                    }
-                }
-            };
-            if (layering.length > 0) {
-                /* eslint-disable no-loop-func */
-                let [north] = layering;
-                for (let i = 1; i < layering.length; i++) {
-                    const south = layering[i];
-                    let prevNorthPos = -1;
-                    let nextNorthPos = 0;
-                    let southPos = 0;
-                    south.forEach((v, southLookahead) => {
-                        if (g.node(v).label.dummy === 'border') {
-                            const predecessors = g.predecessors(v);
-                            if (predecessors.size > 0) {
-                                nextNorthPos = g.node(predecessors.keys().next().value).label.order;
-                                scan(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
-                                southPos = southLookahead;
-                                prevNorthPos = nextNorthPos;
-                            }
-                        }
-                        scan(south, southPos, south.length, nextNorthPos, north.length);
-                    });
-                    north = south;
-                }
-                /* eslint-enable no-loop-func */
-            }
-            return conflicts;
-        };
 
         g = asNonCompoundGraph(g);
         const layering = buildLayerMatrix(g);
@@ -1901,7 +1871,7 @@ dagre.layout = (nodes, edges, layout, state) => {
             y += maxHeight + ranksep;
         }
         // Coordinate assignment based on Brandes and Köpf, 'Fast and Simple Horizontal Coordinate Assignment.'
-        const conflicts = new Map([...findType1Conflicts(g, layering).entries(), ...findType2Conflicts(g, layering).entries()]);
+        const conflicts = findType1Conflicts(g, layering);
         const xss = {};
         for (const vertical of ['u', 'd']) {
             let adjustedLayering = vertical === 'u' ? layering : Object.values(layering).reverse();

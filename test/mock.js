@@ -226,6 +226,13 @@ class Document {
         return element;
     }
 
+    createDocumentFragment() {
+        // shortcut: fragment is a plain container element, not spec-compliant (children are not moved on append); enough for graph rendering in Node tests.
+        const fragment = new HTMLElement(this);
+        fragment.tagName = '#document-fragment';
+        return fragment;
+    }
+
     createTextNode(text) {
         const element = new HTMLElement(this);
         element.textContent = text;

@@ -2290,13 +2290,13 @@ view.Graph = class extends grapher.Graph {
         const groups = graph.groups;
         if (groups) {
             for (const node of graph.nodes) {
-                if (node.group) {
-                    const path = node.group.split('/');
-                    while (path.length > 0) {
-                        const name = path.join('/');
-                        path.pop();
-                        clusterParentMap.set(name, path.join('/'));
-                    }
+                let name = node.group;
+                // shortcut: stops at the first already-mapped ancestor (its ancestors are mapped too), upgrade never needed
+                while (name && !clusterParentMap.has(name)) {
+                    const index = name.lastIndexOf('/');
+                    const parent = index === -1 ? '' : name.substring(0, index);
+                    clusterParentMap.set(name, parent);
+                    name = parent;
                 }
             }
         }
@@ -5387,20 +5387,21 @@ view.FindSidebar = class extends view.Control {
             return true;
         }
         if (value.type && !this._exact) {
+            const dataType = value.type.dataType ? value.type.dataType.toLowerCase() : null;
+            const shape = value.type.shape;
+            const shapeText = shape ? shape.toString().toLowerCase() : null;
+            const dimensions = shape && Array.isArray(shape.dimensions) ? shape.dimensions.map((dimension) => dimension ? dimension.toString().toLowerCase() : '') : null;
+            const dimensionsText = dimensions ? dimensions.join(',') : null;
             for (const term of this._terms) {
-                if (value.type.dataType && term === value.type.dataType.toLowerCase()) {
+                if (dataType && term === dataType) {
                     return true;
                 }
-                if (value.type.shape) {
-                    if (term === value.type.shape.toString().toLowerCase()) {
+                if (shape) {
+                    if (term === shapeText) {
                         return true;
                     }
-                    if (value.type.shape && Array.isArray(value.type.shape.dimensions)) {
-                        const dimensions = value.type.shape.dimensions.map((dimension) => dimension ? dimension.toString().toLowerCase() : '');
-                        if (term === dimensions.join(',')) {
-                            return true;
-                        }
-                        if (dimensions.some((dimension) => term === dimension)) {
+                    if (dimensions) {
+                        if (term === dimensionsText || dimensions.some((dimension) => term === dimension)) {
                             return true;
                         }
                     }
@@ -5490,11 +5491,15 @@ view.FindSidebar = class extends view.Control {
         element.setAttribute('data-text-engine', validEngines.includes(engine) ? engine : 'legacy');
         let textWidth = 0;
         try {
-            const canvas = this._host.document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", sans-serif';
-                textWidth = ctx.measureText(content).width;
+            // One measuring context per sidebar; a new canvas per match was the cost.
+            if (this._measureContext === undefined) {
+                this._measureContext = this._host.document.createElement('canvas').getContext('2d') || null;
+                if (this._measureContext) {
+                    this._measureContext.font = '12px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", sans-serif';
+                }
+            }
+            if (this._measureContext) {
+                textWidth = this._measureContext.measureText(content).width;
             }
         } catch {
             // fallback

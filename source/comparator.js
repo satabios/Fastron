@@ -396,11 +396,39 @@ comparator.Controller = class {
         return 0;
     }
 
-    _scoreAttributes(nodeA, nodeB) {
-        const attrsA = Array.isArray(nodeA.attributes) ? nodeA.attributes : [];
-        const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
-        const mapA = new Map(attrsA.map((a) => [a.name, a]));
-        const mapB = new Map(attrsB.map((a) => [a.name, a]));
+    _extractSignature(node) {
+        const extract = (args) => {
+            const shapes = [];
+            const dtypes = [];
+            const argList = Array.isArray(args) ? args : [];
+            for (const arg of argList) {
+                const values = Array.isArray(arg.value) ? arg.value : [];
+                for (const val of values) {
+                    if (val && val.type && val.type.shape && Array.isArray(val.type.shape.dimensions)) {
+                        shapes.push(val.type.shape.dimensions);
+                    } else {
+                        shapes.push(null);
+                    }
+                    if (val && val.type && val.type.dataType) {
+                        dtypes.push(val.type.dataType);
+                    } else {
+                        dtypes.push(null);
+                    }
+                }
+            }
+            return { shapes, dtypes };
+        };
+        const attrs = Array.isArray(node.attributes) ? node.attributes : [];
+        return { inputs: extract(node.inputs), outputs: extract(node.outputs), attrs: new Map(attrs.map((a) => [a.name, a])) };
+    }
+
+    _signatureOf(node, ctx) {
+        return ctx && ctx.sig ? ctx.sig : this._extractSignature(node);
+    }
+
+    _scoreAttributes(nodeA, nodeB, ctxA, ctxB) {
+        const mapA = this._signatureOf(nodeA, ctxA).attrs;
+        const mapB = this._signatureOf(nodeB, ctxB).attrs;
         const allNames = new Set([...mapA.keys(), ...mapB.keys()]);
         const totalUnique = allNames.size;
         if (totalUnique === 0) {
@@ -423,27 +451,6 @@ comparator.Controller = class {
 
     _scoreShapes(nodeA, nodeB, ctxA, ctxB) {
         let score = 0;
-        const extractShapes = (args) => {
-            const shapes = [];
-            const dtypes = [];
-            const argList = Array.isArray(args) ? args : [];
-            for (const arg of argList) {
-                const values = Array.isArray(arg.value) ? arg.value : [];
-                for (const val of values) {
-                    if (val && val.type && val.type.shape && Array.isArray(val.type.shape.dimensions)) {
-                        shapes.push(val.type.shape.dimensions);
-                    } else {
-                        shapes.push(null);
-                    }
-                    if (val && val.type && val.type.dataType) {
-                        dtypes.push(val.type.dataType);
-                    } else {
-                        dtypes.push(null);
-                    }
-                }
-            }
-            return { shapes, dtypes };
-        };
         const scoreShapePair = (shapesA, shapesB, maxPts) => {
             if (shapesA.length === 0 && shapesB.length === 0) {
                 return maxPts;
@@ -486,15 +493,13 @@ comparator.Controller = class {
             return Math.round(maxPts * dtMatch / maxLen);
         };
 
-        const inputA = extractShapes(nodeA.inputs);
-        const inputB = extractShapes(nodeB.inputs);
-        const outputA = extractShapes(nodeA.outputs);
-        const outputB = extractShapes(nodeB.outputs);
+        const sigA = this._signatureOf(nodeA, ctxA);
+        const sigB = this._signatureOf(nodeB, ctxB);
 
-        score += scoreShapePair(inputA.shapes, inputB.shapes, 5);
-        score += scoreShapePair(outputA.shapes, outputB.shapes, 5);
-        score += scoreDtypes(inputA.dtypes, inputB.dtypes, 2);
-        score += scoreDtypes(outputA.dtypes, outputB.dtypes, 2);
+        score += scoreShapePair(sigA.inputs.shapes, sigB.inputs.shapes, 5);
+        score += scoreShapePair(sigA.outputs.shapes, sigB.outputs.shapes, 5);
+        score += scoreDtypes(sigA.inputs.dtypes, sigB.inputs.dtypes, 2);
+        score += scoreDtypes(sigA.outputs.dtypes, sigB.outputs.dtypes, 2);
 
         if (ctxA && ctxB) {
             const degreeA = (ctxA.predCount || 0) + (ctxA.succCount || 0);
@@ -512,7 +517,7 @@ comparator.Controller = class {
 
     _calculateSimilarity(nodeA, nodeB, ctxA, ctxB) {
         const opScore = this._scoreOpType(nodeA, nodeB);
-        const attrScore = this._scoreAttributes(nodeA, nodeB);
+        const attrScore = this._scoreAttributes(nodeA, nodeB, ctxA, ctxB);
         const shapeScore = this._scoreShapes(nodeA, nodeB, ctxA, ctxB);
         return opScore + attrScore + shapeScore;
     }
@@ -603,11 +608,13 @@ comparator.Controller = class {
         const wlB = this._computeWLLabels(nodesB, adjB, 2);
 
         const ctxA = nodesA.map((_, i) => ({
+            sig: this._extractSignature(nodesA[i]),
             wlLabel: wlA.get(i),
             predCount: (adjA.predecessors.get(i) || []).length,
             succCount: (adjA.successors.get(i) || []).length
         }));
         const ctxB = nodesB.map((_, i) => ({
+            sig: this._extractSignature(nodesB[i]),
             wlLabel: wlB.get(i),
             predCount: (adjB.predecessors.get(i) || []).length,
             succCount: (adjB.successors.get(i) || []).length

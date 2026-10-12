@@ -323,8 +323,8 @@ grapher.Graph = class {
 
     _buildVisibleNodes(nodeIds, document) {
         const CHUNK = 30;
-        const process = (ids) => {
-            const batch = ids.splice(0, CHUNK);
+        const process = (ids, start = 0) => {
+            const batch = ids.slice(start, start + CHUNK);
             // Pass 1: Build/show DOM elements (writes only — no getBBox reads).
             const builtNodes = [];
             for (const nodeId of batch) {
@@ -381,11 +381,11 @@ grapher.Graph = class {
                     }
                 }
             }
-            if (ids.length > 0) {
+            if (start + CHUNK < ids.length) {
                 if (typeof requestIdleCallback === 'undefined') {
-                    setTimeout(() => process(ids), 0);
+                    setTimeout(() => process(ids, start + CHUNK), 0);
                 } else {
-                    requestIdleCallback(() => process(ids), { timeout: 300 });
+                    requestIdleCallback(() => process(ids, start + CHUNK), { timeout: 300 });
                 }
             }
         };
@@ -394,8 +394,8 @@ grapher.Graph = class {
 
     _buildVisibleEdges(edgeKeys, document) {
         const CHUNK = 60;
-        const process = (keys) => {
-            const batch = keys.splice(0, CHUNK);
+        const process = (keys, start = 0) => {
+            const batch = keys.slice(start, start + CHUNK);
             // Pass 1: Build edge DOM elements (writes only — no getBBox reads).
             const builtEdges = [];
             for (const edgeKey of batch) {
@@ -441,11 +441,11 @@ grapher.Graph = class {
                     label._needsUpdate = false;
                 }
             }
-            if (keys.length > 0) {
+            if (start + CHUNK < keys.length) {
                 if (typeof requestIdleCallback === 'undefined') {
-                    setTimeout(() => process(keys), 0);
+                    setTimeout(() => process(keys, start + CHUNK), 0);
                 } else {
-                    requestIdleCallback(() => process(keys), { timeout: 300 });
+                    requestIdleCallback(() => process(keys, start + CHUNK), { timeout: 300 });
                 }
             }
         };
@@ -1031,10 +1031,15 @@ grapher.Graph = class {
                     if (message.type === 'cancel' || message.type === 'terminate') {
                         return message.type;
                     }
+                    if (message.type === 'error') {
+                        throw new Error(message.message);
+                    }
                     nodes = message.nodes;
                     edges = message.edges;
-                    state.log = message.state.log;
-                } catch {
+                    state.log = message.state && message.state.log;
+                } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.warn(`Worker dagre layout failed, falling back to main thread: ${error && error.message}`);
                     // Preserve responsiveness when the worker is unavailable or
                     // Dagre fails on graphs large enough to threaten interactivity.
                     if (allowFastLayout && (preferFastLayout || nodeCount > this._mainThreadLayoutThreshold || edgeDensity > 3)) {
@@ -1255,8 +1260,9 @@ grapher.Graph = class {
                 level.set(nodeId, 0);
             }
         }
-        while (queue.length > 0) {
-            const nodeId = queue.shift();
+        // Index cursor instead of queue.shift(), which is O(n) per call.
+        for (let head = 0; head < queue.length; head++) {
+            const nodeId = queue[head];
             const base = level.get(nodeId) || 0;
             const children = outgoing.get(nodeId) || [];
             for (const childId of children) {
