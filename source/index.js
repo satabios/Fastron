@@ -1,3 +1,30 @@
+// Global configuration for tensor weight loading optimization
+window.NETRON_CONFIG = {
+    skipTensorWeights: true,           // Skip loading tensor weights by default (huge memory savings!)
+    maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
+    showTensorMetadata: true,          // Show tensor metadata instead of full data
+    logMemorySavings: false,           // Log memory savings to console
+    enableOptimizations: true,         // Enable performance optimizations
+    cacheEnabled: true,                // Enable in-memory caching
+    cacheMaxMemoryMB: 2048,            // Cache memory budget (MB)
+    streamingChunkSizeMB: 10,          // Chunk size for streaming reads (MB)
+    streamingThresholdMB: 50,          // Stream files larger than this (MB)
+    fileReadChunkSizeMB: 16,            // Browser file chunk read size (MB)
+    streamWindowSizeMB: 16,             // In-memory stream window size (MB)
+    maxLayoutWorkers: 4,               // Worker budget for graph/layout tasks
+    gpuAcceleration: true,             // Enable GPU compositing hints when available
+    gpuAvailable: false,               // Runtime-detected availability
+    gpuBackend: 'cpu',                 // Runtime-selected backend: webgpu|webgl2|webgl|cpu
+    gpuVendor: 'none',                 // Detected GPU vendor: nvidia|qualcomm|apple|amd|intel|arm|unknown|none
+    gpuDevice: '',                     // GPU device/renderer string
+    gpuArchitecture: '',               // GPU architecture (WebGPU only)
+    gpuLabel: '',                      // Human-readable GPU label shown in About panel
+    cudaAvailable: false,              // NVIDIA GPU detected (CUDA via WebGPU/WebGL)
+    adrenoAvailable: false             // Qualcomm Adreno GPU detected
+};
+// eslint-disable-next-line no-console
+console.log('[Fastron] Tensor weight loading:', window.NETRON_CONFIG.skipTensorWeights ? 'DISABLED (saves memory)' : 'ENABLED (full data)');
+
 window.exports = {};
 
 window.exports.require = function(id, callback) {

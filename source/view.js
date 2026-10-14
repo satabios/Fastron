@@ -58,7 +58,6 @@ view.View = class {
         this._sidebar = new view.Sidebar(this._host);
         this._find = null;
         this._modelFactoryService = new view.ModelFactoryService(this._host);
-        this._modelFactoryService.import();
         this._worker = this._host.environment('serial') ? null : new view.Worker(this._host);
         this._layoutCache = new view.LayoutCache();
     }
@@ -984,9 +983,20 @@ view.View = class {
         const lastPath = this._path;
         try {
             await this._updatePath(model, path);
+            for (const previous of new Set([lastModel, model])) {
+                if (previous && previous !== this._model && previous._source !== this._model?._source) {
+                    previous._source?.dispose();
+                }
+            }
             return this._model;
         } catch (error) {
-            await this._updatePath(lastModel, lastPath);
+            try {
+                await this._updatePath(lastModel, lastPath);
+            } finally {
+                if (model !== lastModel && model?._source !== lastModel?._source) {
+                    model?._source?.dispose();
+                }
+            }
             throw error;
         }
     }
@@ -2471,6 +2481,10 @@ view.Graph = class extends grapher.Graph {
                 // continue regardless of error
             }
         }
+        if (this.useEstimatedNodeSizes()) {
+            await super.measure();
+            return;
+        }
         // getBBox() returns zero when the SVG container has display:none.
         // During initial load the #target element is hidden (body class is
         // "welcome spinner") so we must force it visible before measuring,
@@ -2750,7 +2764,7 @@ view.Graph = class extends grapher.Graph {
             if (this.isViewportCullingEnabled() && !this._viewportObserver) {
                 this._viewportObserver = new grapher.ViewportObserver((viewport) => {
                     this._onViewportChange(viewport);
-                }, 150);
+                });
             }
 
             // Setup IntersectionObserver to trigger viewport update when graph becomes visible
@@ -4656,17 +4670,16 @@ view.TensorView = class extends view.Expander {
         const skipWeights = typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
 
         // Check if tensor has deferred data that can be loaded on demand
-        if (value._deferred) {
+        if (value.preview || value._deferred || (value.peek && !value.peek())) {
             if (!skipWeights) {
                 // Weights are enabled — auto-materialize deferred data
                 content.innerHTML = '&#x23F3; Loading weight data...';
                 const materialize = async () => {
                     try {
-                        await value.read();
-                        this._tensor = new base.Tensor(value, { skipWeights: false });
-                        this._renderTensorContent(value, this._tensor, content);
+                        const rendered = await this._loadTensorContent(value);
+                        content.replaceChildren(rendered);
                     } catch (error) {
-                        content.innerHTML = `Error loading weights: ${error.message}`;
+                        content.textContent = `Error loading weights: ${error.message}`;
                     }
                 };
                 materialize();
@@ -4674,21 +4687,28 @@ view.TensorView = class extends view.Expander {
             }
             content.innerHTML = `${tensor.getMetadataString()}\n\n<i style="color: #888;">Weight data not loaded. Click to load on demand.</i>`;
             content.style.cursor = 'pointer';
-            content.addEventListener('click', async () => {
+            let loading = false;
+            const load = async () => {
+                if (loading) {
+                    return;
+                }
+                loading = true;
                 content.innerHTML = '&#x23F3; Loading weight data...';
                 content.style.cursor = 'default';
                 try {
-                    await value.read();
-                    // Re-create the base.Tensor with skipWeights=false since data was explicitly loaded
-                    this._tensor = new base.Tensor(value, { skipWeights: false });
-                    // Re-render the content
-                    const newContent = this._renderTensorContent(value, this._tensor);
+                    const newContent = await this._loadTensorContent(value);
                     content.innerHTML = '';
                     content.appendChild(newContent);
+                    content.removeEventListener('click', load);
                 } catch (error) {
-                    content.innerHTML = `Error loading weights: ${error.message}`;
+                    content.textContent = `Error loading weights: ${error.message}\nClick to retry.`;
+                    content.style.cursor = 'pointer';
+                } finally {
+                    // eslint-disable-next-line require-atomic-updates -- The guard prevents overlapping loads.
+                    loading = false;
                 }
-            }, { once: true });
+            };
+            content.addEventListener('click', load);
             return content;
         }
 
@@ -4700,6 +4720,39 @@ view.TensorView = class extends view.Expander {
         }
 
         return this._renderTensorContent(value, tensor, content);
+    }
+
+    async _loadTensorContent(value) {
+        const config = typeof window !== 'undefined' && window.NETRON_CONFIG ? window.NETRON_CONFIG : {};
+        const limit = Number.isSafeInteger(config.maxTensorDisplaySize) ? Math.max(1, Math.min(10000, config.maxTensorDisplaySize)) : 1000;
+        const preview = value.preview ? await value.preview(limit) : null;
+        if (preview) {
+            this._preview = true;
+            const content = this.createElement('pre');
+            const label = preview.count === preview.total ? `All ${preview.total} values.` : `First ${preview.count} of ${preview.total} values (flattened preview).`;
+            content.textContent = `${this._tensor.getMetadataString()}\n\n${label}\n${new base.Tensor(preview.tensor, { skipWeights: false }).toString()}`;
+            this._addSaveButton(content);
+            return content;
+        }
+        if (value.read) {
+            await value.read();
+        }
+        this._tensor = new base.Tensor(value, { skipWeights: false });
+        return this._renderTensorContent(value, this._tensor);
+    }
+
+    _addSaveButton(content) {
+        const shape = this._value.type.shape;
+        if (this._host.save && shape && shape.dimensions && shape.dimensions.length > 0) {
+            this._saveButton = this.createElement('div', 'sidebar-item-value-button');
+            this._saveButton.classList.add('sidebar-item-value-button-context');
+            this._saveButton.setAttribute('style', 'float: right;');
+            this._saveButton.innerHTML = '&#x1F4BE;';
+            this._saveButton.addEventListener('click', async () => {
+                await this.export();
+            });
+            content.insertBefore(this._saveButton, content.firstChild);
+        }
     }
 
     _renderTensorContent(value, tensor, content) {
@@ -4723,16 +4776,7 @@ view.TensorView = class extends view.Expander {
                     content.innerHTML = 'Tensor data is empty.';
                 } else {
                     content.innerHTML = tensor.toString();
-                    if (this._host.save && value.type.shape && value.type.shape.dimensions && value.type.shape.dimensions.length > 0) {
-                        this._saveButton = this.createElement('div', 'sidebar-item-value-button');
-                        this._saveButton.classList.add('sidebar-item-value-button-context');
-                        this._saveButton.setAttribute('style', 'float: right;');
-                        this._saveButton.innerHTML = '&#x1F4BE;';
-                        this._saveButton.addEventListener('click', async () => {
-                            await this.export();
-                        });
-                        content.insertBefore(this._saveButton, content.firstChild);
-                    }
+                    this._addSaveButton(content);
                 }
             }).catch((error) => {
                 content.innerHTML = error.message;
@@ -4755,9 +4799,11 @@ view.TensorView = class extends view.Expander {
     async export() {
         const value = this._value;
         // If tensor has deferred data, load it first before export
-        if (value && value._deferred) {
+        if (value && (this._preview || value._deferred || (value.peek && !value.peek()))) {
             try {
-                await value.read();
+                if (value.read) {
+                    await value.read();
+                }
                 this._tensor = new base.Tensor(value, { skipWeights: false });
             } catch (error) {
                 this.error(new Error(`Cannot load tensor data for export: ${error.message}`), 'Export Error', null);
@@ -5001,15 +5047,8 @@ view.TensorSidebar = class extends view.ObjectSidebar {
             if (Array.isArray(stride) && stride.length > 0) {
                 this.addProperty('stride', stride.join(','), 'code');
             }
-            // Conditionally create TensorView based on skipTensorWeights config
-            if (typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights) {
-                // Still create TensorView so users can load weights on demand
-                const value = new view.TensorView(this._view, tensor, this._tensor);
-                this.addEntry('value', value);
-            } else {
-                const value = new view.TensorView(this._view, tensor, this._tensor);
-                this.addEntry('value', value);
-            }
+            const entry = new view.TensorView(this._view, tensor, this._tensor);
+            this.addEntry('value', entry);
             const metadata = this._view.model.attachment.metadata.tensor(tensor);
             if (Array.isArray(metadata) && metadata.length > 0) {
                 this.addSection('Metadata');
@@ -5021,8 +5060,9 @@ view.TensorSidebar = class extends view.ObjectSidebar {
         // Metrics
         if (value.initializer) {
             const tensor = value.initializer;
-            // Skip metrics when tensor data is deferred (not yet loaded)
-            if (!tensor._deferred) {
+            const skipWeights = typeof window !== 'undefined' && window.NETRON_CONFIG && window.NETRON_CONFIG.skipTensorWeights;
+            // Check policy before requesting any remote tensor data.
+            if (!tensor._deferred && !skipWeights && (!tensor.peek || tensor.peek())) {
                 const promise = tensor.peek && !tensor.peek() ? tensor.read() : Promise.resolve();
                 promise.then(() => {
                     this._tensor = new base.Tensor(tensor);
@@ -5044,7 +5084,7 @@ view.TensorSidebar = class extends view.ObjectSidebar {
                             }
                         }
                     }
-                });
+                }).catch((error) => this.error(error, false));
             }
         }
     }
@@ -7040,6 +7080,7 @@ view.Context = class {
 
     constructor(context, identifier, stream) {
         this._context = context;
+        this.indexedFormat = context.indexedFormat;
         this._tags = new Map();
         this._content = new Map();
         this._stream = stream || context.stream;
@@ -7394,10 +7435,11 @@ view.Context = class {
                     // where reading 400 MB of weights just to discard them can take
                     // tens of seconds.  open() would call data.peek() for files < 512 MB,
                     // pulling the entire file into memory before parsing begins.
-                    if (typeof this._stream.file === 'string') {
-                        return protobuf.BinaryReader.stream(this._stream);
-                    }
-                    return protobuf.BinaryReader.open(this._stream);
+                    const reader = typeof this._stream.file === 'string' ? protobuf.BinaryReader.stream(this._stream) : protobuf.BinaryReader.open(this._stream);
+                    reader.tensorRanges = this._stream.tensorRanges;
+                    reader.tensorSource = this._stream.tensorSource;
+                    reader.tensorIndex = 0;
+                    return reader;
                 }
                 case 'protobuf.text': {
                     const protobuf = await import('./protobuf.js');
@@ -7657,9 +7699,11 @@ view.ModelFactoryService = class {
 
     async open(context) {
         try {
-            await this._openSignature(context);
+            if (!context.indexedFormat) {
+                await this._openSignature(context);
+            }
             const content = new view.Context(context);
-            const model = await this._openContext(content);
+            let model = await this._openContext(content);
             if (!model) {
                 const check = (obj) => {
                     if (obj instanceof Error) {
@@ -7684,7 +7728,10 @@ view.ModelFactoryService = class {
                 if (!entryContext) {
                     await this._unsupported(content);
                 }
-                return this._openContext(entryContext);
+                model = await this._openContext(entryContext);
+            }
+            if (model && context.source) {
+                model._source = context.source;
             }
             return model;
         } catch (error) {
@@ -8151,6 +8198,9 @@ view.ModelFactoryService = class {
     }
 
     _filter(context) {
+        if (['onnx', 'gguf', 'safetensors'].includes(context.indexedFormat)) {
+            return [`./${context.indexedFormat}`];
+        }
         const identifier = context.identifier.toLowerCase().split('/').pop();
         const stream = context.stream;
         if (stream) {
@@ -8243,24 +8293,6 @@ view.ModelFactoryService = class {
         }
     }
 
-    async import() {
-        if (this._host.type === 'Browser' || this._host.type === 'Python') {
-            const files = [
-                './message', './onnx', './pytorch', './tflite', './mlnet',
-                './onnx-proto', './onnx-schema', './tflite-schema',
-                'onnx-metadata.json', 'pytorch-metadata.json', 'tflite-metadata.json'
-            ];
-            await Promise.all(files.map((file) => {
-                let load = null;
-                if (file.startsWith('./')) {
-                    load = this._host.require(file);
-                } else if (file.endsWith('.json')) {
-                    load = this._host.request(file, 'utf-8', null);
-                }
-                return load ? load.catch(() => {}) : Promise.resolve();
-            }));
-        }
-    }
 };
 
 view.Metadata = class {
@@ -8269,30 +8301,34 @@ view.Metadata = class {
         view.Metadata._metadata = view.Metadata._metadata || new Map();
         const metadata = view.Metadata._metadata;
         if (!metadata.has(name)) {
-            let data = null;
-            let usingSlim = false;
-            const slimName = name.replace('-metadata.json', '-metadata.slim.json');
-            try {
-                data = await context.request(slimName);
-                usingSlim = true;
-            } catch {
+            const pending = (async () => {
+                let data = null;
+                let usingSlim = false;
+                const slimName = name.replace('-metadata.json', '-metadata.slim.json');
                 try {
-                    data = await context.request(name);
+                    data = await context.request(slimName);
+                    usingSlim = true;
                 } catch {
-                    // continue regardless of error
-                }
-            }
-            const types = typeof context.parseJSON === 'function' ? context.parseJSON(data) : JSON.parse(data);
-            const meta = new view.Metadata(types);
-            metadata.set(name, meta);
-            if (usingSlim) {
-                const examplesName = name.replace('-metadata.json', '-metadata-examples.json');
-                context.request(examplesName).then((exData) => {
-                    if (exData) {
-                        meta.mergeExamples(JSON.parse(exData));
+                    try {
+                        data = await context.request(name);
+                    } catch {
+                        // continue regardless of error
                     }
-                }).catch(() => {});
-            }
+                }
+                const types = typeof context.parseJSON === 'function' ? context.parseJSON(data) : JSON.parse(data);
+                const meta = new view.Metadata(types);
+                if (usingSlim) {
+                    const examplesName = name.replace('-metadata.json', '-metadata-examples.json');
+                    context.request(examplesName).then((exData) => {
+                        if (exData) {
+                            meta.mergeExamples(JSON.parse(exData));
+                        }
+                    }).catch(() => {});
+                }
+                return meta;
+            })();
+            metadata.set(name, pending);
+            pending.catch(() => metadata.delete(name));
         }
         return metadata.get(name);
     }

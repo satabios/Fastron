@@ -52,32 +52,35 @@ node.FileStream = class {
     }
 
     stream(length) {
+        this._checkRange(this._position, length);
         const stream = new node.FileStream(this._file, this._start + this._position, length, this._mtime);
+        stream._windowSize = this._windowSize;
         this.skip(length);
         return stream;
     }
 
     seek(position) {
-        this._position = position >= 0 ? position : this._length + position;
-        if (this._position > this._length || this._position < 0) {
-            throw new Error(`Expected ${this._position - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
-        }
+        const target = position >= 0 ? position : this._length + position;
+        this._checkRange(target, 0);
+        this._position = target;
     }
 
     skip(offset) {
-        this._position += offset;
-        if (this._position > this._length || this._position < 0) {
-            const offset = this._position - this._length;
-            throw new Error(`Expected ${offset} more bytes. The file might be corrupted. Unexpected end of file.`);
-        }
+        const target = this._position + offset;
+        this._checkRange(target, 0);
+        this._position = target;
     }
 
     peek(length) {
         length = length === undefined ? this._length - this._position : length;
-        if (length < 0x1000000) {
+        this._checkRange(this._position, length);
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
+        if (length < this._windowSize) {
             const position = this._fill(length);
             this._position -= length;
-            return this._buffer.subarray(position, position + length);
+            return this._buffer.slice(position, position + length);
         }
         const position = this._position;
         this.skip(length);
@@ -89,6 +92,10 @@ node.FileStream = class {
 
     read(length) {
         length = length === undefined ? this._length - this._position : length;
+        this._checkRange(this._position, length);
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
         if (length < this._windowSize) {
             const position = this._fill(length);
             return this._buffer.slice(position, position + length);
@@ -101,12 +108,26 @@ node.FileStream = class {
     }
 
     readAt(position, length) {
-        if (!Number.isInteger(position) || !Number.isInteger(length) || position < 0 || length < 0 || position + length > this._length) {
-            throw new Error('Invalid file read range.');
+        this._checkRange(position, length);
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
+        // A deferred tensor must still belong to the version that was parsed.
+        if (fs.fstatSync(this._openFd()).mtimeMs !== this._mtime) {
+            throw new Error(`File '${this._file}' last modified time changed.`);
         }
         const buffer = new Uint8Array(length);
         this._read(buffer, position);
         return buffer;
+    }
+
+    _checkRange(position, length) {
+        if (!Number.isSafeInteger(position) || !Number.isSafeInteger(length) || position < 0 || length < 0) {
+            throw new Error('Invalid file read range.');
+        }
+        if (position > this._length || length > this._length - position) {
+            throw new Error(`Expected ${position + length - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
+        }
     }
 
     _fill(length) {

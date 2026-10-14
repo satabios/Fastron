@@ -860,6 +860,13 @@ pytorch.Node = class {
 
 pytorch.Tensor = class {
 
+    async preview(limit) {
+        if (!this._data || !this._data.readAt) {
+            return null;
+        }
+        return base.Tensor.preview(this, this._data, limit, this._offset || 0, this._length === undefined ? this._data.length : this._length);
+    }
+
     constructor(name, tensor) {
         this.name = name || '';
         tensor = tensor.data ? tensor.data : tensor;

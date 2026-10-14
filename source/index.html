@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="description" content="Visualizer for neural network, deep learning and machine learning models." />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'">
 <meta name="version" content="0.0.0">
 <meta name="date" content="">
 <title>Fastron</title>
@@ -14,33 +14,7 @@
 <link rel="apple-touch-icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon-precomposed" type="image/png" href="icon.png">
 <link rel="fluid-icon" type="image/png" href="icon.png">
-<script>
-// Global configuration for tensor weight loading optimization
-window.NETRON_CONFIG = {
-    skipTensorWeights: true,           // Skip loading tensor weights by default (huge memory savings!)
-    maxTensorDisplaySize: 1000,        // Maximum tensor size to display (in elements)
-    showTensorMetadata: true,          // Show tensor metadata instead of full data
-    logMemorySavings: false,           // Log memory savings to console
-    enableOptimizations: true,         // Enable performance optimizations
-    cacheEnabled: true,                // Enable in-memory caching
-    cacheMaxMemoryMB: 2048,            // Cache memory budget (MB)
-    streamingChunkSizeMB: 10,          // Chunk size for streaming reads (MB)
-    streamingThresholdMB: 50,          // Stream files larger than this (MB)
-    fileReadChunkSizeMB: 16,            // Browser file chunk read size (MB)
-    streamWindowSizeMB: 16,             // In-memory stream window size (MB)
-    maxLayoutWorkers: 4,               // Worker budget for graph/layout tasks
-    gpuAcceleration: true,             // Enable GPU compositing hints when available
-    gpuAvailable: false,               // Runtime-detected availability
-    gpuBackend: 'cpu',                 // Runtime-selected backend: webgpu|webgl2|webgl|cpu
-    gpuVendor: 'none',                 // Detected GPU vendor: nvidia|qualcomm|apple|amd|intel|arm|unknown|none
-    gpuDevice: '',                     // GPU device/renderer string
-    gpuArchitecture: '',               // GPU architecture (WebGPU only)
-    gpuLabel: '',                      // Human-readable GPU label shown in About panel
-    cudaAvailable: false,              // NVIDIA GPU detected (CUDA via WebGPU/WebGL)
-    adrenoAvailable: false             // Qualcomm Adreno GPU detected
-};
-console.log('[Fastron] Tensor weight loading:', window.NETRON_CONFIG.skipTensorWeights ? 'DISABLED (saves memory)' : 'ENABLED (full data)');
-</script>
+
 <script type="text/javascript" src="index.js"></script>
 <style>
 html { touch-action: none; overflow: hidden; width: 100%; height: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }

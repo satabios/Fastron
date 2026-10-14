@@ -1404,15 +1404,26 @@ onnx.TensorProto = class TensorProto {
         // random-access stream range that can be materialized when the user opens it.
         const buffered = reader._buffer && !reader._stream;
         const source = reader._stream && typeof reader._stream.readAt === 'function' ? reader._stream : null;
-        const lazy = !onnx.TensorProto._materializing &&
-                     typeof window !== 'undefined' && window.NETRON_CONFIG &&
+        const indexed = reader.tensorRanges ? reader.tensorRanges[reader.tensorIndex++] : null;
+        if (reader.tensorRanges && !indexed) {
+            throw new Error('Tensor index is incomplete.');
+        }
+        const lazy = !onnx.TensorProto._materializing && (indexed ||
+                     (typeof window !== 'undefined' && window.NETRON_CONFIG &&
                      window.NETRON_CONFIG.skipTensorWeights &&
-                     (buffered || source);
+                     (buffered || source)));
         if (lazy) {
-            message._deferred = source ? { source, start: reader.position, end } : { buffer: reader._buffer, start: reader.position, end };
+            if (indexed) {
+                message._deferred = { source: reader.tensorSource, start: indexed[0], end: indexed[0] + indexed[1], rawOffset: indexed[2], rawLength: indexed[3] };
+            } else {
+                message._deferred = source ? { source, start: reader.position, end } : { buffer: reader._buffer, start: reader.position, end };
+            }
         }
         while (reader.position < end) {
             const tag = reader.uint32();
+            if (lazy && [4, 5, 6, 7, 10, 11].includes(tag >>> 3)) {
+                message._deferred.typed = true;
+            }
             switch (tag >>> 3) {
                 case 1:
                     message.dims = reader.array(message.dims, () => reader.int64(), tag);
@@ -1463,7 +1474,10 @@ onnx.TensorProto = class TensorProto {
                     break;
                 case 9:
                     if (lazy) {
-                        reader.skipType(tag & 7);
+                        const length = reader.uint32();
+                        message._deferred.rawOffset = reader.position;
+                        message._deferred.rawLength = message._deferred.typed ? 0 : length;
+                        reader.skip(length);
                     } else {
                         message.raw_data = reader.bytes();
                     }

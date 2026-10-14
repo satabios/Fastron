@@ -1,4 +1,5 @@
 
+import * as base from './base.js';
 import * as protobuf from './protobuf.js';
 
 const onnx = {};
@@ -663,14 +664,26 @@ onnx.Tensor = class {
         return !this._request && !this._deferred;
     }
 
-    async read() {
-        if (this._request) {
-            const location = this._request.location;
-            const offset = this._request.offset;
-            const length = this._request.length;
-            this._data = await location.read(offset, length);
-            delete this._request;
+    async preview(limit) {
+        if (this._deferred && this._deferred.rawLength && !this._deferred.typed) {
+            const data = this._deferred;
+            return base.Tensor.preview(this, data.source || new base.BinaryStream(data.buffer), limit, data.rawOffset, data.rawLength);
         }
+        if (this._deferredDataLocation === onnx.DataLocation.EXTERNAL) {
+            this._initDataFromProto(this._context, { data_location: this._deferredDataLocation, external_data: this._deferredExternalData });
+        }
+        if (this._request) {
+            const { location, offset, length } = this._request;
+            const source = await location.read(offset, length);
+            return base.Tensor.preview(this, source, limit);
+        }
+        if (this._data instanceof Uint8Array) {
+            return base.Tensor.preview(this, new base.BinaryStream(this._data), limit);
+        }
+        return null;
+    }
+
+    async read() {
         // Materialize deferred weight data on demand
         if (this._deferred) {
             const { buffer, source, start, end } = this._deferred;
@@ -688,6 +701,18 @@ onnx.Tensor = class {
             delete this._deferredDataType;
             delete this._deferredDataLocation;
             delete this._deferredExternalData;
+        }
+        if (this._request) {
+            const { location, offset, length } = this._request;
+            let data = await location.read(offset, length);
+            if (!data) {
+                throw new onnx.Error('Tensor data not loaded.');
+            }
+            if (data.remote) {
+                data = await data.readAt(0, data.length);
+            }
+            this._data = data;
+            delete this._request;
         }
     }
 
@@ -1282,23 +1307,26 @@ onnx.Metadata = class {
 
     static async open(context) {
         if (!onnx.Metadata._metadata) {
-            let data = null;
-            try {
-                data = await context.request('onnx-metadata.slim.json');
-                onnx.Metadata._metadata = new onnx.Metadata(data);
-                context.request('onnx-metadata-examples.json').then((exData) => {
-                    if (exData) {
-                        onnx.Metadata._metadata.mergeExamples(JSON.parse(exData));
-                    }
-                }).catch(() => {});
-            } catch {
+            onnx.Metadata._metadata = (async () => {
+                let metadata = null;
                 try {
-                    data = await context.request('onnx-metadata.json');
-                    onnx.Metadata._metadata = new onnx.Metadata(data);
+                    const data = await context.request('onnx-metadata.slim.json');
+                    metadata = new onnx.Metadata(data);
+                    context.request('onnx-metadata-examples.json').then((exData) => {
+                        if (exData) {
+                            metadata.mergeExamples(JSON.parse(exData));
+                        }
+                    }).catch(() => {});
                 } catch {
-                    onnx.Metadata._metadata = new onnx.Metadata(null);
+                    try {
+                        const data = await context.request('onnx-metadata.json');
+                        metadata = new onnx.Metadata(data);
+                    } catch {
+                        metadata = new onnx.Metadata(null);
+                    }
                 }
-            }
+                return metadata;
+            })();
         }
         return onnx.Metadata._metadata;
     }
@@ -3111,14 +3139,18 @@ onnx.Location = class {
         return this.promise.then((content) => {
             const stream = content.stream;
             const position = stream.position;
-            stream.seek(offset);
-            length = length === -1 ? stream.length - offset : length;
-            content = stream.stream(length);
-            stream.seek(position);
+            try {
+                stream.seek(offset);
+                length = length === -1 ? stream.length - offset : length;
+                content = stream.stream(length);
+            } finally {
+                stream.seek(position);
+            }
             this.content.set(key, content);
             return content;
-        }).catch(() => {
-            return null;
+        }).catch((error) => {
+            this.promise = null;
+            throw error;
         });
     }
 };

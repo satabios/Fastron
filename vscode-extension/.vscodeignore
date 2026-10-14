@@ -19,6 +19,7 @@ tool/**
 .github/**
 
 # tests: unused
+test/**
 _models/
 
 # lock

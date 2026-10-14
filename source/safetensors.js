@@ -1,4 +1,5 @@
 
+import * as base from './base.js';
 import * as json from './json.js';
 
 const safetensors = {};
@@ -176,6 +177,21 @@ safetensors.Tensor = class {
             return this.data.peek();
         }
         return null;
+    }
+
+    peek() {
+        return !this.data || (!this.data.remote && !this.data.file);
+    }
+
+    async read() {
+        if (this.data && !this.peek()) {
+            this.data = await this.data.readAt(0, this.data.length);
+        }
+    }
+
+    async preview(limit) {
+        const source = this.data instanceof Uint8Array ? new base.BinaryStream(this.data) : this.data;
+        return source ? base.Tensor.preview(this, source, limit) : null;
     }
 };
 

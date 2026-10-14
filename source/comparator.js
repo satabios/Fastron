@@ -54,6 +54,10 @@ comparator.Controller = class {
 
     _reset() {
         const document = this._host.document;
+        for (const source of this._sources || []) {
+            source.dispose();
+        }
+        this._sources = [];
         this._hideDiffPanel();
         // Unregister viewport observers and event handlers
         if (this._graphA) {
@@ -116,11 +120,20 @@ comparator.Controller = class {
 
         try {
             // Load both models in parallel
-            const [contextA, contextB] = await Promise.all([
+            const contexts = await Promise.allSettled([
                 this._host._context(pathA.path),
                 this._host._context(pathB.path)
             ]);
-
+            const failed = contexts.find((result) => result.status === 'rejected');
+            if (failed) {
+                for (const result of contexts.filter((item) => item.status === 'fulfilled')) {
+                    result.value.source?.dispose();
+                    this._disposeContext(result.value);
+                }
+                throw failed.reason;
+            }
+            const [contextA, contextB] = contexts.map((result) => result.value);
+            this._sources = [contextA.source, contextB.source].filter((source) => source);
             let modelA = null;
             let modelB = null;
             try {
@@ -274,6 +287,10 @@ comparator.Controller = class {
             });
 
         } catch (error) {
+            for (const source of this._sources || []) {
+                source.dispose();
+            }
+            this._sources = [];
             // eslint-disable-next-line no-console
             console.error('Comparison failed:', error);
             const loadSpinner = document.getElementById('comparator-spinner');

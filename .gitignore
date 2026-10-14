@@ -11,3 +11,4 @@ test-results/*
 third_party/*
 yarn.lock
 *.pyc
+rust/target/

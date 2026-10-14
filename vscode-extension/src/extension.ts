@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ModelSource } from './modelSource';
 
 
 function getNonce() {
@@ -91,15 +92,21 @@ export function activate(context: vscode.ExtensionContext) {
 
 			panel.webview.html = html;
 
+			const source = new ModelSource(context.extensionPath);
 			let isDisposed = false;
 			panel.onDidDispose(() => {
 				isDisposed = true;
+				source.dispose();
 			});
 
 			panel.webview.onDidReceiveMessage(
 				async message => {
 				  if (isDisposed) { return; }
+				  try {
 					  switch (message.command) {
+					case 'model_source':
+						await source.respond(panel.webview, 'main', message.request);
+						return;
 					case 'alert':
 						vscode.window.showErrorMessage(message.text);
 						return;
@@ -125,8 +132,8 @@ export function activate(context: vscode.ExtensionContext) {
 							title: `Loading ${sizeDisplay} model...`,
 							cancellable: false
 						}, async (progress) => {
-							progress.report({ message: 'Reading file...' });
-								const modelData = await fs.promises.readFile(modelFile!);
+							progress.report({ message: 'Indexing model structure...' });
+								const modelData = await source.request('open', { input: { path: modelFile! } });
 							progress.report({ message: 'Transmitting to viewer...' });
 							if (!isDisposed) {
 								panel.webview.postMessage({
@@ -138,6 +145,7 @@ export function activate(context: vscode.ExtensionContext) {
 						
 							return;
 				  }
+				  } catch (error) { vscode.window.showErrorMessage(String(error)); }
 				},
 				undefined,
 				context.subscriptions
@@ -272,15 +280,24 @@ in the Console while viewing a model to see detailed statistics.`;
 
 			panel.webview.html = html;
 
+			const sources = { modelA: new ModelSource(context.extensionPath), modelB: new ModelSource(context.extensionPath) };
 			let isDisposed = false;
 			panel.onDidDispose(() => {
 				isDisposed = true;
+				sources.modelA.dispose();
+				sources.modelB.dispose();
 			});
 
 			panel.webview.onDidReceiveMessage(
 				async (message) => {
 					if (isDisposed) { return; }
+					try {
 					switch (message.command) {
+						case 'model_source':
+							if (message.model === 'modelA' || message.model === 'modelB') {
+								await sources[message.model as keyof typeof sources].respond(panel.webview, message.model, message.request);
+							}
+							return;
 						case 'comparator_ready': {
 								const [statsA, statsB] = await Promise.all([
 									fs.promises.stat(fileA!),
@@ -294,10 +311,10 @@ in the Console while viewing a model to see detailed statistics.`;
 								title: `Loading models for comparison (${sizeA}MB + ${sizeB}MB)`,
 								cancellable: false
 							}, async (progress) => {
-								progress.report({ message: 'Reading files...' });
+								progress.report({ message: 'Indexing model structures...' });
 									const [dataA, dataB] = await Promise.all([
-										fs.promises.readFile(fileA!),
-										fs.promises.readFile(fileB)
+										sources.modelA.request('open', { input: { path: fileA! } }),
+										sources.modelB.request('open', { input: { path: fileB } })
 									]);
 								progress.report({ message: 'Transmitting...' });
 								if (!isDisposed) {
@@ -321,6 +338,7 @@ in the Console while viewing a model to see detailed statistics.`;
 							vscode.window.showErrorMessage(message.text);
 							return;
 					}
+					} catch (error) { vscode.window.showErrorMessage(String(error)); }
 				},
 				undefined,
 				context.subscriptions

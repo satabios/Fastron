@@ -157,7 +157,10 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
     import { BinaryStream } from '%basePath%/base.js';
     import { Controller } from '%comparatorPath%';
 
+    import { createBridge } from '%netronPath%/model-source-bridge.mjs';
+
     const vscode = acquireVsCodeApi();
+    const sources = { modelA: createBridge(vscode, 'modelA'), modelB: createBridge(vscode, 'modelB') };
 
     class ComparatorBrowserHost {
 
@@ -196,7 +199,7 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
         }
 
         async request(file, encoding, base) {
-            const url = base !== undefined ? (base + '/' + file) : ('%netronPath%/' + file);
+            const url = base !== undefined && base !== null ? (base + '/' + file) : ('%netronPath%/' + file);
             const key = (encoding || 'binary') + '|' + url;
             if (!this._fetchCache.has(key)) {
                 const promise = fetch(url).then(async (response) => {
@@ -222,24 +225,16 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
             return import('%netronPath%/' + id + '.js');
         }
 
-        storeModel(key, name, uint8) {
-            const stream = new BinaryStream(uint8);
-            this._modelStore.set(key, { _identifier: name, _stream: stream, _host: this });
+        storeModel(key, name, descriptor) {
+            this._modelStore.set(key, descriptor);
         }
 
         async _context(key) {
-            const entry = this._modelStore.get(key);
-            if (!entry) {
-                throw new Error(`Model data for '${key}' not loaded.`);
-            }
-            const host = this;
-            return {
-                get identifier() { return entry._identifier; },
-                get stream() { return entry._stream; },
-                async request(file, encoding, base) { return host.request(file, encoding, base); },
-                require(id) { return host.require(id); },
-                error(e, fatal) { host.exception(e, fatal); }
-            };
+            const descriptor = this._modelStore.get(key);
+            if (!descriptor) { throw new Error(`Model data for '${key}' not loaded.`); }
+            const context = sources[key].context(this, descriptor);
+            context.source = sources[key];
+            return context;
         }
     }
 
@@ -266,13 +261,13 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
         const msg = event.data;
         switch (msg.command) {
             case 'transmit_model_a':
-                host.storeModel('modelA', msg.name, msg.value instanceof Uint8Array ? msg.value : new Uint8Array(msg.value));
+                host.storeModel('modelA', msg.name, msg.value);
                 _labelA = msg.label || msg.name;
                 _aReady = true;
                 _tryCompare();
                 break;
             case 'transmit_model_b':
-                host.storeModel('modelB', msg.name, msg.value instanceof Uint8Array ? msg.value : new Uint8Array(msg.value));
+                host.storeModel('modelB', msg.name, msg.value);
                 _labelB = msg.label || msg.name;
                 _bReady = true;
                 _tryCompare();

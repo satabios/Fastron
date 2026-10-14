@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as url from 'url';
 import * as view from './view.js';
+import { openSource } from './model-source.mjs';
 
 const desktop = {};
 
@@ -453,6 +454,9 @@ desktop.Host = class {
         const basename = path.basename(location);
         const stat = fs.statSync(location);
         if (stat.isFile()) {
+            if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)$/i.test(location)) {
+                return openSource(this, { path: location });
+            }
             const dirname = path.dirname(location);
             const stream = await this.request(basename, null, dirname);
             return new desktop.Context(this, dirname, basename, stream);
@@ -508,6 +512,7 @@ desktop.Host = class {
                         options.path = path;
                         this._title(location.label);
                     } else {
+                        context.source?.dispose();
                         options.path = path;
                         this._title('');
                     }
@@ -515,6 +520,7 @@ desktop.Host = class {
                     this.update(options);
                 }
             } catch (error) {
+                context.source?.dispose();
                 const options = { ...this._view.options };
                 if (error) {
                     await this._view.error(error);
@@ -764,6 +770,9 @@ desktop.ComparatorHost = class {
         const basename = path.basename(location);
         const stat = fs.statSync(location);
         if (stat.isFile()) {
+            if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)$/i.test(location)) {
+                return openSource(this, { path: location });
+            }
             const dirname = path.dirname(location);
             const stream = await this.request(basename, null, dirname);
             return new desktop.Context(this, dirname, basename, stream);

@@ -743,7 +743,9 @@ grapher.Graph = class {
             const edgeKey = `${edge.v}:${edge.w}`;
             const label = edge.label;
             if (label.points && label.points.length > 0) {
-                this._tileManager.addEdge(edgeKey, label.points);
+                const bounds = label.width && label.height && Number.isFinite(label.x) && Number.isFinite(label.y) ?
+                    { x: label.x - label.width / 2, y: label.y - label.height / 2, width: label.width, height: label.height } : null;
+                this._tileManager.addEdge(edgeKey, label.pathPoints, bounds);
             }
         }
     }
@@ -2549,7 +2551,7 @@ grapher.Edge = class {
         }
     }
 
-    update() {
+    get pathPoints() {
         const intersectRect = (node, point) => {
             const x = node.x;
             const y = node.y;
@@ -2568,29 +2570,29 @@ grapher.Edge = class {
             }
             return { x: x + w, y: y + (dx === 0 ? 0 : w * dy / dx) };
         };
-        const curvePath = (edge, tail, head) => {
-            const sourcePoints = Array.isArray(edge.points) ? edge.points : [];
-            if (sourcePoints.length === 0) {
-                return '';
-            }
-            if (sourcePoints.length === 1) {
-                const p = sourcePoints[0];
-                return `M ${p.x} ${p.y}`;
-            }
-            const points = sourcePoints.slice(1, sourcePoints.length - 1);
-            if (points.length === 0) {
-                const start = sourcePoints[0];
-                const end = sourcePoints[sourcePoints.length - 1];
-                points.push({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 });
-            }
-            points.unshift(intersectRect(tail, points[0]));
-            points.push(intersectRect(head, points[points.length - 1]));
-            if (edge._pathStyle === 'orthogonal') {
-                return new grapher.Edge.Polyline(points, 30).path.data;
-            }
-            return new grapher.Edge.Curve(points).path.data;
-        };
-        const edgePath = curvePath(this, this.from, this.to);
+        const sourcePoints = Array.isArray(this.points) ? this.points : [];
+        if (sourcePoints.length === 0) {
+            return [];
+        }
+        if (sourcePoints.length === 1) {
+            const p = sourcePoints[0];
+            return [p];
+        }
+        const points = sourcePoints.slice(1, sourcePoints.length - 1);
+        if (points.length === 0) {
+            const start = sourcePoints[0];
+            const end = sourcePoints[sourcePoints.length - 1];
+            points.push({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 });
+        }
+        points.unshift(intersectRect(this.from, points[0]));
+        points.push(intersectRect(this.to, points[points.length - 1]));
+        return points;
+    }
+
+    update() {
+        const points = this.pathPoints;
+        const edgePath = this._pathStyle === 'orthogonal' ?
+            new grapher.Edge.Polyline(points, 30).path.data : new grapher.Edge.Curve(points).path.data;
         this.element.setAttribute('d', edgePath);
         this.hitTest.setAttribute('d', edgePath);
         // Apply per-edge visual overrides for large-graph readability.
@@ -2826,11 +2828,13 @@ grapher.Edge.Path = class {
 grapher.TileManager = class {
 
     constructor(tileSize = 300) {
+        if (!Number.isFinite(tileSize) || tileSize <= 0) {
+            throw new Error('Invalid tile size.');
+        }
         this._tileSize = tileSize;
         // Integer-keyed tile map: key = (tileX + 0x8000) | ((tileY + 0x8000) << 16)
         // Avoids string allocation on every addNode/addEdge/queryViewport call.
-        // Supports tile coordinates in the range [-32768, 32767] which covers
-        // graphs up to ~9.8 million pixels wide/tall at the default 300px tile size.
+        // Larger coordinates use strings to avoid wrapping onto unrelated tiles.
         this._tiles = new Map(); // intKey -> { nodes: Set, edges: Set }
         this._nodeTiles = new Map(); // nodeKey -> Set of int tile keys
         this._edgeTiles = new Map(); // edgeKey -> Set of int tile keys
@@ -2847,14 +2851,19 @@ grapher.TileManager = class {
     _getTileKey(tileX, tileY) {
         // Pack two signed 16-bit integers into one 32-bit integer key.
         // Bias by 0x8000 so negative coordinates map to positive integers.
+        if (tileX < -32768 || tileX > 32767 || tileY < -32768 || tileY > 32767) {
+            return `${tileX},${tileY}`;
+        }
         return ((tileX + 0x8000) & 0xFFFF) | (((tileY + 0x8000) & 0xFFFF) << 16);
     }
 
     _getTileCoords(x, y) {
-        return {
-            tileX: Math.floor(x / this._tileSize),
-            tileY: Math.floor(y / this._tileSize)
-        };
+        const tileX = Math.floor(x / this._tileSize);
+        const tileY = Math.floor(y / this._tileSize);
+        if (!Number.isSafeInteger(tileX) || !Number.isSafeInteger(tileY)) {
+            throw new Error('Invalid tile coordinates.');
+        }
+        return { tileX, tileY };
     }
 
     _ensureTile(tileKey) {
@@ -2889,46 +2898,94 @@ grapher.TileManager = class {
         this._nodeTiles.set(nodeKey, tileset);
     }
 
-    addEdge(edgeKey, points) {
+    addEdge(edgeKey, points, bounds = null) {
         // points: array of {x, y} coordinates for edge path
         if (!points || points.length === 0) {
             return;
         }
 
+        let singleTile = true;
+        const first = this._getTileCoords(points[0].x, points[0].y);
+        for (const point of points) {
+            const tile = this._getTileCoords(point.x, point.y);
+            singleTile = singleTile && tile.tileX === first.tileX && tile.tileY === first.tileY;
+        }
         const tileset = new Set();
         const ts = this._tileSize;
+        if (singleTile) {
+            const key = this._getTileKey(first.tileX, first.tileY);
+            this._ensureTile(key).edges.add(edgeKey);
+            tileset.add(key);
+        }
 
-        // Register every tile that each line segment between consecutive
-        // waypoints passes through.  The old code only registered the tiles
-        // containing the discrete waypoints, so long segments spanning many
-        // tiles were invisible in intermediate tiles.
-        for (let i = 0; i < points.length; i++) {
-            const p = points[i];
-            const { tileX, tileY } = this._getTileCoords(p.x, p.y);
-            const tk = this._getTileKey(tileX, tileY);
-            this._ensureTile(tk).edges.add(edgeKey);
-            tileset.add(tk);
-
-            if (i > 0) {
-                // Walk the segment from points[i-1] to points[i] and register
-                // all tiles the bounding box of the segment overlaps.
-                const prev = points[i - 1];
-                const minX = Math.floor(Math.min(prev.x, p.x) / ts);
-                const maxX = Math.floor(Math.max(prev.x, p.x) / ts);
-                const minY = Math.floor(Math.min(prev.y, p.y) / ts);
-                const maxY = Math.floor(Math.max(prev.y, p.y) / ts);
-                for (let tx = minX; tx <= maxX; tx++) {
-                    for (let ty = minY; ty <= maxY; ty++) {
-                        const segKey = this._getTileKey(tx, ty);
-                        if (!tileset.has(segKey)) {
-                            this._ensureTile(segKey).edges.add(edgeKey);
-                            tileset.add(segKey);
+        // Basis and rounded curves stay inside the convex hull of neighboring waypoints.
+        // Scan that hull by tile row instead of filling each segment's bounding box.
+        const segments = singleTile ? 0 : points.length - 1;
+        for (let i = 0; i < segments; i++) {
+            const hull = points.slice(Math.max(0, i - 1), Math.min(points.length, i + 3));
+            const minY = Math.floor(Math.min(...hull.map((point) => point.y)) / ts);
+            const maxY = Math.floor(Math.max(...hull.map((point) => point.y)) / ts);
+            const minTileX = Math.floor(Math.min(...hull.map((point) => point.x)) / ts);
+            const maxTileX = Math.floor(Math.max(...hull.map((point) => point.x)) / ts);
+            if (minY === maxY || minTileX === maxTileX || (maxY - minY + 1) * (maxTileX - minTileX + 1) <= 4) {
+                for (let x = minTileX; x <= maxTileX; x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        const key = this._getTileKey(x, y);
+                        if (!tileset.has(key)) {
+                            this._ensureTile(key).edges.add(edgeKey);
+                            tileset.add(key);
                         }
+                    }
+                }
+                continue;
+            }
+            for (let ty = minY; ty <= maxY; ty++) {
+                const low = ty * ts;
+                const high = low + ts;
+                let minX = Infinity;
+                let maxX = -Infinity;
+                const include = (x) => {
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                };
+                for (let j = 0; j < hull.length; j++) {
+                    const a = hull[j];
+                    if (a.y >= low && a.y <= high) {
+                        include(a.x);
+                    }
+                    for (let k = j + 1; k < hull.length; k++) {
+                        const b = hull[k];
+                        if (a.y !== b.y) {
+                            for (const y of [low, high]) {
+                                const t = (y - a.y) / (b.y - a.y);
+                                if (t >= 0 && t <= 1) {
+                                    include(a.x + t * (b.x - a.x));
+                                }
+                            }
+                        }
+                    }
+                }
+                for (let tx = Math.floor(minX / ts); tx <= Math.floor(maxX / ts); tx++) {
+                    const key = this._getTileKey(tx, ty);
+                    if (!tileset.has(key)) {
+                        this._ensureTile(key).edges.add(edgeKey);
+                        tileset.add(key);
                     }
                 }
             }
         }
 
+        if (bounds) {
+            const topLeft = this._getTileCoords(bounds.x, bounds.y);
+            const bottomRight = this._getTileCoords(bounds.x + bounds.width, bounds.y + bounds.height);
+            for (let x = topLeft.tileX; x <= bottomRight.tileX; x++) {
+                for (let y = topLeft.tileY; y <= bottomRight.tileY; y++) {
+                    const key = this._getTileKey(x, y);
+                    this._ensureTile(key).edges.add(edgeKey);
+                    tileset.add(key);
+                }
+            }
+        }
         this._edgeTiles.set(edgeKey, tileset);
     }
 
@@ -2942,14 +2999,30 @@ grapher.TileManager = class {
         const visibleNodes = new Set();
         const visibleEdges = new Set();
 
-        // Query tiles within viewport plus buffer
-        for (let tileX = topLeft.tileX - bufferTiles; tileX <= bottomRight.tileX + bufferTiles; tileX++) {
-            for (let tileY = topLeft.tileY - bufferTiles; tileY <= bottomRight.tileY + bufferTiles; tileY++) {
-                const tileKey = this._getTileKey(tileX, tileY);
-                const tile = this._tiles.get(tileKey);
-                if (tile) {
-                    tile.nodes.forEach((node) => visibleNodes.add(node));
-                    tile.edges.forEach((edge) => visibleEdges.add(edge));
+        const left = topLeft.tileX - bufferTiles;
+        const right = bottomRight.tileX + bufferTiles;
+        const top = topLeft.tileY - bufferTiles;
+        const bottom = bottomRight.tileY + bufferTiles;
+        const collect = (tile) => {
+            tile.nodes.forEach((node) => visibleNodes.add(node));
+            tile.edges.forEach((edge) => visibleEdges.add(edge));
+        };
+        // At overview zoom, scan occupied tiles rather than a mostly empty grid.
+        if ((right - left + 1) * (bottom - top + 1) > this._tiles.size) {
+            for (const [key, tile] of this._tiles) {
+                const [tileX, tileY] = typeof key === 'number' ?
+                    [(key & 0xFFFF) - 0x8000, (key >>> 16) - 0x8000] : key.split(',').map(Number);
+                if (tileX >= left && tileX <= right && tileY >= top && tileY <= bottom) {
+                    collect(tile);
+                }
+            }
+        } else {
+            for (let tileX = left; tileX <= right; tileX++) {
+                for (let tileY = top; tileY <= bottom; tileY++) {
+                    const tile = this._tiles.get(this._getTileKey(tileX, tileY));
+                    if (tile) {
+                        collect(tile);
+                    }
                 }
             }
         }
@@ -2983,17 +3056,20 @@ grapher.TileManager = class {
 
 grapher.ViewportObserver = class {
 
-    constructor(callback, debounceMs = 150) {
+    constructor(callback) {
         this._callback = callback;
-        this._debounceMs = debounceMs;
-        this._debounceTimer = null;
+        this._timer = null;
+        this._pendingViewport = null;
         this._lastViewport = null;
         this._threshold = 50; // pixels - minimum movement to trigger update
         this._rafId = null;
     }
 
     observe(viewport) {
-        // viewport: { x, y, width, height, zoom }
+        if (this._rafId !== null || this._timer !== null) {
+            this._pendingViewport = { ...viewport };
+            return;
+        }
 
         // Check if viewport changed significantly
         if (this._lastViewport) {
@@ -3010,43 +3086,34 @@ grapher.ViewportObserver = class {
             }
         }
 
-        // Cancel existing timers
-        if (this._debounceTimer) {
-            clearTimeout(this._debounceTimer);
-        }
-        if (this._rafId) {
-            if (typeof cancelAnimationFrame !== 'undefined') {
-                cancelAnimationFrame(this._rafId);
-            }
+        this._pendingViewport = { ...viewport };
+        const update = () => {
+            this._timer = null;
             this._rafId = null;
+            const current = this._pendingViewport;
+            this._pendingViewport = null;
+            this._lastViewport = current;
+            this._callback(current);
+        };
+        if (typeof requestAnimationFrame === 'undefined') {
+            this._timer = setTimeout(update, 0);
+        } else {
+            this._rafId = requestAnimationFrame(update);
         }
-
-        // Debounce the callback
-        this._debounceTimer = setTimeout(() => {
-            if (typeof requestAnimationFrame === 'undefined') {
-                this._lastViewport = { ...viewport };
-                this._callback(viewport);
-            } else {
-                this._rafId = requestAnimationFrame(() => {
-                    this._lastViewport = { ...viewport };
-                    this._callback(viewport);
-                    this._rafId = null;
-                });
-            }
-        }, this._debounceMs);
     }
 
     disconnect() {
-        if (this._debounceTimer) {
-            clearTimeout(this._debounceTimer);
-            this._debounceTimer = null;
+        if (this._timer !== null) {
+            clearTimeout(this._timer);
+            this._timer = null;
         }
-        if (this._rafId) {
+        if (this._rafId !== null) {
             if (typeof cancelAnimationFrame !== 'undefined') {
                 cancelAnimationFrame(this._rafId);
             }
             this._rafId = null;
         }
+        this._pendingViewport = null;
         this._lastViewport = null;
     }
 };

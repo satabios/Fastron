@@ -410,6 +410,10 @@ base.BinaryReader = class {
         }
         return new base.StreamReader(data, littleEndian);
     }
+
+    static stream(data, littleEndian) {
+        return data instanceof Uint8Array ? new base.BufferReader(data, littleEndian) : new base.StreamReader(data, littleEndian);
+    }
 };
 
 base.BufferReader = class {
@@ -660,6 +664,36 @@ base.StreamReader = class {
 
 base.Tensor = class {
 
+    static async preview(tensor, source, limit = 1000, offset = 0, length = source.length - offset) {
+        const view = new base.Tensor(tensor, { skipWeights: false });
+        const itemsize = base.Tensor._dataTypes.get(tensor.type.dataType);
+        const shape = tensor.type.shape && tensor.type.shape.dimensions;
+        // shortcut: contiguous numeric storage only; add encoding-aware slicing for packed or sparse tensors.
+        if (!itemsize || /^(float4|float6)/.test(tensor.type.dataType) || !source.readAt || tensor.type.layout || !['<', '>'].includes(view.encoding) || !Array.isArray(shape) || shape.some((dim) => !Number.isSafeInteger(dim) || dim < 0)) {
+            return null;
+        }
+        let total = 1;
+        for (let i = shape.length - 1; i >= 0; i--) {
+            if (tensor.stride && tensor.stride[i] !== total) {
+                return null;
+            }
+            total *= shape[i];
+        }
+        if (!Number.isSafeInteger(total * itemsize) || total * itemsize > length || !Number.isSafeInteger(limit) || limit < 1) {
+            throw new Error('Invalid tensor preview range.');
+        }
+        const count = Math.min(total, limit);
+        const bytes = await source.readAt(offset, count * itemsize);
+        return {
+            count, total,
+            tensor: {
+                name: tensor.name, encoding: view.encoding,
+                type: { dataType: tensor.type.dataType, shape: { dimensions: count === total ? shape : [count] } },
+                values: bytes
+            }
+        };
+    }
+
     constructor(tensor, options = {}) {
         this._tensor = tensor;
         this.name = tensor.name || '';
@@ -694,12 +728,7 @@ base.Tensor = class {
     }
 
     get values() {
-        // Check if weights should be skipped (re-check config dynamically)
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = config.skipTensorWeights === true;
-
-        // Always skip loading weights if configured, even if already loaded
-        if (skipWeights) {
+        if (this._skipWeights) {
             return null;
         }
         this._read();
@@ -712,12 +741,7 @@ base.Tensor = class {
     }
 
     get data() {
-        // Check if weights should be skipped (re-check config dynamically)
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = config.skipTensorWeights === true;
-
-        // Always skip loading data if configured, even if already loaded
-        if (skipWeights) {
+        if (this._skipWeights) {
             return null;
         }
         this._read();
@@ -732,12 +756,8 @@ base.Tensor = class {
     }
 
     get empty() {
-        // Check if weights should be skipped (re-check config dynamically)
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = config.skipTensorWeights === true;
-
         // If weights are skipped, consider tensor as having data (metadata exists)
-        if (skipWeights) {
+        if (this._skipWeights) {
             return false;
         }
 
@@ -778,13 +798,7 @@ base.Tensor = class {
     }
 
     toString() {
-        // Check if weights should be skipped (re-check config dynamically)
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = config.skipTensorWeights === true;
-        const metadataOnly = config.showTensorMetadata === true;
-
-        // Return metadata string if weights are skipped
-        if (skipWeights || metadataOnly) {
+        if (this._skipWeights || this._metadataOnly) {
             return this.getMetadataString();
         }
 
@@ -833,15 +847,15 @@ base.Tensor = class {
         }
         switch (this.layout) {
             case 'sparse': {
-                const indices = new base.Tensor(this.indices).value;
-                const values = new base.Tensor(this.values).value;
+                const indices = new base.Tensor(this.indices, { skipWeights: this._skipWeights }).value;
+                const values = new base.Tensor(this.values, { skipWeights: this._skipWeights }).value;
                 context.data = this._decodeSparse(dataType, context.dimensions, indices, values);
                 context.encoding = '|';
                 break;
             }
             case 'sparse.coo': {
-                const values = new base.Tensor(this.values).value;
-                const data = new base.Tensor(this.indices).value;
+                const values = new base.Tensor(this.values, { skipWeights: this._skipWeights }).value;
+                const data = new base.Tensor(this.indices, { skipWeights: this._skipWeights }).value;
                 const dimensions = context.dimensions.length;
                 let stride = 1;
                 const strides = context.dimensions.slice().reverse().map((dim) => {
@@ -1228,12 +1242,7 @@ base.Tensor = class {
     }
 
     _read() {
-        // Check if weights should be skipped (re-check config dynamically)
-        const config = (typeof window !== 'undefined' && window.NETRON_CONFIG) || {};
-        const skipWeights = config.skipTensorWeights === true;
-
-        // Skip reading if weights should be skipped
-        if (skipWeights) {
+        if (this._skipWeights) {
             return;
         }
 

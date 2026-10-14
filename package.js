@@ -270,7 +270,7 @@ const build = async (target) => {
             writeLine('cp source/dir dist/dir');
             const source_dir = dirname('source');
             const dist_dir = dirname('dist', 'web');
-            const extensions = new Set(['html', 'css', 'js', 'json', 'ico', 'png']);
+            const extensions = new Set(['html', 'css', 'js', 'mjs', 'wasm', 'json', 'ico', 'png']);
             await copy(source_dir, dist_dir, (file) => extensions.has(file.split('.').pop()));
             await rm('dist', 'web', 'app.js');
             await rm('dist', 'web', 'node.js');
@@ -538,6 +538,7 @@ const lint = async () => {
 };
 
 const test = async (target) => {
+    await exec('npm run test:unit');
     let models = true;
     while (true) {
         /* eslint-disable no-await-in-loop */

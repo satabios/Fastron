@@ -40,7 +40,9 @@ _CACHE_CONTROL_STATIC = "public, max-age=3600"
 
 class _ContentProvider:
     def __init__(self, data, path, file, name):
-        self.data = data if data is not None else bytearray()
+        # Freeze memory input so every range belongs to the same version.
+        self.data = bytes(data) if data is not None else b""
+        self.memory_etag = f'"{random.getrandbits(128):032x}"'
         self.identifier = os.path.basename(file) if file else ""
         self.name = name
         self.dir = "."
@@ -79,7 +81,9 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         ".eot": "application/vnd.ms-fontobject",
         ".woff": "font/woff",
         ".woff2": "font/woff2",
-        ".svg": "image/svg+xml"
+        ".svg": "image/svg+xml",
+        ".mjs": "text/javascript",
+        ".wasm": "application/wasm"
     }
     def do_HEAD(self):
         self.do_GET()
@@ -164,6 +168,14 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         kind, value = resource
         total = len(value) if kind == "memory" else os.path.getsize(value)
+        if kind == "memory":
+            etag = self.server.content.memory_etag
+        else:
+            stat = os.stat(value)
+            etag = f'"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"'
+        if self.headers.get("If-Match", etag) != etag:
+            self._write(412, None, None)
+            return
         start = 0
         end = total - 1
         status_code = 200
@@ -198,6 +210,7 @@ class _HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         length = max(0, end - start + 1)
         self.send_response(status_code)
         self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("ETag", etag)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
         if status_code == 206:

@@ -41,6 +41,15 @@ jobs:
       - name: Install Packages
         run: npm run setup
 
+      - name: Build and test Rust index
+        shell: bash
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo test --manifest-path rust/Cargo.toml
+          npm run build:index
+          npm run test:unit
+          python test/server-ranges.py
+
       - name: Validate
         run: npm run validate
         timeout-minutes: 20
@@ -118,6 +127,10 @@ jobs:
       - name: Compile TypeScript
         working-directory: vscode-extension
         run: npx tsc -p ./
+
+      - name: Test source bridge
+        working-directory: vscode-extension
+        run: node test/model-source.mjs
 
       - name: Install vsce
         run: npm install -g @vscode/vsce

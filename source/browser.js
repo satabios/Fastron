@@ -2,6 +2,7 @@
 import * as base from './base.js';
 import { CacheManager } from './cache-manager.js';
 import { StreamReader } from './stream-reader.js';
+import { openSource } from './model-source.mjs';
 
 const browser = {};
 
@@ -441,6 +442,23 @@ browser.Host = class {
             const progress = (value) => {
                 this._view.progress(value);
             };
+            if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)(?:[?#]|$)/i.test(identifier || url)) {
+                try {
+                    context = await openSource(this, { url: new URL(url, this.window.location.href).href, name: identifier || undefined });
+                    context.name = name;
+                    if (url.startsWith('https://raw.githubusercontent.com/') && context.stream.length < 150 &&
+                        new TextDecoder().decode(context.stream.peek()).startsWith('version https://git-lfs.github.com/spec/v1')) {
+                        context.source.dispose();
+                    } else {
+                        return await this._openContext(context);
+                    }
+                } catch (error) {
+                    // shortcut: servers without versioned ranges use the existing full download.
+                    if (!/versioned byte ranges|Failed to fetch|NetworkError|worker|WebAssembly|WASM/i.test(error.message)) {
+                        throw error;
+                    }
+                }
+            }
             let stream = await this._request(url, null, null, progress);
             if (url.startsWith('https://raw.githubusercontent.com/') && stream.length < 150) {
                 const buffer = stream.peek();
@@ -462,9 +480,14 @@ browser.Host = class {
 
     async _open(file, files) {
         this._view.show('welcome spinner');
-        const context = new browser.BrowserFileContext(this, file, files);
+        let context = null;
         try {
-            await context.open();
+            if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)$/i.test(file.name)) {
+                context = await openSource(this, { file, files: Array.from(files) });
+            } else {
+                context = new browser.BrowserFileContext(this, file, files);
+                await context.open();
+            }
             await this._openContext(context);
         } catch (error) {
             await this._view.error(error);
@@ -516,9 +539,11 @@ browser.Host = class {
                 this.document.title = context.name || context.identifier;
                 return '';
             }
+            context.source?.dispose();
             this.document.title = '';
             return 'context-open-failed';
         } catch (error) {
+            context.source?.dispose();
             await this._view.error(error, error.name);
             return 'context-open-error';
         }
@@ -735,31 +760,34 @@ browser.FileStream = class {
     }
 
     stream(length) {
+        this._checkRange(this._position, length);
         const file = new browser.FileStream(this._chunks, this._size, this._windowSize, this._start + this._position, length);
         this.skip(length);
         return file;
     }
 
     seek(position) {
-        this._position = position >= 0 ? position : this._length + position;
-        if (this._position > this._length || this._position < 0) {
-            throw new Error(`Expected ${this._position - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
-        }
+        const target = position >= 0 ? position : this._length + position;
+        this._checkRange(target, 0);
+        this._position = target;
     }
 
     skip(offset) {
-        this._position += offset;
-        if (this._position > this._length || this._position < 0) {
-            throw new Error(`Expected ${this._position - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
-        }
+        const target = this._position + offset;
+        this._checkRange(target, 0);
+        this._position = target;
     }
 
     peek(length) {
         length = length === undefined ? this._length - this._position : length;
-        if (length < 0x10000000) {
+        this._checkRange(this._position, length);
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
+        if (length < this._windowSize) {
             const position = this._fill(length);
             this._position -= length;
-            return this._buffer.subarray(position, position + length);
+            return this._buffer.slice(position, position + length);
         }
         const position = this._start + this._position;
         if (position % this._size === 0) {
@@ -776,7 +804,11 @@ browser.FileStream = class {
 
     read(length) {
         length = length === undefined ? this._length - this._position : length;
-        if (length < 0x10000000) {
+        this._checkRange(this._position, length);
+        if (length === 0) {
+            return new Uint8Array(0);
+        }
+        if (length < this._windowSize) {
             const position = this._fill(length);
             return this._buffer.slice(position, position + length);
         }
@@ -795,9 +827,7 @@ browser.FileStream = class {
     }
 
     readAt(position, length) {
-        if (!Number.isInteger(position) || !Number.isInteger(length) || position < 0 || length < 0 || position + length > this._length) {
-            throw new Error('Invalid file read range.');
-        }
+        this._checkRange(position, length);
         if (length === 0) {
             return new Uint8Array(0);
         }
@@ -806,11 +836,21 @@ browser.FileStream = class {
         return buffer;
     }
 
+    _checkRange(position, length) {
+        if (!Number.isSafeInteger(position) || !Number.isSafeInteger(length) || position < 0 || length < 0) {
+            throw new Error('Invalid file read range.');
+        }
+        if (position > this._length || length > this._length - position) {
+            throw new Error(`Expected ${position + length - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
+        }
+    }
+
     _fill(length) {
         if (this._position + length > this._length) {
             throw new Error(`Expected ${this._position + length - this._length} more bytes. The file might be corrupted. Unexpected end of file.`);
         }
-        if (!this._buffer || this._position < this._offset || this._position + length > this._offset + this._buffer.length) {
+        const absolute = this._start + this._position;
+        if (!this._buffer || absolute < this._offset || absolute + length > this._offset + this._buffer.length) {
             this._offset = this._start + this._position;
             const length = Math.min(this._windowSize, this._start + this._length - this._offset);
             if (!this._buffer || length !== this._buffer.length) {

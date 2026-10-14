@@ -599,6 +599,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 <script type="module" nonce="%nonce%">
 	import { Host } from "%browserPath%";
 	import { View } from "%viewPath%";
+	import { createBridge } from "%netronPath%/model-source-bridge.mjs";
 
 	const vscode = acquireVsCodeApi();
 	
@@ -619,7 +620,12 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 	let modelDataPending = null;
 	let configDataPending = null;
 	let viewReady = false;
-	const asBytes = (value) => value instanceof Uint8Array ? value : new Uint8Array(value);
+	const source = createBridge(vscode, 'main');
+    const openModel = (descriptor) => {
+        const context = source.context(host, descriptor);
+        context.source = source;
+        return host._openContext(context);
+    };
 
 	// Set up message handler immediately to avoid race condition
 	window.addEventListener('message', event => {
@@ -627,11 +633,10 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 
 		switch (message.command) {
 			case 'transmit_model':
-				console.log('Received model data, length:', message.value.length);
+
 				if (viewReady && window.__view__._host._view) {
 					try {
-							const file1 = new File([asBytes(message.value)], "%GRAPHNAME%", {type: ''});
-						window.__view__._host._open(file1, [file1]);
+							openModel(message.value);
 					} catch (error) {
 						console.error('Error opening model:', error);
 						vscode.postMessage({command: 'alert', text: 'Error opening model: ' + error.message});
@@ -665,8 +670,7 @@ button { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI"
 		// Open pending model if any
 		if (modelDataPending) {
 			console.log('Opening pending model data');
-			const file1 = new File([asBytes(modelDataPending)], "%GRAPHNAME%", {type: ''});
-			window.__view__._host._open(file1, [file1]);
+			openModel(modelDataPending);
 			modelDataPending = null;
 		} else {
 			// Request model from extension

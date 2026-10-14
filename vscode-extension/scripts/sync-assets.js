@@ -13,7 +13,7 @@ const path = require('path');
 
 const sourceDir = path.resolve(__dirname, '../../source');
 const destDir = path.resolve(__dirname, '../webview/netron');
-const COPY_EXTS = new Set(['.js', '.json']);
+const COPY_EXTS = new Set(['.js', '.mjs', '.wasm', '.json']);
 const SKIP_FILES = new Set(['package.json']);  // root package.json, not a netron asset
 
 if (!fs.existsSync(sourceDir)) {

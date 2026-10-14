@@ -1,3 +1,4 @@
+import * as base from './base.js';
 
 const gguf = {};
 
@@ -187,6 +188,20 @@ gguf.Tensor = class {
         }
         return null;
     }
+
+    peek() {
+        return !this._data || (!this._data.remote && !this._data.file);
+    }
+
+    async read() {
+        if (this._data && !this.peek()) {
+            this._data = new base.BinaryStream(await this._data.readAt(0, this._data.length));
+        }
+    }
+
+    async preview(limit) {
+        return this._data ? base.Tensor.preview(this, this._data, limit) : null;
+    }
 };
 
 gguf.Reader = class {
@@ -248,7 +263,7 @@ gguf.Reader = class {
     async read() {
         const context = this.context;
         const stream = context.stream;
-        let reader = await context.read('binary');
+        let reader = typeof stream.file === 'string' ? base.BinaryReader.stream(stream) : await context.read('binary');
         reader = new gguf.BinaryReader(reader);
         this.tensors = new Map();
         this.metadata = new Map();

@@ -240,6 +240,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "node ./out/test/runTest.js",
+    "test:source": "npm run compile && node test/model-source.mjs",
     "sync": "node scripts/sync-assets.js"
   },
   "devDependencies": {
@@ -254,5 +255,8 @@
     "mocha": "^10.2.0",
     "typescript": "^5.4.0",
     "@vscode/test-electron": "^2.3.2"
-  }
+  },
+  "extensionKind": [
+    "workspace"
+  ]
 }

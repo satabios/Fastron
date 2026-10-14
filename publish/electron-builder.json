@@ -327,5 +327,9 @@
     },
     "nsis": {
         "differentialPackage": false
-    }
+    },
+    "asarUnpack": [
+        "source/model-*.mjs",
+        "source/model-index.wasm"
+    ]
 }
