@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as process from 'process';
 import * as updater from 'electron-updater';
 import * as url from 'url';
+import { registerModelSources } from './model-source-electron.mjs';
 
 const app = {};
 
@@ -46,6 +47,7 @@ app.Application = class {
                 }
             }
         });
+        registerModelSources(electron.ipcMain);
         electron.ipcMain.on('get-environment', (event) => {
             event.returnValue = this.environment;
         });

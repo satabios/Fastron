@@ -86,20 +86,7 @@ playwright.test('browser', async ({ page }) => {
     const valueButton = await valueEntry.waitForSelector('.sidebar-item-value-button');
     await valueButton.click();
 
-    // Check first number from tensor value — wait for async weight materialization
-    const pre = await valueEntry.waitForSelector('pre');
-    let text = '';
-    /* eslint-disable no-await-in-loop */
-    for (let i = 0; i < 50; i++) {
-        text = (await pre.textContent()) || '';
-        if (/\d+\.\d+/.test(text)) {
-            break;
-        }
-        await page.waitForTimeout(200);
-    }
-    /* eslint-enable no-await-in-loop */
-    const match = text.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/i);
-    playwright.expect(match).not.toBeNull();
-    const first = parseFloat(match[0]);
-    playwright.expect(first).toBe(0.1353299617767334);
+    // Locate the rendered preview, which replaces the asynchronous loading placeholder.
+    await playwright.expect(page.locator('#sidebar-content .sidebar-item:has(.sidebar-item-name input[value="value"]) pre').last()).toContainText('0.1353299617767334');
+
 });

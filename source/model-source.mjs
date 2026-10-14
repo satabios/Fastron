@@ -156,7 +156,10 @@ export class ModelSource {
 export const openSource = async (host, input) => {
     let worker = null;
     const url = new URL('./model-source-worker.mjs', import.meta.url);
-    if (typeof process !== 'undefined' && process.versions?.node) {
+    if (typeof process !== 'undefined' && process.type === 'renderer' && process.versions?.electron) {
+        const { ipcRenderer } = await import('electron');
+        worker = (await import('./model-source-electron.mjs')).createElectronWorker(ipcRenderer);
+    } else if (typeof process !== 'undefined' && process.versions?.node) {
         const threads = await import('node:worker_threads');
         worker = new threads.Worker(new URL(url.href.replace('/app.asar/', '/app.asar.unpacked/')));
     } else {

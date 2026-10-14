@@ -33,7 +33,7 @@ npm test [format] # e.g. npm test onnx
 
 ## Loading performance
 
-ONNX, GGUF and Safetensors use a small Rust/WASM index in a source worker. Existing JavaScript parsers build the complete graph from its metadata; tensor payloads stay in the original file. Desktop workers read local or mounted files. VS Code runs the worker in the workspace extension host, including Remote SSH, and sends metadata and requested byte ranges to the webview. Browser workers read selected files or HTTP servers with versioned byte ranges; other HTTP servers retain full-download loading. Other formats retain their existing loaders.
+ONNX, GGUF and Safetensors use a small Rust/WASM index in a source worker. Existing JavaScript parsers build the complete graph from its metadata; tensor payloads stay in the original file. Electron creates its Node workers in the main process and forwards bounded requests from the renderer over IPC; workers read local or mounted files. VS Code runs the worker in the workspace extension host, including Remote SSH, and sends metadata and requested byte ranges to the webview. Browser workers read selected files or HTTP servers with versioned byte ranges; other HTTP servers retain full-download loading. Other formats retain their existing loaders.
 
 Numeric tensors with contiguous storage show at most 1,000 values on demand. Packed, sparse and strided tensors use their existing full decode. Export still reads the full tensor. Sources pin file versions and reject changed files rather than combining stale metadata with new weights. Referenced files must stay inside the model directory (or the browser's selected files).
 
