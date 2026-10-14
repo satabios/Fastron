@@ -84,6 +84,10 @@ class HTMLElement {
         this._document = document;
         this._childNodes = [];
         this._attributes = new Map();
+        this.clientWidth = 0;
+        this.clientHeight = 0;
+        this.scrollLeft = 0;
+        this.scrollTop = 0;
         this._style = new CSSStyleDeclaration();
     }
 
@@ -189,7 +193,9 @@ class HTMLElement {
         return { left: 0, top: 0, width: 0, height: 0 };
     }
 
-    scrollTo() {
+    scrollTo(options) {
+        this.scrollLeft = Math.max(0, options.left === undefined ? this.scrollLeft : options.left);
+        this.scrollTop = Math.max(0, options.top === undefined ? this.scrollTop : options.top);
     }
 
     focus() {
@@ -300,6 +306,10 @@ mock.Host = class {
             for (const id of ['target', 'sidebar']) {
                 const element = document.createElement('div');
                 element.setAttribute('id', id);
+                if (id === 'target') {
+                    element.clientWidth = 1024;
+                    element.clientHeight = 768;
+                }
                 document.body.appendChild(element);
             }
         }

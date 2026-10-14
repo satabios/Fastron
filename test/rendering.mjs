@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import * as mock from './mock.js';
 import { Edge, TileManager, ViewportObserver } from '../source/grapher.js';
 import { Graph as ViewGraph } from '../source/view.js';
 import { test } from 'node:test';
@@ -174,4 +175,29 @@ test('edge labels remain visible when their bounds extend beyond the curve tiles
     manager.addEdge('labelled', [{ x: 10, y: 10 }, { x: 10, y: 500 }], { x: 200, y: 200, width: 400, height: 30 });
     assert.equal(manager.queryViewport({ x: 550, y: 210, width: 20, height: 10 }, 0).edges.has('labelled'), true);
     assert.equal(manager.queryViewport({ x: 700, y: 210, width: 20, height: 10 }, 0).edges.has('labelled'), false);
+});
+
+test('model validation DOM provides a finite viewport through zoom and scrolling', () => {
+    const host = new mock.Host({});
+    const container = host.document.getElementById('target');
+    const origin = host.document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    origin.setAttribute('transform', 'translate(100, 100) scale(1)');
+    const graph = {
+        view: { options: { direction: 'vertical' } },
+        _containerElement: container, _originElement: origin,
+        _canvasElement: { style: {} }, _width: 2000, _height: 3000, _zoom: 1
+    };
+    ViewGraph.prototype._updateZoom.call(graph, 0.5);
+    const viewport = ViewGraph.prototype._getViewportBounds.call(graph);
+    assert.ok(Object.values(viewport).every(Number.isFinite));
+    assert.equal(viewport.width, 2048);
+    assert.equal(viewport.height, 1536);
+    graph._getOriginTranslate = ViewGraph.prototype._getOriginTranslate;
+    ViewGraph.prototype._scrollToGraphBounds.call(graph, { x: 2000, y: 3000, width: 100, height: 100 }, 'auto');
+    assert.equal(container.scrollLeft, 563);
+    assert.equal(container.scrollTop, 1191);
+    container.scrollTo({ left: -100 });
+    assert.equal(container.scrollLeft, 0);
+    assert.equal(container.scrollTop, 1191);
+    assert.ok(Object.values(ViewGraph.prototype._getViewportBounds.call(graph)).every(Number.isFinite));
 });
