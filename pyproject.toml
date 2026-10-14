@@ -59,7 +59,7 @@ package-dir = { "fastron" = "source" }
 fastron = ["*.*"]
 
 [tool.setuptools.exclude-package-data]
-fastron = ["app.js", "electron.*"]
+fastron = ["app.js", "electron.*", "*-metadata.json"]
 
 [tool.ruff]
 lint.select = ["B", "E", "F", "I", "UP", "W", "Q"]

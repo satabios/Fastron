@@ -4,18 +4,31 @@ const require = async () => {
         const worker_threads = await import('worker_threads');
         return worker_threads.parentPort;
     }
-    import('./dagre.js');
     return self;
 };
 
 // Module-level import cache — populated on first use, reused on subsequent messages.
 let _dagre = null;
+let _force = null;
 let _elk = null;
 
 require().then((self) => {
     self.addEventListener('message', async (e) => {
         const message = e.data;
         switch (message.type) {
+            case 'force.layout': {
+                try {
+                    if (!_force) {
+                        _force = import('./force-layout.js');
+                    }
+                    const force = await _force;
+                    force.layout(message.nodes, message.edges);
+                    self.postMessage(message);
+                } catch (error) {
+                    self.postMessage({ type: 'error', message: error.message });
+                }
+                break;
+            }
             case 'dagre.layout': {
                 try {
                     if (!_dagre) {

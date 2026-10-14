@@ -1052,9 +1052,13 @@ pnnx.Metadata = class {
         if (!pnnx.Metadata._metadata) {
             let data = null;
             try {
-                data = await context.request('pytorch-metadata.json');
+                data = await context.request('pytorch-metadata.slim.json');
             } catch {
-                // continue regardless of error
+                try {
+                    data = await context.request('pytorch-metadata.json');
+                } catch {
+                    // continue regardless of error
+                }
             }
             pnnx.Metadata._metadata = new pnnx.Metadata(data);
         }

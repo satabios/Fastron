@@ -665,6 +665,12 @@ onnx.Tensor = class {
     }
 
     async preview(limit) {
+        if (this._deferred && this._deferred.packed && this._deferredDataLocation === onnx.DataLocation.DEFAULT) {
+            const { source, packed } = this._deferred;
+            if (packed.dataType === this.type.dataType) {
+                return base.Tensor.preview(this, source, limit, packed.offset, packed.length);
+            }
+        }
         if (this._deferred && this._deferred.rawLength && !this._deferred.typed) {
             const data = this._deferred;
             return base.Tensor.preview(this, data.source || new base.BinaryStream(data.buffer), limit, data.rawOffset, data.rawLength);
@@ -1312,11 +1318,7 @@ onnx.Metadata = class {
                 try {
                     const data = await context.request('onnx-metadata.slim.json');
                     metadata = new onnx.Metadata(data);
-                    context.request('onnx-metadata-examples.json').then((exData) => {
-                        if (exData) {
-                            metadata.mergeExamples(JSON.parse(exData));
-                        }
-                    }).catch(() => {});
+                    metadata._requestExamples = context.resourceRequest;
                 } catch {
                     try {
                         const data = await context.request('onnx-metadata.json');
@@ -1361,6 +1363,21 @@ onnx.Metadata = class {
         }
     }
 
+    _loadExamples() {
+        if (!this._examples) {
+            this._examples = this._requestExamples('onnx-metadata-examples.json', 'utf-8', null)
+                .then((data) => {
+                    this.mergeExamples(JSON.parse(data));
+                    this._requestExamples = null;
+                })
+                .catch((error) => {
+                    this._examples = null;
+                    throw error;
+                });
+        }
+        return this._examples;
+    }
+
     type(domain, name, imports) {
         domain = domain || 'ai.onnx';
         let current = null;
@@ -1375,6 +1392,13 @@ onnx.Metadata = class {
                     }
                 }
             }
+        }
+        if (current && this._requestExamples && !current.loadExamples) {
+            const loadExamples = this._loadExamples.bind(this);
+            current.loadExamples = async function() {
+                await loadExamples();
+                this.examples = current.examples;
+            };
         }
         return current;
     }

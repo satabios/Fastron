@@ -190,9 +190,13 @@ tengine.Metadata = class {
         if (!tengine.Metadata._metadata) {
             let data = null;
             try {
-                data = await context.request('tengine-metadata.json');
+                data = await context.request('tengine-metadata.slim.json');
             } catch {
-                // continue regardless of error
+                try {
+                    data = await context.request('tengine-metadata.json');
+                } catch {
+                    // continue regardless of error
+                }
             }
             tengine.Metadata._metadata = new tengine.Metadata(data);
         }

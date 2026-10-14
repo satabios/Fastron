@@ -23,22 +23,36 @@ if (!fs.existsSync(sourceDir)) {
 
 fs.mkdirSync(destDir, { recursive: true });
 
-const files = fs.readdirSync(sourceDir);
-let copied = 0;
-let skipped = 0;
-
-for (const file of files) {
-    const ext = path.extname(file);
-    if (!COPY_EXTS.has(ext) || SKIP_FILES.has(file)) {
-        skipped++;
-        continue;
+const sync = async () => {
+    const { validateMetadataAssets } = await import('../../tools/metadata-assets.mjs');
+    const originals = await validateMetadataAssets(sourceDir);
+    const files = fs.readdirSync(sourceDir);
+    for (const file of fs.readdirSync(destDir)) {
+        if (COPY_EXTS.has(path.extname(file)) && !SKIP_FILES.has(file) && !files.includes(file)) {
+            fs.rmSync(path.join(destDir, file), { force: true });
+        }
     }
-    const src = path.join(sourceDir, file);
-    const dst = path.join(destDir, file);
-    if (fs.statSync(src).isFile()) {
-        fs.copyFileSync(src, dst);
-        copied++;
+    let copied = 0;
+    let skipped = 0;
+    for (const file of files) {
+        const ext = path.extname(file);
+        if (!COPY_EXTS.has(ext) || SKIP_FILES.has(file) || originals.has(file)) {
+            if (originals.has(file)) {
+                fs.rmSync(path.join(destDir, file), { force: true });
+            }
+            skipped++;
+            continue;
+        }
+        const src = path.join(sourceDir, file);
+        const dst = path.join(destDir, file);
+        if (fs.statSync(src).isFile()) {
+            fs.copyFileSync(src, dst);
+            copied++;
+        }
     }
-}
-
-console.log(`sync-assets: copied ${copied} files from source/ → webview/netron/ (skipped ${skipped})`);
+    console.log(`sync-assets: copied ${copied} files from source/ → webview/netron/ (skipped ${skipped})`);
+};
+sync().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

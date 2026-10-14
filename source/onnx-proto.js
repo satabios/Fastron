@@ -1414,7 +1414,7 @@ onnx.TensorProto = class TensorProto {
                      (buffered || source)));
         if (lazy) {
             if (indexed) {
-                message._deferred = { source: reader.tensorSource, start: indexed[0], end: indexed[0] + indexed[1], rawOffset: indexed[2], rawLength: indexed[3] };
+                message._deferred = { source: reader.tensorSource, start: indexed[0], end: indexed[0] + indexed[1], rawOffset: indexed[2], rawLength: indexed[3], packed: indexed[4] };
             } else {
                 message._deferred = source ? { source, start: reader.position, end } : { buffer: reader._buffer, start: reader.position, end };
             }

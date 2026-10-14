@@ -8,11 +8,37 @@ dist_dir = os.path.join(root_dir, "dist")
 dist_pypi_dir = os.path.join(dist_dir, "pypi")
 
 def _build():
+    import json
     import shutil
     source_dir = os.path.join(root_dir, "source")
     shutil.rmtree(os.path.join(source_dir, "__pycache__"), ignore_errors=True)
     shutil.rmtree(dist_pypi_dir, ignore_errors=True)
-    shutil.copytree(source_dir, os.path.join(dist_pypi_dir, "fastron"))
+    def read(filename):
+        with open(os.path.join(source_dir, filename), encoding="utf-8") as file:
+            # Match the IEEE 754 numbers consumed by JavaScript.
+            return json.load(file, parse_int=float)
+    originals = []
+    for name in os.listdir(source_dir):
+        if name.endswith("-metadata.json"):
+            full = read(name)
+            slim = read(name.replace(".json", ".slim.json"))
+            examples = None
+            expected = []
+            for item in full:
+                item = dict(item)
+                if item.get("examples"):
+                    if examples is None:
+                        examples = read(name.replace(
+                            "-metadata.json", "-metadata-examples.json"))
+                    if item.pop("examples") != examples.get(item["name"]):
+                        raise ValueError(f"{name}: examples differ")
+                expected.append(item)
+            if slim != expected:
+                raise ValueError(f"{name}: slim metadata differs")
+            originals.append(name)
+    shutil.copytree(
+        source_dir, os.path.join(dist_pypi_dir, "fastron"),
+        ignore=shutil.ignore_patterns(*originals))
     shutil.copyfile(
         os.path.join(root_dir, "pyproject.toml"),
         os.path.join(dist_pypi_dir, "pyproject.toml"))

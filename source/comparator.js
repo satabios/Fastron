@@ -751,7 +751,7 @@ comparator.Controller = class {
         return JSON.stringify([type.module || type.domain || '', type.name || '']);
     }
 
-    _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
+    *_matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
         // Tied candidates have no reliable identity; leave them unmatched rather than inventing pairs.
         const bestA = groupA.map(() => ({ score: threshold - 1, index: -1, tied: false }));
         const bestB = groupB.map(() => ({ score: threshold - 1, index: -1, tied: false }));
@@ -764,6 +764,8 @@ comparator.Controller = class {
                 best.tied = true;
             }
         };
+        let deadline = performance.now() + 8;
+        let comparisons = 0;
         for (let ai = 0; ai < groupA.length; ai++) {
             for (let bi = 0; bi < groupB.length; bi++) {
                 const ia = groupA[ai];
@@ -771,6 +773,10 @@ comparator.Controller = class {
                 const score = this._calculateSimilarity(nodesA[ia], nodesB[ib], ctxA[ia], ctxB[ib]);
                 update(bestA[ai], score, bi);
                 update(bestB[bi], score, ai);
+                if (++comparisons % 64 === 0 && performance.now() >= deadline) {
+                    yield;
+                    deadline = performance.now() + 8;
+                }
             }
         }
         for (let ai = 0; ai < groupA.length; ai++) {
@@ -822,13 +828,19 @@ comparator.Controller = class {
             }
         }
 
-        // Process one type group per frame to yield to browser
+        // Large operator groups must also yield while scanning candidates.
         let groupIndex = 0;
+        let matching = null;
         const processNext = () => {
             if (groupIndex < typeGroupPairs.length) {
-                const { groupA, groupB } = typeGroupPairs[groupIndex];
-                this._matchGroupInPlace(groupA, groupB, 80, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
-                groupIndex++;
+                if (!matching) {
+                    const { groupA, groupB } = typeGroupPairs[groupIndex];
+                    matching = this._matchGroupInPlace(groupA, groupB, 80, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+                }
+                if (matching.next().done) {
+                    matching = null;
+                    groupIndex++;
+                }
                 this._phase2Timer = setTimeout(processNext, 0);
             } else {
                 this._updatePairStatuses(phase1State);

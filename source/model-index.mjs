@@ -40,11 +40,22 @@ export const indexSource = async (source, kind) => {
         const metadata = new Uint8Array(wasm.memory.buffer, wasm.metadata_ptr(handle), wasm.metadata_len(handle)).slice();
         const ranges = [];
         const view = new DataView(wasm.memory.buffer);
+        const packed = wasm.packed_ranges_ptr?.(handle);
         for (let i = 0; i < wasm.ranges_len(handle); i++) {
             const start = wasm.ranges_ptr(handle) + (i * 32);
             const range = Array.from({ length: 4 }, (_, j) => Number(view.getBigUint64(start + (j * 8), true)));
             if (range.some((value) => !Number.isSafeInteger(value))) {
                 throw new Error('Tensor offset exceeds safe integer range.');
+            }
+            if (packed !== undefined) {
+                const start = packed + i * 24;
+                const [offset, length, field] = Array.from({ length: 3 }, (_, j) => Number(view.getBigUint64(start + j * 8, true)));
+                if (![offset, length].every(Number.isSafeInteger)) {
+                    throw new Error('Tensor offset exceeds safe integer range.');
+                }
+                if (field === 4 || field === 10) {
+                    range.push({ offset, length, dataType: field === 4 ? 'float32' : 'float64' });
+                }
             }
             ranges.push(range);
         }

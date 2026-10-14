@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as mock from './mock.js';
 import { Edge, TileManager, ViewportObserver } from '../source/grapher.js';
+import { TextLayoutService } from '../source/text-layout-service.js';
 import { Graph as ViewGraph } from '../source/view.js';
 import { test } from 'node:test';
 
@@ -200,4 +201,123 @@ test('model validation DOM provides a finite viewport through zoom and scrolling
     assert.equal(container.scrollLeft, 0);
     assert.equal(container.scrollTop, 1191);
     assert.ok(Object.values(ViewGraph.prototype._getViewportBounds.call(graph)).every(Number.isFinite));
+});
+
+test('switching models releases the old rendered graph instead of caching it again', async () => {
+    const { View } = await import('../source/view.js');
+    const host = new mock.Host({ serial: true });
+    const app = new View(host);
+    const oldModel = { identifier: 'old' };
+    const newModel = { identifier: 'new' };
+    const canvas = host.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const target = host.document.getElementById('target');
+    target.appendChild(canvas);
+    app.model = oldModel;
+    app._target = { _renderModel: oldModel, _renderTarget: {}, _canvasElement: canvas, unregister() {} };
+    app.model = newModel;
+    await app.render(null, null);
+    assert.deepEqual(app._renderCache, []);
+    assert.equal(target.childNodes.length, 0);
+});
+
+test('navigation within one model still caches its rendered graph', async () => {
+    const { View } = await import('../source/view.js');
+    const host = new mock.Host({ serial: true });
+    const app = new View(host);
+    const model = { identifier: 'same' };
+    const canvas = host.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    host.document.getElementById('target').appendChild(canvas);
+    const graph = { _renderModel: model, _renderTarget: {}, _canvasElement: canvas, unregister() {} };
+    app.model = model;
+    app._target = graph;
+    await app.render(null, null);
+    assert.equal(app._renderCache.length, 1);
+    assert.equal(app._renderCache[0].viewGraph, graph);
+});
+
+test('accelerated text measurement skips SVG only when font parity is explicitly disabled', () => {
+    const service = new TextLayoutService();
+    const config = { textLayoutEngine: 'pretext', textLayoutStrictParity: false };
+    service._config = () => config;
+    service._measurePretext = () => ({ width: 100, height: 12, y: -10 });
+    let measurements = 0;
+    const element = { getBBox() {
+        measurements++;
+        return { width: 10, height: 12, y: -10 };
+    } };
+    assert.equal(service.measureTextElement(element, { text: 'label' }).width, 100);
+    assert.equal(measurements, 0);
+    config.textLayoutStrictParity = true;
+    assert.equal(service.measureTextElement(element, { text: 'label' }).engine, 'pretext-fallback-delta');
+    assert.equal(measurements, 1);
+    config.textLayoutStrictParity = false;
+    service._measurePretext = () => {
+        throw new Error('Font unavailable');
+    };
+    assert.equal(service.measureTextElement(element, { text: 'label' }).engine, 'pretext-fallback');
+    assert.equal(measurements, 2);
+});
+
+test('a superseded layout failure cannot replace a newer model or retain obsolete sources', async () => {
+    const { View } = await import('../source/view.js');
+    const disposed = [];
+    const model = (name) => ({ name, _source: { dispose() {
+        disposed.push(name);
+    } } });
+    const previous = model('previous');
+    const first = model('first');
+    const latest = model('latest');
+    let rejectFirst = null;
+    const pending = new Promise((resolve, reject) => {
+        rejectFirst = reject;
+    });
+    const state = { _model: previous, _path: [],
+        async _updatePath(model) {
+            this._model = model;
+            if (model === first) {
+                await pending;
+            }
+        }
+    };
+    const firstUpdate = View.prototype._updateTarget.call(state, first, []);
+    await View.prototype._updateTarget.call(state, latest, []);
+    rejectFirst(new Error('Older layout failed'));
+    assert.equal(await firstUpdate, undefined);
+    assert.equal(state._model, latest);
+    assert.deepEqual(disposed.sort(), ['first', 'previous']);
+    assert.equal(state._pendingModels.size, 0);
+});
+
+test('a completed older render cannot install its graph over a newer render', async (context) => {
+    const { View } = await import('../source/view.js');
+    const app = new View(new mock.Host({ serial: true }));
+    const graph = { name: 'graph', nodes: [], inputs: [], outputs: [] };
+    app.model = { identifier: 'model', modules: [graph] };
+    let finishFirst = null;
+    let startFirst = null;
+    const started = new Promise((resolve) => {
+        startFirst = resolve;
+    });
+    let calls = 0;
+    const layout = context.mock.method(ViewGraph.prototype, 'layout', async () => {
+        calls++;
+        if (calls === 1) {
+            startFirst();
+            return new Promise((resolve) => {
+                finishFirst = resolve;
+            });
+        }
+        return '';
+    });
+    try {
+        const older = app.render(graph, null);
+        await started;
+        await app.render(graph, null);
+        const newestGraph = app.target;
+        finishFirst('');
+        assert.equal(await older, 'superseded');
+        assert.equal(app.target, newestGraph);
+    } finally {
+        layout.mock.restore();
+    }
 });

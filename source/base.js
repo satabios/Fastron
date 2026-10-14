@@ -669,7 +669,7 @@ base.Tensor = class {
         const itemsize = base.Tensor._dataTypes.get(tensor.type.dataType);
         const shape = tensor.type.shape && tensor.type.shape.dimensions;
         // shortcut: contiguous numeric storage only; add encoding-aware slicing for packed or sparse tensors.
-        if (!itemsize || /^(float4|float6)/.test(tensor.type.dataType) || !source.readAt || tensor.type.layout || !['<', '>'].includes(view.encoding) || !Array.isArray(shape) || shape.some((dim) => !Number.isSafeInteger(dim) || dim < 0)) {
+        if (!itemsize || /^float[46]e/.test(tensor.type.dataType) || !source.readAt || tensor.type.layout || !['<', '>'].includes(view.encoding) || !Array.isArray(shape) || shape.some((dim) => !Number.isSafeInteger(dim) || dim < 0)) {
             return null;
         }
         let total = 1;

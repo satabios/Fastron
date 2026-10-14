@@ -66,9 +66,7 @@ window.exports.require = function(id, callback) {
 
 window.exports.preload = function(callback) {
     var modules = [
-        ['view'],
-        ['json', 'xml', 'protobuf', 'hdf5', 'grapher', 'browser'],
-        ['base', 'text', 'flatbuffers', 'flexbuffers', 'zip',  'tar', 'python']
+        ['view', 'browser']
     ];
     var next = function() {
         if (modules.length === 0) {

@@ -54,6 +54,9 @@ A reusable benchmark generates a sparse 256 MB Safetensors fixture and compares 
 ```bash
 node test/benchmark-loading.mjs --latency=10 --size=256
 node test/benchmark-loading.mjs /mnt/models/model.onnx
+node test/benchmark-loading.mjs --fixture=scattered-onnx --size=64 --latency=10
+node test/benchmark-loading.mjs --fixture=large-gguf --size=64 --latency=10
+node test/benchmark-loading.mjs --fixture=contiguous-onnx --size=2
 ```
 
 The benchmark reports source bytes, read requests and elapsed time; it does not measure SVG rendering or predict SMB/NFS throughput. Graph/layout regression checks are separate: `node test/dagre-layout.mjs`.
@@ -65,3 +68,9 @@ node test/benchmark-rendering.mjs 300
 ```
 
 Culling uses conservative curve hulls and label bounds, preserving existing SVG paths. Overview queries scan occupied tiles when this is cheaper than visiting the full grid. Format decoders load on demand; concurrent opens share pending metadata requests. Large deferred graphs retain font readiness checks and skip the two-frame DOM measurement wait.
+
+Scattered ONNX payloads use small probes after bulk skips and grow their read windows for sequential metadata. This reduces payload overread; first-open request latency still depends on how the file interleaves metadata and weights. GGUF and Safetensors headers are retained during their first scan. Single packed ONNX float32/float64 fields also support bounded previews; unsupported or mixed encodings keep full decode and export.
+
+Force layout uses the existing layout worker and the same numerical kernel as serial fallback. Serial fallback and comparator candidate scans yield to interaction without changing graph connections or comparison scores. Detached SVG elements have a bounded cache; selected/focused elements remain pinned, and export materializes the complete graph. Render/open generations prevent obsolete work from replacing a newer model or its window title.
+
+Distribution builds validate slim metadata and separated examples against the development originals before omitting duplicate originals. Keep development metadata in `source/`; regenerate with `npm run slim-metadata` after metadata edits. Browser startup loads entry modules first, and operator examples are fetched when documentation opens.

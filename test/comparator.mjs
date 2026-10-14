@@ -108,6 +108,81 @@ test('large ambiguous groups stay unmatched without a dense assignment matrix', 
     assert.equal((await compare(nodes, structuredClone(nodes))).pairs.length, 0);
 });
 
+test('chunked matching preserves mutual best pairs and ambiguous ties', async (t) => {
+    let clock = 0;
+    t.mock.method(performance, 'now', () => ++clock);
+    const controller = Object.create(Controller.prototype);
+    const nodes = Array.from({ length: 64 }, (_, i) => node('', 'MatMul', [Math.max(i, 1)]));
+    const state = controller._compareNodesPhase1({ nodes }, { nodes: structuredClone(nodes).reverse() });
+    controller._extractSignature = () => {
+        throw new Error('Signatures must be reused across chunks');
+    };
+    const matchGroup = controller._matchGroupInPlace([...nodes.keys()], [...nodes.keys()], 80,
+        state.nodesA, state.nodesB, state.ctxA, state.ctxB, state.matchedA, state.matchedB, state.result);
+    assert.equal(matchGroup.next().done, false);
+    assert.equal(state.result.pairs.length, 0);
+    while (!matchGroup.next().done) {
+        // Drain the same scan synchronously as an equivalence check.
+    }
+    const expected = Array.from({ length: 62 }, (_, i) => [i + 2, 61 - i]);
+    assert.deepEqual(state.result.pairs.map((p) => [p.indexA, p.indexB]), expected);
+    const result = await compare(nodes, structuredClone(nodes).reverse());
+    assert.deepEqual(result.pairs.map((p) => [p.indexA, p.indexB]), expected);
+    assert.deepEqual(result.onlyInA, [0, 1]);
+    assert.deepEqual(result.onlyInB, [62, 63]);
+});
+
+test('a large ambiguous operator group yields to interaction before completion', async () => {
+    const controller = Object.create(Controller.prototype);
+    const nodes = Array.from({ length: 1200 }, () => node('', 'MatMul'));
+    const state = controller._compareNodesPhase1({ nodes }, { nodes: structuredClone(nodes) });
+    let heartbeats = 0;
+    const timer = setInterval(() => {
+        heartbeats++;
+    }, 0);
+    try {
+        const result = await new Promise((resolve) => {
+            controller._compareNodesPhase2(state, resolve);
+        });
+        assert.equal(result.pairs.length, 0);
+        assert.equal(result.onlyInA.length, nodes.length);
+        assert.ok(heartbeats > 2, 'interaction timers should run between candidate chunks');
+    } finally {
+        clearInterval(timer);
+    }
+});
+
+test('reset cancels a partially scanned group without publishing stale results', async () => {
+    const controller = new Controller(new Host({ serial: true }));
+    const nodes = Array.from({ length: 1200 }, () => node('', 'MatMul'));
+    const state = controller._compareNodesPhase1({ nodes }, { nodes: structuredClone(nodes) });
+    const calculate = controller._calculateSimilarity;
+    let comparisons = 0;
+    controller._calculateSimilarity = (...args) => {
+        comparisons++;
+        return calculate.call(controller, ...args);
+    };
+    let completed = false;
+    controller._compareNodesPhase2(state, () => {
+        completed = true;
+    });
+    await new Promise((resolve) => {
+        setTimeout(() => {
+            controller._reset();
+            resolve();
+        }, 0);
+    });
+    assert.ok(comparisons > 0 && comparisons < nodes.length ** 2);
+    const stoppedAt = comparisons;
+    await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+    });
+    assert.equal(comparisons, stoppedAt);
+    assert.equal(completed, false);
+    assert.equal(state.result.pending, true);
+    assert.equal(controller._phase2Timer, null);
+});
+
 test('tensor comparisons do not access remote payload getters', async () => {
     const a = node('same');
     const b = structuredClone(a);

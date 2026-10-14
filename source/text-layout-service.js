@@ -288,8 +288,8 @@ text.TextLayoutService = class {
         const whiteSpace = options.whiteSpace === 'pre-wrap' ? 'pre-wrap' : 'normal';
         const lineHeight = text._normalizeLineHeight(options.lineHeight, font);
 
-        const legacy = this._measureLegacy(element, textContent, font);
         const mode = this.mode();
+        let legacy = mode === 'pretext' && !this.strictParity() ? null : this._measureLegacy(element, textContent, font);
 
         if (mode === 'legacy') {
             return {
@@ -306,6 +306,7 @@ text.TextLayoutService = class {
         try {
             pretextMetrics = this._measurePretext(textContent, font, lineHeight, whiteSpace);
         } catch {
+            legacy = legacy || this._measureLegacy(element, textContent, font);
             if (mode === 'pretext') {
                 return {
                     width: legacy.width,

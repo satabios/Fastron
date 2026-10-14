@@ -490,22 +490,45 @@ desktop.Host = class {
         const stat = fs.existsSync(path) ? fs.statSync(path) : null;
         const size = stat && stat.isFile() ? stat.size : 0;
         if (path && this._view.accept(path, size)) {
+            const request = {};
+            this._openRequest = request;
             this._view.show('welcome spinner');
             let context = null;
             try {
                 context = await this._context(path);
                 this._telemetry.set('session_engaged', 1);
             } catch (error) {
+                if (request !== this._openRequest) {
+                    return;
+                }
                 await this._view.error(error, 'Error while reading file.');
+                if (request !== this._openRequest) {
+                    return;
+                }
                 this.update({ path: null });
                 return;
             }
             try {
+                if (request !== this._openRequest) {
+                    if (context.source !== this._view.model?._source) {
+                        context.source?.dispose();
+                    }
+                    return;
+                }
                 const attachment = await this._view.attach(context);
+                if (request !== this._openRequest) {
+                    if (context.source !== this._view.model?._source) {
+                        context.source?.dispose();
+                    }
+                    return;
+                }
                 if (attachment) {
                     this._view.show(null);
                 } else {
                     const model = await this._view.open(context);
+                    if (request !== this._openRequest || model === undefined) {
+                        return;
+                    }
                     this._view.show(null);
                     const options = { ...this._view.options };
                     if (model) {
@@ -520,12 +543,19 @@ desktop.Host = class {
                     this.update(options);
                 }
             } catch (error) {
-                context.source?.dispose();
+                if (context.source !== this._view.model?._source) {
+                    context.source?.dispose();
+                }
+                if (request !== this._openRequest) {
+                    return;
+                }
                 const options = { ...this._view.options };
                 if (error) {
                     await this._view.error(error);
                 }
-                this.update(options);
+                if (request === this._openRequest) {
+                    this.update(options);
+                }
             } finally {
                 if (context && context.stream && typeof context.stream.dispose === 'function') {
                     context.stream.dispose();

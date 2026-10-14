@@ -5,6 +5,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as url from 'url';
+import { validateMetadataAssets } from './tools/metadata-assets.mjs';
 
 const args = process.argv.slice(2);
 
@@ -271,7 +272,8 @@ const build = async (target) => {
             const source_dir = dirname('source');
             const dist_dir = dirname('dist', 'web');
             const extensions = new Set(['html', 'css', 'js', 'mjs', 'wasm', 'json', 'ico', 'png']);
-            await copy(source_dir, dist_dir, (file) => extensions.has(file.split('.').pop()));
+            const originals = await validateMetadataAssets(source_dir);
+            await copy(source_dir, dist_dir, (file) => extensions.has(file.split('.').pop()) && !originals.has(file));
             await rm('dist', 'web', 'app.js');
             await rm('dist', 'web', 'node.js');
             await rm('dist', 'web', 'desktop.mjs');

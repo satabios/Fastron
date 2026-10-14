@@ -63,6 +63,96 @@ test('Rust indexing transfers topology and only a bounded ONNX preview', async (
     }
 });
 
+for (const [dataType, storageField, width, name] of [[1, 4, 4, 'float32'], [11, 10, 8, 'float64']]) {
+    test(`packed ONNX ${name} preview stays bounded and NumPy export retains every value`, async () => {
+        const count = 1048576;
+        const weights = Buffer.alloc(count * width);
+        const write = width === 4 ? 'writeFloatLE' : 'writeDoubleLE';
+        for (let i = 0; i < 1000; i++) {
+            weights[write](i / 4 - 128, i * width);
+        }
+        weights[write](7.25, weights.length - width);
+        const tensor = Buffer.concat([field(1, varint(count)), Buffer.from([16, dataType]), field(8, 'weight'), field(storageField, weights)]);
+        const file = path.join(folder, `packed-${name}.onnx`);
+        fs.writeFileSync(file, model(tensor));
+        const host = new mock.Host({});
+        const context = await openSource(host, { path: file });
+        try {
+            assert.ok(context.stream.length < 1000);
+            const graph = (await new view.ModelFactoryService(host).open(context)).modules[0];
+            const initializer = graph.nodes[0].inputs.flatMap((arg) => arg.value).find((value) => value.initializer).initializer;
+            const before = await context.source.request('stats');
+            const preview = await initializer.preview();
+            assert.ok(preview);
+            assert.equal(preview.count, 1000);
+            assert.equal(preview.total, count);
+            assert.deepEqual(new base.Tensor(preview.tensor, { skipWeights: false }).value, Array.from({ length: 1000 }, (_, i) => i / 4 - 128));
+            assert.equal((await context.source.request('stats')).readBytes - before.readBytes, 1000 * width);
+            assert.equal(initializer.peek(), false);
+            let exported = null;
+            host.save = async () => `${name}.npy`;
+            host.export = async (file, blob) => {
+                exported = Buffer.from(await blob.arrayBuffer());
+            };
+            const sidebar = new view.TensorSidebar({ host, model: { attachment: { metadata: { tensor: () => [] } } } }, { value: [{ initializer }] });
+            let entry = null;
+            sidebar.addEntry = (name, item) => {
+                if (name === 'value') {
+                    entry = item;
+                }
+            };
+            sidebar.render();
+            entry._preview = preview;
+            entry.error = (error) => {
+                throw error;
+            };
+            await entry.export();
+            assert.equal(initializer.peek(), true);
+            assert.equal(initializer.values.length, count);
+            assert.deepEqual(exported.subarray(0, 6), Buffer.from([0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59]));
+            const headerSize = exported[6] === 1 ? exported.readUInt16LE(8) + 10 : exported.readUInt32LE(8) + 12;
+            assert.deepEqual(exported.subarray(headerSize), weights);
+        } finally {
+            context.source.dispose();
+        }
+    });
+}
+
+test('unsupported ONNX typed storage does not fetch a speculative preview', async () => {
+    const floats = field(4, Buffer.alloc(8));
+    const variants = [
+        [6, field(5, Buffer.from([1, 2]))],
+        [8, field(6, 'value')],
+        [1, Buffer.concat([Buffer.from([4 * 8 + 5]), Buffer.alloc(4)])],
+        [1, Buffer.concat([floats, floats])],
+        [1, Buffer.concat([field(9, Buffer.alloc(8)), floats])],
+        [1, Buffer.concat([field(3, Buffer.from([8, 0, 16, 2])), floats])],
+        [1, field(4, Buffer.alloc(3))],
+        [11, floats]
+    ];
+    const host = new mock.Host({});
+    for (const [i, [dataType, storage]] of variants.entries()) {
+        const file = path.join(folder, `unsupported-${i}.onnx`);
+        fs.writeFileSync(file, model(Buffer.concat([Buffer.from([8, 2, 16, dataType]), field(8, 'weight'), storage])));
+        // eslint-disable-next-line no-await-in-loop
+        const context = await openSource(host, { path: file });
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const graph = (await new view.ModelFactoryService(host).open(context)).modules[0];
+            const initializer = graph.nodes[0].inputs.flatMap((arg) => arg.value).find((value) => value.initializer).initializer;
+            // eslint-disable-next-line no-await-in-loop
+            const before = await context.source.request('stats');
+            // eslint-disable-next-line no-await-in-loop
+            assert.equal(await initializer.preview(), null, `Unsupported storage variant ${i}`);
+            // eslint-disable-next-line no-await-in-loop
+            assert.equal((await context.source.request('stats')).readBytes, before.readBytes);
+            assert.equal(initializer.peek(), false);
+        } finally {
+            context.source.dispose();
+        }
+    }
+});
+
 test('Safetensors headers stay small and preview does not materialize the tensor', async () => {
     const header = Buffer.from(JSON.stringify({ weight: { dtype: 'F32', shape: [2097152], data_offsets: [0, 8388608] } }));
     const prefix = Buffer.alloc(8);
@@ -174,6 +264,8 @@ test('previews reject packed/sparse/strided storage and do not read weights', as
     assert.equal(await base.Tensor.preview(tensor, source), null);
     delete tensor.type.layout;
     tensor.type.dataType = 'float4e2m1fn';
+    assert.equal(await base.Tensor.preview(tensor, source), null);
+    tensor.type.dataType = 'float6e3m2fn';
     assert.equal(await base.Tensor.preview(tensor, source), null);
     tensor.type.dataType = 'float32';
     delete tensor.stride;

@@ -1,7 +1,5 @@
 
 import * as base from './base.js';
-import { CacheManager } from './cache-manager.js';
-import { StreamReader } from './stream-reader.js';
 import { openSource } from './model-source.mjs';
 
 const browser = {};
@@ -13,16 +11,6 @@ browser.Host = class {
         this._navigator = window.navigator;
         this._document = window.document;
         this._telemetry = new base.Telemetry(this._window);
-
-        // Initialize cache manager
-        const cacheSize = this._window.NETRON_CONFIG && this._window.NETRON_CONFIG.cacheMaxMemoryMB || 500;
-        this._cacheManager = new CacheManager(cacheSize);
-        if (this._window.NETRON_CONFIG && this._window.NETRON_CONFIG.cacheEnabled === false) {
-            this._cacheManager.setEnabled(false);
-        }
-
-        // Initialize stream reader
-        this._streamReader = new StreamReader();
 
         this._window.eval = () => {
             throw new Error('window.eval() not supported.');
@@ -288,7 +276,10 @@ browser.Host = class {
             this._requests = this._requests || new Map();
             const key = `${url}:${encoding}`;
             if (!this._requests.has(key)) {
-                const promise = this._request(url, null, encoding);
+                const promise = this._request(url, null, encoding).catch((error) => {
+                    this._requests.delete(key);
+                    throw error;
+                });
                 this._requests.set(key, promise);
             }
             return this._requests.get(key);
@@ -436,11 +427,15 @@ browser.Host = class {
     }
 
     async _openModel(url, identifier, name) {
+        const request = {};
+        this._openRequest = request;
         this._view.show('welcome spinner');
         let context = null;
         try {
             const progress = (value) => {
-                this._view.progress(value);
+                if (request === this._openRequest) {
+                    this._view.progress(value);
+                }
             };
             if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)(?:[?#]|$)/i.test(identifier || url)) {
                 try {
@@ -450,7 +445,7 @@ browser.Host = class {
                         new TextDecoder().decode(context.stream.peek()).startsWith('version https://git-lfs.github.com/spec/v1')) {
                         context.source.dispose();
                     } else {
-                        return await this._openContext(context);
+                        return await this._openContext(context, request);
                     }
                 } catch (error) {
                     // shortcut: servers without versioned ranges use the existing full download.
@@ -471,14 +466,23 @@ browser.Host = class {
             context = new browser.Context(this, url, identifier, name, stream);
             this._telemetry.set('session_engaged', 1);
         } catch (error) {
+            if (request !== this._openRequest) {
+                context?.source?.dispose();
+                return undefined;
+            }
             await this._view.error(error, 'Model load request failed.');
+            if (request !== this._openRequest) {
+                return undefined;
+            }
             this._view.show('welcome');
             return null;
         }
-        return await this._openContext(context);
+        return await this._openContext(context, request);
     }
 
     async _open(file, files) {
+        const request = {};
+        this._openRequest = request;
         this._view.show('welcome spinner');
         let context = null;
         try {
@@ -488,13 +492,18 @@ browser.Host = class {
                 context = new browser.BrowserFileContext(this, file, files);
                 await context.open();
             }
-            await this._openContext(context);
+            await this._openContext(context, request);
         } catch (error) {
-            await this._view.error(error);
+            context?.source?.dispose();
+            if (request === this._openRequest) {
+                await this._view.error(error);
+            }
         }
     }
 
     async _openGist(gist) {
+        const request = {};
+        this._openRequest = request;
         this._view.show('welcome spinner');
         const url = `https://api.github.com/gists/${gist}`;
         try {
@@ -518,22 +527,45 @@ browser.Host = class {
             const buffer = encoder.encode(file.content);
             const stream = new base.BinaryStream(buffer);
             const context = new browser.Context(this, '', identifier, null, stream);
-            await this._openContext(context);
+            await this._openContext(context, request);
         } catch (error) {
-            await this._view.error(error, 'Error while loading Gist.');
-            this._view.show('welcome');
+            if (request === this._openRequest) {
+                await this._view.error(error, 'Error while loading Gist.');
+                if (request === this._openRequest) {
+                    this._view.show('welcome');
+                }
+            }
         }
     }
 
-    async _openContext(context) {
+    async _openContext(context, request = null) {
+        if (request === null) {
+            request = {};
+            this._openRequest = request;
+        }
+        if (request !== this._openRequest) {
+            if (context.source !== this._view.model?._source) {
+                context.source?.dispose();
+            }
+            return undefined;
+        }
         this._telemetry.set('session_engaged', 1);
         try {
             const attachment = await this._view.attach(context);
+            if (request !== this._openRequest) {
+                if (context.source !== this._view.model?._source) {
+                    context.source?.dispose();
+                }
+                return undefined;
+            }
             if (attachment) {
                 this._view.show(null);
                 return 'context-open-attachment';
             }
             const model = await this._view.open(context);
+            if (request !== this._openRequest || model === undefined) {
+                return undefined;
+            }
             if (model) {
                 this._view.show(null);
                 this.document.title = context.name || context.identifier;
@@ -543,7 +575,12 @@ browser.Host = class {
             this.document.title = '';
             return 'context-open-failed';
         } catch (error) {
-            context.source?.dispose();
+            if (context.source !== this._view.model?._source) {
+                context.source?.dispose();
+            }
+            if (request !== this._openRequest) {
+                return undefined;
+            }
             await this._view.error(error, error.name);
             return 'context-open-error';
         }

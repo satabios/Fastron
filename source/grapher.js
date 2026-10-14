@@ -1,4 +1,5 @@
 
+import * as force from './force-layout.js';
 import { getTextLayoutService } from './text-layout-service.js';
 
 const grapher = {};
@@ -33,6 +34,9 @@ grapher.Graph = class {
         this._estimatedNodeWidth = 150;
         this._estimatedNodeHeight = 65;
         this._detachInvisible = false;
+        this._detachedElements = new Map();
+        this._detachedElementLimit = 256;
+        this._pinnedElements = new Map();
         this._visibilityVersion = 0;
         this._mainThreadLayoutThreshold = 5000;
     }
@@ -244,6 +248,8 @@ grapher.Graph = class {
     }
 
     _showNode(node) {
+        this._detachedElements.delete(node);
+        this._pinnedElements.delete(node);
         if (!node.element) {
             return;
         }
@@ -261,16 +267,24 @@ grapher.Graph = class {
         if (!node.element) {
             return;
         }
+        if (this._isPinned(node)) {
+            this._pinnedElements.set(node, false);
+            return;
+        }
+        this._pinnedElements.delete(node);
         if (this._detachInvisible) {
             if (node.element.parentNode) {
                 node.element.parentNode.removeChild(node.element);
             }
+            this._rememberDetached(node);
         } else {
             node.element.style.display = 'none';
         }
     }
 
     _showEdge(label) {
+        this._detachedElements.delete(label);
+        this._pinnedElements.delete(label);
         if (this._detachInvisible) {
             const pathParent = label._pathParentElement || this._edgePathGroupElement;
             const hitTestParent = label._hitTestParentElement || this._edgePathHitTestGroupElement;
@@ -298,6 +312,11 @@ grapher.Graph = class {
     }
 
     _hideEdge(label) {
+        if (this._isPinned(label)) {
+            this._pinnedElements.set(label, true);
+            return;
+        }
+        this._pinnedElements.delete(label);
         if (this._detachInvisible) {
             if (label.element && label.element.parentNode) {
                 label.element.parentNode.removeChild(label.element);
@@ -308,6 +327,7 @@ grapher.Graph = class {
             if (label.labelElement && label.labelElement.parentNode) {
                 label.labelElement.parentNode.removeChild(label.labelElement);
             }
+            this._rememberDetached(label);
         } else {
             if (label.element) {
                 label.element.style.display = 'none';
@@ -318,6 +338,43 @@ grapher.Graph = class {
             if (label.labelElement) {
                 label.labelElement.style.display = 'none';
             }
+        }
+    }
+
+    _isPinned(label) {
+        if (this._focused === label) {
+            return true;
+        }
+        const active = this._document && this._document.activeElement;
+        return [label.element, label.hitTest, label.labelElement].some((element) => element &&
+            (element.classList.contains('select') || element.classList.contains('node-diff-selected') ||
+                element.getElementsByClassName('select').length > 0 ||
+                element.getElementsByClassName('node-diff-selected').length > 0 ||
+                (active && element.contains(active))));
+    }
+
+    _rememberDetached(label) {
+        if (!this._viewportCulling || !label.element ||
+            !(label instanceof grapher.Node || label instanceof grapher.Edge)) {
+            return;
+        }
+        this._detachedElements.delete(label);
+        this._detachedElements.set(label, true);
+        for (const candidate of this._detachedElements.keys()) {
+            if (this._detachedElements.size <= this._detachedElementLimit) {
+                break;
+            }
+            if (this._isPinned(candidate) || [candidate.element, candidate.hitTest, candidate.labelElement].some((element) => element && element.parentNode)) {
+                continue;
+            }
+            this._detachedElements.delete(candidate);
+            if (candidate instanceof grapher.Edge) {
+                this._focusable.delete(candidate.hitTest);
+                this._renderedEdges.delete(`${candidate.v}:${candidate.w}`);
+            } else {
+                this._renderedNodes.delete(candidate.name);
+            }
+            candidate.release();
         }
     }
 
@@ -508,7 +565,7 @@ grapher.Graph = class {
     }
 
     updateVisibleElements(document, delta) {
-        if (!this._viewportCulling || !this._visibleNodes) {
+        if (!this._viewportCulling || !this._visibleNodes || this._materializing) {
             return;
         }
 
@@ -518,6 +575,13 @@ grapher.Graph = class {
         }
 
         this._visibilityVersion += 1;
+        for (const [label, edge] of this._pinnedElements) {
+            if (edge) {
+                this._hideEdge(label);
+            } else {
+                this._hideNode(label);
+            }
+        }
 
         // Fast path: use delta sets to only process nodes/edges that changed visibility.
         // This reduces per-scroll work from O(N) to O(delta).
@@ -677,43 +741,48 @@ grapher.Graph = class {
         // Export and accessibility consumers need a complete SVG even when the
         // interactive view only attaches elements intersecting the viewport.
         this._visibilityVersion += 1;
+        this._materializing = (this._materializing || 0) + 1;
         let count = 0;
+        try {
         /* eslint-disable no-await-in-loop */
-        for (const nodeId of this.nodes.keys()) {
-            const entry = this.node(nodeId);
-            const node = this._ensureNodeElement(nodeId, document) || (entry && entry.label);
-            if (!node || !node.element) {
-                continue;
-            }
-            this._showNode(node);
-            if (this._isLeafNode(nodeId)) {
-                if (!node._geometryLocked) {
-                    node.measure();
+            for (const nodeId of this.nodes.keys()) {
+                const entry = this.node(nodeId);
+                const node = this._ensureNodeElement(nodeId, document) || (entry && entry.label);
+                if (!node || !node.element) {
+                    continue;
                 }
-                node.layout();
-                node.update();
-                node._needsUpdate = false;
+                this._showNode(node);
+                if (this._isLeafNode(nodeId)) {
+                    if (!node._geometryLocked) {
+                        node.measure();
+                    }
+                    node.layout();
+                    node.update();
+                    node._needsUpdate = false;
+                }
+                if (++count % 250 === 0) {
+                    await new Promise((resolve) => {
+                        setTimeout(resolve, 0);
+                    });
+                }
             }
-            if (++count % 250 === 0) {
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 0);
-                });
+            for (const edge of this.edges.values()) {
+                const label = this._ensureEdgeElement(edge, document);
+                this._showEdge(label);
+                if (label.element) {
+                    label.update();
+                    label._needsUpdate = false;
+                }
+                if (++count % 250 === 0) {
+                    await new Promise((resolve) => {
+                        setTimeout(resolve, 0);
+                    });
+                }
             }
-        }
-        for (const edge of this.edges.values()) {
-            const label = this._ensureEdgeElement(edge, document);
-            this._showEdge(label);
-            if (label.element) {
-                label.update();
-                label._needsUpdate = false;
-            }
-            if (++count % 250 === 0) {
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 0);
-                });
-            }
-        }
         /* eslint-enable no-await-in-loop */
+        } finally {
+            this._materializing--;
+        }
     }
 
     populateTiles() {
@@ -751,6 +820,9 @@ grapher.Graph = class {
     }
 
     build(document, originElement) {
+        this._document = document;
+        this._detachedElements.clear();
+        this._pinnedElements.clear();
 
         const origin = originElement || document.getElementById('origin');
 
@@ -1002,7 +1074,24 @@ grapher.Graph = class {
             layout.ranksep = 40;
         }
         if (useForce) {
-            this._forceLayout(nodes, edges, rotate, layout);
+            if (worker) {
+                try {
+                    const timeoutMs = Math.max(20000, Math.min(60000, (nodeCount * 10) + (edgeCount * 2)));
+                    const message = await worker.request({ type: 'force.layout', nodes, edges }, timeoutMs, 'Force graph layout in progress...');
+                    if (message.type === 'cancel' || message.type === 'terminate') {
+                        return message.type;
+                    }
+                    if (message.type === 'error') {
+                        throw new Error(message.message);
+                    }
+                    nodes = message.nodes;
+                    edges = message.edges;
+                } catch {
+                    await force.layoutAsync(nodes, edges);
+                }
+            } else {
+                await force.layoutAsync(nodes, edges);
+            }
         } else if (useElk && worker) {
             // Opt-4: ELK layered layout via worker. Falls back to dagre on error.
             try {
@@ -1625,288 +1714,6 @@ grapher.Graph = class {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Force-directed layout with AABB collision detection.
-    //
-    // Activated by setting  graph.options.layout = 'force'  before calling
-    // graph.layout().  Produces a clean, non-overlapping arrangement for any
-    // graph topology using a spring-repulsion model:
-    //
-    //   • Coulomb repulsion  — every pair of nodes pushes apart (O(n²))
-    //   • Hooke spring       — edges pull their endpoints toward an ideal length
-    //   • Centroid gravity   — weak pull toward the centre of mass prevents drift
-    //   • AABB collision     — per-step bounding-box separation with padding
-    //   • Final clean pass   — guaranteed no-overlap after the simulation ends
-    //
-    // Node dimensions come from the already-measured node.width / node.height
-    // values, so the layout is always based on the true rendered sizes.
-    // -------------------------------------------------------------------------
-    _forceLayout(nodes, edges) {
-        const NODE_PADDING  = 20;   // minimum gap between node bounding boxes (px)
-        const ITERATIONS    = 400;  // simulation steps
-        const INITIAL_TEMP  = 200;  // initial max displacement per step (px)
-        const COOLING       = 0.972; // temperature multiplier per iteration
-        const REPULSION     = 10000; // Coulomb constant
-        const SPRING_K      = 0.06; // Hooke spring stiffness
-        const GRAVITY       = 0.03; // centroid gravity strength
-        const COL_PASSES    = 4;    // AABB resolution passes per step
-
-        // Build a fast lookup map.
-        const nodeMap = new Map();
-        for (const node of nodes) {
-            nodeMap.set(node.v, node);
-        }
-
-        // Initialise positions in a regular grid to avoid a degenerate start
-        // state where all nodes are at the origin (zero repulsion gradient).
-        const cols  = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-        const avgW  = nodes.length > 0
-            ? nodes.reduce((s, n) => s + (n.width  || 100), 0) / nodes.length : 100;
-        const avgH  = nodes.length > 0
-            ? nodes.reduce((s, n) => s + (n.height ||  40), 0) / nodes.length :  40;
-        const cellW = avgW + NODE_PADDING * 3;
-        const cellH = avgH + NODE_PADDING * 3;
-        nodes.forEach((node, i) => {
-            node.x  = (i % cols) * cellW + cellW / 2;
-            node.y  = Math.floor(i / cols) * cellH + cellH / 2;
-            node.fx = 0;
-            node.fy = 0;
-        });
-
-        // Pre-compute ideal edge rest lengths from actual node dimensions so
-        // that connected nodes are pulled to a distance that leaves clear space
-        // between their bounding boxes.
-        const edgeRestLen = new Map();
-        for (const edge of edges) {
-            const a = nodeMap.get(edge.v);
-            const b = nodeMap.get(edge.w);
-            if (!a || !b) {
-                continue;
-            }
-            const aw = (a.width  || 100) / 2;
-            const bw = (b.width  || 100) / 2;
-            const ah = (a.height ||  40) / 2;
-            const bh = (b.height ||  40) / 2;
-            edgeRestLen.set(`${edge.v}:${edge.w}`,
-                Math.sqrt((aw + bw) ** 2 + (ah + bh) ** 2) + NODE_PADDING * 4);
-        }
-
-        let temp = INITIAL_TEMP;
-
-        for (let iter = 0; iter < ITERATIONS; iter++) {
-
-            // --- Reset per-step forces ---
-            for (const node of nodes) {
-                node.fx = 0; node.fy = 0;
-            }
-
-            // --- Coulomb repulsion between every pair of nodes ---
-            for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                    const a  = nodes[i];
-                    const b  = nodes[j];
-                    const dx = b.x - a.x;
-                    const dy = b.y - a.y;
-                    const d2 = dx * dx + dy * dy || 1;
-                    const d  = Math.sqrt(d2);
-                    const f  = REPULSION / d2;
-                    const fx = (dx / d) * f;
-                    const fy = (dy / d) * f;
-                    a.fx -= fx;  a.fy -= fy;
-                    b.fx += fx;  b.fy += fy;
-                }
-            }
-
-            // --- Hooke spring attraction along edges ---
-            for (const edge of edges) {
-                const a = nodeMap.get(edge.v);
-                const b = nodeMap.get(edge.w);
-                if (!a || !b) {
-                    continue;
-                }
-                const dx   = b.x - a.x;
-                const dy   = b.y - a.y;
-                const d    = Math.sqrt(dx * dx + dy * dy) || 1;
-                const rest = edgeRestLen.get(`${edge.v}:${edge.w}`) || NODE_PADDING * 6;
-                const f    = SPRING_K * (d - rest);
-                const fx   = (dx / d) * f;
-                const fy   = (dy / d) * f;
-                a.fx += fx;  a.fy += fy;
-                b.fx -= fx;  b.fy -= fy;
-            }
-
-            // --- Weak gravity toward centroid to prevent unbounded drift ---
-            let cx = 0;
-            let cy = 0;
-            for (const node of nodes) {
-                cx += node.x; cy += node.y;
-            }
-            cx /= nodes.length || 1;
-            cy /= nodes.length || 1;
-            for (const node of nodes) {
-                node.fx -= GRAVITY * (node.x - cx);
-                node.fy -= GRAVITY * (node.y - cy);
-            }
-
-            // --- Apply forces, clamped to current temperature ---
-            for (const node of nodes) {
-                const mag  = Math.sqrt(node.fx * node.fx + node.fy * node.fy) || 1;
-                const step = Math.min(mag, temp);
-                node.x += (node.fx / mag) * step;
-                node.y += (node.fy / mag) * step;
-            }
-
-            // --- AABB collision resolution (multiple passes per step) ---
-            for (let pass = 0; pass < COL_PASSES; pass++) {
-                for (let i = 0; i < nodes.length; i++) {
-                    for (let j = i + 1; j < nodes.length; j++) {
-                        const a  = nodes[i];
-                        const b  = nodes[j];
-                        const aw = (a.width  || 100) / 2 + NODE_PADDING / 2;
-                        const ah = (a.height ||  40) / 2 + NODE_PADDING / 2;
-                        const bw = (b.width  || 100) / 2 + NODE_PADDING / 2;
-                        const bh = (b.height ||  40) / 2 + NODE_PADDING / 2;
-                        const dx = b.x - a.x;
-                        const dy = b.y - a.y;
-                        const ox = (aw + bw) - Math.abs(dx);
-                        const oy = (ah + bh) - Math.abs(dy);
-                        if (ox > 0 && oy > 0) {
-                            if (ox < oy) {
-                                const push = ox / 2 + 0.5;
-                                if (dx >= 0) {
-                                    a.x -= push; b.x += push;
-                                } else         {
-                                    a.x += push; b.x -= push;
-                                }
-                            } else {
-                                const push = oy / 2 + 0.5;
-                                if (dy >= 0) {
-                                    a.y -= push; b.y += push;
-                                } else         {
-                                    a.y += push; b.y -= push;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            temp *= COOLING;
-        }
-
-        // --- Final guaranteed no-overlap pass ---
-        // Runs iteratively until the layout is clean or the safety limit is hit.
-        let dirty = true;
-        for (let guard = 0; dirty && guard < 100; guard++) {
-            dirty = false;
-            for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                    const a  = nodes[i];
-                    const b  = nodes[j];
-                    const aw = (a.width  || 100) / 2 + NODE_PADDING;
-                    const ah = (a.height ||  40) / 2 + NODE_PADDING;
-                    const bw = (b.width  || 100) / 2 + NODE_PADDING;
-                    const bh = (b.height ||  40) / 2 + NODE_PADDING;
-                    const dx = b.x - a.x;
-                    const dy = b.y - a.y;
-                    const ox = (aw + bw) - Math.abs(dx);
-                    const oy = (ah + bh) - Math.abs(dy);
-                    if (ox > 0 && oy > 0) {
-                        dirty = true;
-                        if (ox < oy) {
-                            const push = ox / 2 + 1;
-                            if (dx >= 0) {
-                                a.x -= push; b.x += push;
-                            } else         {
-                                a.x += push; b.x -= push;
-                            }
-                        } else {
-                            const push = oy / 2 + 1;
-                            if (dy >= 0) {
-                                a.y -= push; b.y += push;
-                            } else         {
-                                a.y += push; b.y -= push;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- Translate so the layout starts at a consistent margin ---
-        const margin = NODE_PADDING * 2;
-        const minX = nodes.reduce((m, n) => Math.min(m, n.x - (n.width  || 100) / 2), Infinity);
-        const minY = nodes.reduce((m, n) => Math.min(m, n.y - (n.height ||  40) / 2), Infinity);
-        for (const node of nodes) {
-            node.x += margin - minX;
-            node.y += margin - minY;
-        }
-
-        // --- Build per-node edge index for parallel edge fan-out ---
-        const forceOutEdges = new Map();
-        for (const edge of edges) {
-            if (!nodeMap.has(edge.v) || !nodeMap.has(edge.w)) {
-                continue;
-            }
-            if (!forceOutEdges.has(edge.v)) {
-                forceOutEdges.set(edge.v, []);
-            }
-            forceOutEdges.get(edge.v).push(edge);
-        }
-        const forcePairIndex = new Map();
-        for (const edgeList of forceOutEdges.values()) {
-            const byTarget = new Map();
-            for (const edge of edgeList) {
-                if (!byTarget.has(edge.w)) {
-                    byTarget.set(edge.w, []);
-                }
-                byTarget.get(edge.w).push(edge);
-            }
-            for (const [, group] of byTarget) {
-                for (let i = 0; i < group.length; i++) {
-                    forcePairIndex.set(`${group[i].v}\x00${group[i].w}`, { index: i, total: group.length });
-                }
-            }
-        }
-
-        // --- Generate edge waypoints ---
-        // Clean 3-point route: source → midpoint → target.
-        // Parallel edges get a subtle lateral offset (3px) to prevent overlap.
-        for (const edge of edges) {
-            const src = nodeMap.get(edge.v);
-            const tgt = nodeMap.get(edge.w);
-            if (!src || !tgt) {
-                edge.points = []; continue;
-            }
-            const mx = (src.x + tgt.x) / 2;
-            const my = (src.y + tgt.y) / 2;
-            const pairInfo = forcePairIndex.get(`${edge.v}\x00${edge.w}`);
-            if (pairInfo && pairInfo.total > 1) {
-                const dx = tgt.x - src.x;
-                const dy = tgt.y - src.y;
-                const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                const px = -dy / len;
-                const py = dx / len;
-                const off = (pairInfo.index - (pairInfo.total - 1) / 2) * 3;
-                edge.points = [
-                    { x: src.x, y: src.y },
-                    { x: mx + px * off, y: my + py * off },
-                    { x: tgt.x, y: tgt.y }
-                ];
-            } else {
-                edge.points = [
-                    { x: src.x, y: src.y },
-                    { x: mx, y: my },
-                    { x: tgt.x, y: tgt.y }
-                ];
-            }
-            if (edge.width || edge.height) {
-                edge.x = edge.points[1].x;
-                edge.y = edge.points[1].y;
-            }
-        }
-    }
-
     update() {
         const restrictToVisible = this._viewportCulling && this._skipHiddenUpdate && this._visibleNodes instanceof Set;
         for (const nodeId of this.nodes.keys()) {
@@ -2010,6 +1817,16 @@ grapher.Node = class {
         this.element.appendChild(this.border);
     }
 
+    release() {
+        for (const block of this._blocks) {
+            block.release();
+        }
+        this.element = null;
+        this.border = null;
+        this._parentElement = null;
+        this._needsUpdate = true;
+    }
+
     measure() {
         this.height = 0;
         for (const block of this._blocks) {
@@ -2100,6 +1917,14 @@ grapher.Node.Header = class {
                 parent.appendChild(entry.line);
             }
         }
+    }
+
+    release() {
+        for (const entry of this._entries) {
+            entry.release();
+        }
+        this.line = null;
+        this._document = null;
     }
 
     measure() {
@@ -2210,6 +2035,13 @@ grapher.Node.Header.Entry = class {
         this.text.textContent = this.content || '\u00A0';
     }
 
+    release() {
+        this.element = null;
+        this.path = null;
+        this.text = null;
+        this.line = null;
+    }
+
     measure() {
         const yPadding = 4;
         const xPadding = 7;
@@ -2274,6 +2106,16 @@ grapher.ArgumentList = class {
             this.line.setAttribute('class', 'node');
             this.element.appendChild(this.line);
         }
+    }
+
+    release() {
+        for (const item of this._items) {
+            item.release();
+        }
+        this.element = null;
+        this.background = null;
+        this.line = null;
+        this._document = null;
     }
 
     measure() {
@@ -2399,6 +2241,19 @@ grapher.Argument = class {
         }
     }
 
+    release() {
+        if (this.type === 'node') {
+            this.content.release();
+        } else if (this.type === 'node[]') {
+            for (const node of this.content) {
+                node.release();
+            }
+        }
+        this.element = null;
+        this.border = null;
+        this.text = null;
+    }
+
     measure() {
         const yPadding = 1;
         const xPadding = 6;
@@ -2502,6 +2357,9 @@ grapher.Node.Canvas = class {
     build(/* document, parent */) {
     }
 
+    release() {
+    }
+
     measure() {
     }
 
@@ -2549,6 +2407,16 @@ grapher.Edge = class {
             }
             edgeLabelGroupElement.appendChild(this.labelElement);
         }
+    }
+
+    release() {
+        this.element = null;
+        this.hitTest = null;
+        this.labelElement = null;
+        this._pathParentElement = null;
+        this._hitTestParentElement = null;
+        this._labelParentElement = null;
+        this._needsUpdate = true;
     }
 
     get pathPoints() {

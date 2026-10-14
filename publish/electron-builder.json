@@ -2,8 +2,10 @@
     "appId": "com.satabios.fastron",
     "productName": "Fastron",
     "files": [
-        "source/**/*"
+        "source/**/*",
+        "!source/*-metadata.json"
     ],
+    "beforePack": "./tools/metadata-assets.mjs",
     "directories": {
         "buildResources": "./publish"
     },

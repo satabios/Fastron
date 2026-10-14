@@ -12,6 +12,8 @@ playwright.test('browser', async ({ page }) => {
     const file = path.resolve(dir, '../third_party/test/onnx/candy.onnx');
     playwright.expect(fs.existsSync(file)).toBeTruthy();
 
+    const startupRequests = [];
+    page.on('request', (request) => startupRequests.push(new URL(request.url()).pathname));
     // Navigate to the application
     await page.goto('/');
 
@@ -21,6 +23,8 @@ playwright.test('browser', async ({ page }) => {
     // Wait for the welcome screen to be ready
     await page.waitForSelector('body.welcome', { timeout: 25000 });
     await page.waitForTimeout(1000);
+
+    playwright.expect(startupRequests.some((name) => /\/(python|hdf5|flatbuffers|flexbuffers|zip|tar)\.js$/.test(name))).toBe(false);
 
     const consent = page.locator('#message-button');
     try {

@@ -202,8 +202,10 @@ view.View = class {
 
     async start() {
         try {
-            const zip = await import('./zip.js');
-            await zip.Archive.import();
+            if (typeof process === 'object' && process.versions?.node) {
+                const zip = await import('./zip.js');
+                await zip.Archive.import();
+            }
             await this._host.view(this);
             await this._initializePerformanceBackend();
             const options = this._host.get('options') || {};
@@ -898,10 +900,20 @@ view.View = class {
     }
 
     async open(context) {
+        this._openGeneration = (this._openGeneration || 0) + 1;
+        const generation = this._openGeneration;
+        this._openingContext = context;
+        let handedOff = false;
         this._sidebar.close();
         await this._timeout(2);
         try {
+            if (generation !== this._openGeneration) {
+                return undefined;
+            }
             const model = await this._modelFactoryService.open(context);
+            if (generation !== this._openGeneration) {
+                return undefined;
+            }
             const format = [];
             if (model.format) {
                 format.push(model.format);
@@ -916,6 +928,9 @@ view.View = class {
                 });
             }
             await this._timeout(20);
+            if (generation !== this._openGeneration) {
+                return undefined;
+            }
             const path = [];
             let modules = Array.isArray(model.modules) ? model.modules : [];
             if (Array.isArray(model.functions)) {
@@ -932,10 +947,22 @@ view.View = class {
                 const signature = Array.isArray(target.signatures) && target.signatures.length > 0 ? target.signatures[0] : null;
                 path.push({ target, signature });
             }
-            return await this._updateTarget(model, path);
+            handedOff = true;
+            const result = await this._updateTarget(model, path);
+            return generation === this._openGeneration ? result : undefined;
         } catch (error) {
+            if (generation !== this._openGeneration) {
+                return undefined;
+            }
             error.context = !error.context && context && context.identifier ? context.identifier : error.context || '';
             throw error;
+        } finally {
+            if (generation === this._openGeneration) {
+                delete this._openingContext;
+            } else if (!handedOff && context.source && context.source !== this._model?._source && context.source !== this._openingContext?.source &&
+                !Array.from(this._pendingModels || []).some((model) => model?._source === context.source)) {
+                context.source.dispose();
+            }
         }
     }
 
@@ -979,32 +1006,50 @@ view.View = class {
     }
 
     async _updateTarget(model, path) {
+        this._updateGeneration = (this._updateGeneration || 0) + 1;
+        const generation = this._updateGeneration;
         const lastModel = this._model;
         const lastPath = this._path;
+        this._pendingModels = this._pendingModels || new Set();
+        this._pendingModels.add(lastModel);
+        this._pendingModels.add(model);
         try {
-            await this._updatePath(model, path);
-            for (const previous of new Set([lastModel, model])) {
-                if (previous && previous !== this._model && previous._source !== this._model?._source) {
-                    previous._source?.dispose();
+            await this._updatePath(model, path, generation);
+            return generation === this._updateGeneration ? this._model : undefined;
+        } catch (error) {
+            if (generation !== this._updateGeneration) {
+                return undefined;
+            }
+            try {
+                await this._updatePath(lastModel, lastPath, generation);
+            } catch (rollbackError) {
+                if (generation === this._updateGeneration) {
+                    throw rollbackError;
                 }
             }
-            return this._model;
-        } catch (error) {
-            try {
-                await this._updatePath(lastModel, lastPath);
-            } finally {
-                if (model !== lastModel && model?._source !== lastModel?._source) {
-                    model?._source?.dispose();
-                }
+            if (generation !== this._updateGeneration) {
+                return undefined;
             }
             throw error;
+        } finally {
+            if (generation === this._updateGeneration) {
+                for (const previous of this._pendingModels) {
+                    if (previous && previous !== this._model && previous._source !== this._model?._source) {
+                        previous._source?.dispose();
+                    }
+                }
+                this._pendingModels.clear();
+            }
         }
     }
 
-    async _updatePath(model, stack) {
+    async _updatePath(model, stack, generation = this._updateGeneration) {
         this.model = model;
         this._path = stack;
         const status = await this.render(this.activeTarget, this.activeSignature);
+        if (generation !== this._updateGeneration || status === 'superseded') {
+            return;
+        }
         if (status === 'cancel') {
             this.model = null;
             this._path = [];
@@ -1106,6 +1151,8 @@ view.View = class {
     }
 
     async render(target, signature) {
+        this._renderGeneration = (this._renderGeneration || 0) + 1;
+        const generation = this._renderGeneration;
         const renderOptionsKey = this._renderOptionsKey();
         // Opt-3: Capture outgoing viewGraph before nulling this.target.
         // The setter triggers unregister() (disconnects observers/events).
@@ -1116,7 +1163,7 @@ view.View = class {
         const element = this._element('target');
 
         // Detach outgoing canvas and cache it (keyed by the graph it rendered).
-        if (prevViewGraph && prevViewGraph._canvasElement && prevViewGraph._renderTarget) {
+        if (prevViewGraph && prevViewGraph._renderModel === this._model && prevViewGraph._canvasElement && prevViewGraph._renderTarget) {
             const canvas = prevViewGraph._canvasElement;
             if (canvas.parentElement) {
                 canvas.parentElement.removeChild(canvas);
@@ -1180,6 +1227,7 @@ view.View = class {
             this.progress(10);
             const viewGraph = new view.Graph(this, groups);
             // Tag the viewGraph so we can key the cache on next navigation.
+            viewGraph._renderModel = this._model;
             viewGraph._renderTarget = target;
             viewGraph._renderSignature = signature;
             viewGraph._renderOptionsKey = renderOptionsKey;
@@ -1207,12 +1255,18 @@ view.View = class {
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
             const idbKey = this._layoutCacheKey(target, signature);
             const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
+            if (generation !== this._renderGeneration) {
+                return 'superseded';
+            }
             let measured = false;
             if (idbHit) {
                 // Recompute text geometry before accepting cached coordinates. This
                 // also initializes deferred node blocks without creating their DOM.
                 await viewGraph.measure();
                 measured = true;
+                if (generation !== this._renderGeneration) {
+                    return 'superseded';
+                }
             }
             const restoredLayout = idbHit && viewGraph.applyLayout(idbHit.nodes, idbHit.edges, idbHit.bounds);
             if (restoredLayout) {
@@ -1221,11 +1275,17 @@ view.View = class {
             } else {
                 if (!measured) {
                     await viewGraph.measure();
+                    if (generation !== this._renderGeneration) {
+                        return 'superseded';
+                    }
                 }
                 this.progress(65);
                 status = await viewGraph.layout(this._worker);
             }
 
+            if (generation !== this._renderGeneration) {
+                return 'superseded';
+            }
             this.progress(90);
             if (status === '') {
                 viewGraph.update();
@@ -1535,11 +1595,25 @@ view.View = class {
     }
 
     async showDefinition(type) {
+        const request = {};
+        this._documentationRequest = request;
         if (type && (type.description || type.inputs || type.outputs || type.attributes)) {
             if (type.nodes && type.nodes.length > 0) {
                 await this.pushTarget(type);
             }
             if (type.type !== 'weights') {
+                if (type.loadExamples) {
+                    const model = this._model;
+                    const stack = this._sidebar._stack;
+                    try {
+                        await type.loadExamples();
+                    } catch {
+                        // Documentation remains usable if optional examples cannot be fetched.
+                    }
+                    if (request !== this._documentationRequest || model !== this._model || stack !== this._sidebar._stack) {
+                        return;
+                    }
+                }
                 const sidebar = new view.DocumentationSidebar(this, type);
                 sidebar.on('navigate', (sender, e) => {
                     this._host.openURL(e.link);
@@ -7078,8 +7152,9 @@ metrics.Tensor = class {
 
 view.Context = class {
 
-    constructor(context, identifier, stream) {
+    constructor(context, identifier, stream, resourceRequest) {
         this._context = context;
+        this.resourceRequest = context.resourceRequest || resourceRequest;
         this.indexedFormat = context.indexedFormat;
         this._tags = new Map();
         this._content = new Map();
@@ -7111,7 +7186,7 @@ view.Context = class {
 
     async fetch(file) {
         const stream = await this._context.request(file, null, this._base);
-        return new view.Context(this._context, file, stream);
+        return new view.Context(this._context, file, stream, this.resourceRequest);
     }
 
     async require(id) {
@@ -7702,7 +7777,7 @@ view.ModelFactoryService = class {
             if (!context.indexedFormat) {
                 await this._openSignature(context);
             }
-            const content = new view.Context(context);
+            const content = new view.Context(context, undefined, undefined, this._host.request.bind(this._host));
             let model = await this._openContext(content);
             if (!model) {
                 const check = (obj) => {
@@ -8131,7 +8206,7 @@ view.ModelFactoryService = class {
                 let matches = [];
                 for (const [name, stream] of queue) {
                     const identifier = name.substring(folder.length);
-                    const context = new view.Context(entryContext, identifier, stream);
+                    const context = new view.Context(entryContext, identifier, stream, this._host.request.bind(this._host));
                     const modules = this._filter(context);
                     for (const module of modules) {
                         /* eslint-disable no-await-in-loop */
@@ -8317,13 +8392,8 @@ view.Metadata = class {
                 }
                 const types = typeof context.parseJSON === 'function' ? context.parseJSON(data) : JSON.parse(data);
                 const meta = new view.Metadata(types);
-                if (usingSlim) {
-                    const examplesName = name.replace('-metadata.json', '-metadata-examples.json');
-                    context.request(examplesName).then((exData) => {
-                        if (exData) {
-                            meta.mergeExamples(JSON.parse(exData));
-                        }
-                    }).catch(() => {});
+                if (usingSlim && name === 'keras-metadata.json') {
+                    meta._requestExamples = context.resourceRequest;
                 }
                 return meta;
             })();
@@ -8359,11 +8429,34 @@ view.Metadata = class {
         }
     }
 
+    _loadExamples() {
+        if (!this._examples) {
+            this._examples = this._requestExamples('keras-metadata-examples.json', 'utf-8', null)
+                .then((data) => {
+                    this.mergeExamples(JSON.parse(data));
+                    this._requestExamples = null;
+                })
+                .catch((error) => {
+                    this._examples = null;
+                    throw error;
+                });
+        }
+        return this._examples;
+    }
+
     type(name) {
         if (!this._types.has(name)) {
             this._types.set(name, { name: name.toString() });
         }
-        return this._types.get(name);
+        const type = this._types.get(name);
+        if (this._requestExamples && !type.loadExamples) {
+            const loadExamples = this._loadExamples.bind(this);
+            type.loadExamples = async function() {
+                await loadExamples();
+                this.examples = type.examples;
+            };
+        }
+        return type;
     }
 
     attribute(type, name) {
