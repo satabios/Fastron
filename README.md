@@ -46,7 +46,7 @@ This optimized fork introduces several critical performance improvements:
 
 - **Memory Optimizations**: Efficient data structures and lazy-loading strategies minimize memory footprint while maintaining full feature functionality.
 
-- **Model Comparison**: Visually compare two models side by side, with a common panning element for better comprehension.
+- **Model Comparison**: Compare nodes in the primary graph side by side, including operator metadata, attributes, tensor shapes/types, and connections. Ambiguous matches remain unmatched. Weight values are not compared.
 
 ### Standard Features
 

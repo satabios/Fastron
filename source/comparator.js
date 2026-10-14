@@ -40,7 +40,6 @@ comparator.Controller = class {
     constructor(host) {
         this._host = host;
         this._modelFactory = new ModelFactoryService(host);
-        this._modelFactory.import();
         this._workerA = host.environment('serial') ? null : new Worker(host);
         this._workerB = host.environment('serial') ? null : new Worker(host);
         this._syncing = false;
@@ -210,12 +209,12 @@ comparator.Controller = class {
             // Y-align matched node pairs before tile population
             // Skip alignment if either model uses compound/grouped layout (group bounds not recomputed)
             const { nodesA, nodesB, adjA, adjB, matchedA: matchedSetA, matchedB: matchedSetB } = phase1State;
-            const hasGroups = (targetA.groups && targetA.groups.length > 0) || (targetB.groups && targetB.groups.length > 0);
+            const hasGroups = [targetA, targetB].some((target) => Array.isArray(target.groups) ? target.groups.length > 0 : Boolean(target.groups));
             if (!hasGroups) {
                 const depthA = this._buildTopoOrder(nodesA, adjA);
                 const depthB = this._buildTopoOrder(nodesB, adjB);
                 const alignTable = this._buildAlignmentTable(nodesA, nodesB, depthA, depthB, matchedSetA, matchedSetB, phase1State.result.pairs);
-                this._applyYAlignment(this._graphA, this._graphB, nodesA, nodesB, alignTable);
+                this._applyYAlignment(this._graphA, this._graphB, nodesA, nodesB, alignTable, targetA, targetB);
             }
 
             // Populate spatial tiles for viewport culling
@@ -277,7 +276,7 @@ comparator.Controller = class {
                 loadSpinner.classList.add('hidden');
             }
 
-            // Deferred Phase 2: Hungarian matching in background
+            // Deferred Phase 2: conservative similarity matching in background
             this._compareNodesPhase2(phase1State, (fullResult) => {
                 this._diffResult = fullResult;
                 this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, fullResult);
@@ -343,6 +342,11 @@ comparator.Controller = class {
         return hash.toString(36);
     }
 
+    _nodeOutputs(node) {
+        const last = (node.chain || []).at(-1);
+        return last && last.outputs && last.outputs.length > 0 ? last.outputs : node.outputs || [];
+    }
+
     _buildAdjacency(nodes) {
         const outputMap = new Map();
         const predecessors = new Map();
@@ -350,7 +354,7 @@ comparator.Controller = class {
         for (let i = 0; i < nodes.length; i++) {
             predecessors.set(i, []);
             successors.set(i, []);
-            const outputs = Array.isArray(nodes[i].outputs) ? nodes[i].outputs : [];
+            const outputs = this._nodeOutputs(nodes[i]);
             for (const arg of outputs) {
                 const values = Array.isArray(arg.value) ? arg.value : [];
                 for (const val of values) {
@@ -361,7 +365,7 @@ comparator.Controller = class {
             }
         }
         for (let i = 0; i < nodes.length; i++) {
-            const inputs = Array.isArray(nodes[i].inputs) ? nodes[i].inputs : [];
+            const inputs = [...(nodes[i].inputs || []), { value: nodes[i].controlDependencies || [] }];
             for (const arg of inputs) {
                 const values = Array.isArray(arg.value) ? arg.value : [];
                 for (const val of values) {
@@ -405,11 +409,6 @@ comparator.Controller = class {
         if (typeA === typeB) {
             return 50;
         }
-        const catA = nodeA.type && nodeA.type.category ? nodeA.type.category : '';
-        const catB = nodeB.type && nodeB.type.category ? nodeB.type.category : '';
-        if (catA && catB && catA === catB) {
-            return 25;
-        }
         return 0;
     }
 
@@ -436,7 +435,7 @@ comparator.Controller = class {
             return { shapes, dtypes };
         };
         const attrs = Array.isArray(node.attributes) ? node.attributes : [];
-        return { inputs: extract(node.inputs), outputs: extract(node.outputs), attrs: new Map(attrs.map((a) => [a.name, a])) };
+        return { inputs: extract(node.inputs), outputs: extract(this._nodeOutputs(node)), attrs: new Map(attrs.map((a) => [a.name, a])) };
     }
 
     _signatureOf(node, ctx) {
@@ -456,7 +455,7 @@ comparator.Controller = class {
             const a = mapA.get(name);
             const b = mapB.get(name);
             if (a && b) {
-                if (this._valuesEqual(a.value, b.value)) {
+                if (a.type === b.type && this._valuesEqual(a.value, b.value)) {
                     earned += 1.0;
                 } else if (a.type === b.type) {
                     earned += 0.5;
@@ -485,7 +484,7 @@ comparator.Controller = class {
                     matched += 0.25;
                 } else if (sA.length === sB.length) {
                     const dimMatch = sA.reduce((acc, d, idx) => acc + (d === sB[idx] ? 1 : 0), 0);
-                    matched += 0.5 + 0.5 * dimMatch / sA.length;
+                    matched += sA.length === 0 ? 1 : 0.5 + 0.5 * dimMatch / sA.length;
                 } else {
                     matched += 0.25;
                 }
@@ -539,84 +538,10 @@ comparator.Controller = class {
         return opScore + attrScore + shapeScore;
     }
 
-    _hungarianMatch(costMatrix) {
-        const n = costMatrix.length;
-        if (n === 0) {
-            return [];
-        }
-        const m = costMatrix[0].length;
-        if (m === 0) {
-            return Array.from({ length: n }, () => -1);
-        }
-        const size = Math.max(n, m);
-        const cost = Array.from({ length: size }, (_, i) =>
-            Array.from({ length: size }, (__, j) =>
-                (i < n && j < m) ? costMatrix[i][j] : 0
-            )
-        );
-        const u = Array.from({ length: size + 1 }, () => 0);
-        const v = Array.from({ length: size + 1 }, () => 0);
-        const p = Array.from({ length: size + 1 }, () => 0);
-        const way = Array.from({ length: size + 1 }, () => 0);
-
-        for (let i = 1; i <= size; i++) {
-            p[0] = i;
-            let j0 = 0;
-            const minv = Array.from({ length: size + 1 }, () => Infinity);
-            const used = Array.from({ length: size + 1 }, () => false);
-            do {
-                used[j0] = true;
-                const i0 = p[j0];
-                let delta = Infinity;
-                let j1 = -1;
-                for (let j = 1; j <= size; j++) {
-                    if (!used[j]) {
-                        const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
-                        if (cur < minv[j]) {
-                            minv[j] = cur;
-                            way[j] = j0;
-                        }
-                        if (minv[j] < delta) {
-                            delta = minv[j];
-                            j1 = j;
-                        }
-                    }
-                }
-                for (let j = 0; j <= size; j++) {
-                    if (used[j]) {
-                        u[p[j]] += delta;
-                        v[j] -= delta;
-                    } else {
-                        minv[j] -= delta;
-                    }
-                }
-                j0 = j1;
-            } while (p[j0] !== 0);
-            do {
-                const j1 = way[j0];
-                p[j0] = p[j1];
-                j0 = j1;
-            } while (j0 !== 0);
-        }
-
-        const assignment = Array.from({ length: n }, () => -1);
-        for (let j = 1; j <= size; j++) {
-            if (p[j] > 0 && p[j] <= n && j <= m) {
-                assignment[p[j] - 1] = j - 1;
-            }
-        }
-        return assignment;
-    }
-
     _compareNodesPhase1(targetA, targetB) {
         const nodesA = targetA.nodes || [];
         const nodesB = targetB.nodes || [];
-        const result = { pairs: [], onlyInA: [], onlyInB: [] };
-
-        if (nodesA.length === 0 && nodesB.length === 0) {
-            return { result, matchedA: new Set(), matchedB: new Set(),
-                ctxA: [], ctxB: [], nodesA, nodesB };
-        }
+        const result = { pairs: [], onlyInA: [], onlyInB: [], pending: true };
 
         // Phase 0: Precompute adjacency, WL labels, and node contexts
         const adjA = this._buildAdjacency(nodesA);
@@ -643,10 +568,13 @@ comparator.Controller = class {
         // Phase 1: Exact name matching (fast O(n) passes)
         const nameKeyFn = (nodes, idx, withGroup) => {
             const node = nodes[idx];
-            const typeName = node.type && node.type.name ? node.type.name : '';
+            const typeName = this._typeKey(node);
             const name = node.name || node.identifier || '';
             if (!name) {
                 return null;
+            }
+            if (withGroup === null) {
+                return name;
             }
             if (withGroup) {
                 const group = node.group || '';
@@ -656,6 +584,13 @@ comparator.Controller = class {
         };
 
         const exactMatch = (withGroup) => {
+            const countsA = new Map();
+            for (let i = 0; i < nodesA.length; i++) {
+                if (!matchedA.has(i)) {
+                    const key = nameKeyFn(nodesA, i, withGroup);
+                    countsA.set(key, (countsA.get(key) || 0) + 1);
+                }
+            }
             const mapB = new Map();
             for (let j = 0; j < nodesB.length; j++) {
                 if (matchedB.has(j)) {
@@ -678,14 +613,14 @@ comparator.Controller = class {
                     continue;
                 }
                 const candidates = mapB.get(key);
-                if (!candidates) {
+                if (!candidates || candidates.length !== 1 || countsA.get(key) !== 1) {
                     continue;
                 }
                 for (const j of candidates) {
                     if (!matchedB.has(j)) {
                         matchedA.add(i);
                         matchedB.add(j);
-                        const status = this._attributesMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
+                        const status = this._nodeMetadataMatch(nodesA[i], nodesB[j]) ? 'identical' : 'modified';
                         result.pairs.push({ indexA: i, indexB: j, status });
                         break;
                     }
@@ -695,6 +630,8 @@ comparator.Controller = class {
 
         exactMatch(true);
         exactMatch(false);
+        exactMatch(null);
+        this._updatePairStatuses({ nodesA, nodesB, result });
 
         return { result, matchedA, matchedB, ctxA, ctxB, nodesA, nodesB, adjA, adjB };
     }
@@ -757,7 +694,7 @@ comparator.Controller = class {
         return rows;
     }
 
-    _applyYAlignment(graphA, graphB, nodesA, nodesB, alignTable) {
+    _applyYAlignment(graphA, graphB, nodesA, nodesB, alignTable, targetA, targetB) {
         const ROW_GAP = 20;
         const MIN_ROW_H = 60;
         let curY = 0;
@@ -774,6 +711,20 @@ comparator.Controller = class {
                 vnB.y = curY + rowH / 2;
             }
             curY += rowH + ROW_GAP;
+        }
+        // Keep graph endpoints outside the aligned operator rows so they cannot cover clickable nodes.
+        for (const [graph, target] of [[graphA, targetA], [graphB, targetB]]) {
+            for (const [args, direction, start] of [[target.inputs, -1, -ROW_GAP], [target.outputs, 1, curY]]) {
+                let y = start;
+                for (const arg of args || []) {
+                    const node = graph._table.get(arg);
+                    if (node) {
+                        const height = node.height || MIN_ROW_H;
+                        node.y = y + direction * height / 2;
+                        y += direction * (height + ROW_GAP);
+                    }
+                }
+            }
         }
         // Recompute edge points as straight lines between updated node centers
         const straightenEdges = (graph) => {
@@ -795,93 +746,45 @@ comparator.Controller = class {
         graphB._layoutBounds = null;
     }
 
-    _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
-        if (Math.max(groupA.length, groupB.length) > 200) {
-            // Greedy fallback for very large groups. Keep only the best candidate
-            // for each A node instead of allocating and sorting O(A*B) pair objects.
-            const usedB = new Set();
-            for (let ai = 0; ai < groupA.length; ai++) {
-                const idxA = groupA[ai];
-                let bestBi = -1;
-                let bestSimilarity = threshold;
-                for (let bi = 0; bi < groupB.length; bi++) {
-                    if (usedB.has(bi)) {
-                        continue;
-                    }
-                    const idxB = groupB[bi];
-                    const similarity = this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB]);
-                    if (similarity >= bestSimilarity) {
-                        bestBi = bi;
-                        bestSimilarity = similarity;
-                    }
-                }
-                if (bestBi === -1) {
-                    continue;
-                }
-                usedB.add(bestBi);
-                const idxB = groupB[bestBi];
-                matchedA.add(idxA);
-                matchedB.add(idxB);
-                const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
-                result.pairs.push({ indexA: idxA, indexB: idxB, status });
-            }
-        } else {
-            const costMatrix = groupA.map((idxA) =>
-                groupB.map((idxB) =>
-                    100 - this._calculateSimilarity(nodesA[idxA], nodesB[idxB], ctxA[idxA], ctxB[idxB])
-                )
-            );
-            const assignment = this._hungarianMatch(costMatrix);
-            for (let k = 0; k < assignment.length; k++) {
-                const col = assignment[k];
-                if (col >= 0 && col < groupB.length) {
-                    const similarity = 100 - costMatrix[k][col];
-                    if (similarity >= threshold) {
-                        const idxA = groupA[k];
-                        const idxB = groupB[col];
-                        matchedA.add(idxA);
-                        matchedB.add(idxB);
-                        const status = this._attributesMatch(nodesA[idxA], nodesB[idxB]) ? 'identical' : 'modified';
-                        result.pairs.push({ indexA: idxA, indexB: idxB, status });
-                    }
-                }
-            }
-        }
+    _typeKey(node) {
+        const type = node.type || {};
+        return JSON.stringify([type.module || type.domain || '', type.name || '']);
     }
 
-    _crossTypeMatch(nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
-        const catGroupsA = new Map();
-        const catGroupsB = new Map();
-        for (let i = 0; i < nodesA.length; i++) {
-            if (matchedA.has(i)) {
-                continue;
+    _matchGroupInPlace(groupA, groupB, threshold, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result) {
+        // Tied candidates have no reliable identity; leave them unmatched rather than inventing pairs.
+        const bestA = groupA.map(() => ({ score: threshold - 1, index: -1, tied: false }));
+        const bestB = groupB.map(() => ({ score: threshold - 1, index: -1, tied: false }));
+        const update = (best, score, index) => {
+            if (score > best.score) {
+                best.score = score;
+                best.index = index;
+                best.tied = false;
+            } else if (score === best.score) {
+                best.tied = true;
             }
-            const cat = nodesA[i].type && nodesA[i].type.category ? nodesA[i].type.category : '';
-            if (cat) {
-                if (!catGroupsA.has(cat)) {
-                    catGroupsA.set(cat, []);
-                }
-                catGroupsA.get(cat).push(i);
-            }
-        }
-        for (let j = 0; j < nodesB.length; j++) {
-            if (matchedB.has(j)) {
-                continue;
-            }
-            const cat = nodesB[j].type && nodesB[j].type.category ? nodesB[j].type.category : '';
-            if (cat) {
-                if (!catGroupsB.has(cat)) {
-                    catGroupsB.set(cat, []);
-                }
-                catGroupsB.get(cat).push(j);
+        };
+        for (let ai = 0; ai < groupA.length; ai++) {
+            for (let bi = 0; bi < groupB.length; bi++) {
+                const ia = groupA[ai];
+                const ib = groupB[bi];
+                const score = this._calculateSimilarity(nodesA[ia], nodesB[ib], ctxA[ia], ctxB[ib]);
+                update(bestA[ai], score, bi);
+                update(bestB[bi], score, ai);
             }
         }
-        for (const [cat, groupA] of catGroupsA) {
-            const groupB = catGroupsB.get(cat);
-            if (!groupB || groupB.length === 0) {
+        for (let ai = 0; ai < groupA.length; ai++) {
+            const best = bestA[ai];
+            const bi = best.index;
+            if (bi < 0 || best.tied || bestB[bi].tied || bestB[bi].index !== ai) {
                 continue;
             }
-            this._matchGroupInPlace(groupA, groupB, 50, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+            const indexA = groupA[ai];
+            const indexB = groupB[bi];
+            matchedA.add(indexA);
+            matchedB.add(indexB);
+            const status = this._nodeMetadataMatch(nodesA[indexA], nodesB[indexB]) ? 'identical' : 'modified';
+            result.pairs.push({ indexA, indexB, status });
         }
     }
 
@@ -893,7 +796,7 @@ comparator.Controller = class {
         const typeGroupsB = new Map();
         for (let i = 0; i < nodesA.length; i++) {
             if (!matchedA.has(i)) {
-                const t = nodesA[i].type && nodesA[i].type.name ? nodesA[i].type.name : '';
+                const t = this._typeKey(nodesA[i]);
                 if (!typeGroupsA.has(t)) {
                     typeGroupsA.set(t, []);
                 }
@@ -902,7 +805,7 @@ comparator.Controller = class {
         }
         for (let j = 0; j < nodesB.length; j++) {
             if (!matchedB.has(j)) {
-                const t = nodesB[j].type && nodesB[j].type.name ? nodesB[j].type.name : '';
+                const t = this._typeKey(nodesB[j]);
                 if (!typeGroupsB.has(t)) {
                     typeGroupsB.set(t, []);
                 }
@@ -924,12 +827,11 @@ comparator.Controller = class {
         const processNext = () => {
             if (groupIndex < typeGroupPairs.length) {
                 const { groupA, groupB } = typeGroupPairs[groupIndex];
-                this._matchGroupInPlace(groupA, groupB, 40, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+                this._matchGroupInPlace(groupA, groupB, 80, nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
                 groupIndex++;
                 this._phase2Timer = setTimeout(processNext, 0);
             } else {
-                // Phase 2b: Cross-type category matching for fused ops
-                this._crossTypeMatch(nodesA, nodesB, ctxA, ctxB, matchedA, matchedB, result);
+                this._updatePairStatuses(phase1State);
 
                 // Phase 4: Collect remaining unmatched
                 result.onlyInA = [];
@@ -945,11 +847,62 @@ comparator.Controller = class {
                     }
                 }
 
+                result.pending = false;
                 this._phase2Timer = null;
                 onComplete(result);
             }
         };
         this._phase2Timer = setTimeout(processNext, 0);
+    }
+
+    _portMetadata(args) {
+        return (args || []).map((arg) => ({ name: arg.name, type: arg.type,
+            values: Array.isArray(arg.value) ? arg.value.map((value) => ({
+                type: value.type, quantization: value.quantization,
+                initializer: value.initializer ? { type: value.initializer.type,
+                    category: value.initializer.category, encoding: value.initializer.encoding,
+                    layout: value.initializer.layout, quantization: value.initializer.quantization } : null
+            })) : arg.value }));
+    }
+
+    _nodeMetadataMatch(a, b) {
+        const chainA = a.chain || [];
+        const chainB = b.chain || [];
+        return chainA.length === chainB.length && chainA.every((node, i) => this._nodeMetadataMatch(node, chainB[i])) &&
+            this._typeKey(a) === this._typeKey(b) &&
+            this._valuesEqual(a.type && a.type.version, b.type && b.type.version) &&
+            this._attributesMatch(a, b) &&
+            this._valuesEqual(this._portMetadata(a.inputs), this._portMetadata(b.inputs)) &&
+            this._valuesEqual(this._portMetadata(a.outputs), this._portMetadata(b.outputs));
+    }
+
+    _updatePairStatuses({ nodesA, nodesB, result }) {
+        const mapping = new Map(result.pairs.map((pair) => [pair.indexA, pair.indexB]));
+        const producers = (nodes) => {
+            const map = new Map();
+            nodes.forEach((node, index) => this._nodeOutputs(node).forEach((arg, port) => {
+                (Array.isArray(arg.value) ? arg.value : []).forEach((value, slot) => {
+                    if (value.name) {
+                        map.set(value.name, { index, port, slot });
+                    }
+                });
+            }));
+            return map;
+        };
+        const prodA = producers(nodesA);
+        const prodB = producers(nodesB);
+        const connections = (node, map, translate) => [...(node.inputs || []), { value: node.controlDependencies || [] }].map((arg) =>
+            (Array.isArray(arg.value) ? arg.value : []).map((value) => {
+                const source = map.get(value.name);
+                return source ? { index: translate ? mapping.get(source.index) ?? `unmatched:${source.index}` : source.index,
+                    port: source.port, slot: source.slot } : { external: value.initializer ? 'initializer' : value.name };
+            }));
+        for (const pair of result.pairs) {
+            const a = nodesA[pair.indexA];
+            const b = nodesB[pair.indexB];
+            pair.status = this._nodeMetadataMatch(a, b) &&
+                this._valuesEqual(connections(a, prodA, true), connections(b, prodB, false)) ? 'identical' : 'modified';
+        }
     }
 
     _attributesMatch(nodeA, nodeB) {
@@ -961,61 +914,52 @@ comparator.Controller = class {
         if (attrsA.length !== attrsB.length) {
             return false;
         }
-        const mapA = new Map(attrsA.map((a) => [a.name, a]));
-        const mapB = new Map(attrsB.map((a) => [a.name, a]));
-        for (const [name, attrA] of mapA) {
-            const attrB = mapB.get(name);
-            if (!attrB) {
-                return false;
-            }
-            if (!this._valuesEqual(attrA.value, attrB.value)) {
-                return false;
-            }
-        }
-        return true;
+        const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+        const sortedA = attrsA.slice().sort(byName);
+        const sortedB = attrsB.slice().sort(byName);
+        return sortedA.every((a, i) => a.name === sortedB[i].name && a.type === sortedB[i].type &&
+            this._valuesEqual(a.value, sortedB[i].value));
     }
 
-    _valuesEqual(a, b) {
-        if (a === b) {
+    _valuesEqual(a, b, seen = new WeakMap()) {
+        if (Object.is(a, b)) {
             return true;
         }
-        if (a === null || a === undefined) {
-            return b === null || b === undefined;
-        }
-        if (b === null || b === undefined) {
+        if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || a.constructor !== b.constructor) {
             return false;
         }
-        if (Array.isArray(a) && Array.isArray(b)) {
-            if (a.length !== b.length) {
-                return false;
-            }
-            for (let i = 0; i < a.length; i++) {
-                if (!this._valuesEqual(a[i], b[i])) {
-                    return false;
-                }
-            }
+        if (seen.get(a)?.has(b)) {
             return true;
         }
-        if (typeof a === 'object' && typeof b === 'object') {
-            if (Array.isArray(a) !== Array.isArray(b)) {
-                return false;
-            }
-            const keysA = Object.keys(a);
-            const keysB = Object.keys(b);
-            if (keysA.length !== keysB.length) {
-                return false;
-            }
-            for (const key of keysA) {
-                if (!Object.prototype.hasOwnProperty.call(b, key)) {
-                    return false;
-                }
-                if (!this._valuesEqual(a[key], b[key])) {
-                    return false;
-                }
-            }
-            return true;
+        if (!seen.has(a)) {
+            seen.set(a, new WeakSet());
         }
-        return false;
+        seen.get(a).add(b);
+        if (a instanceof Date) {
+            return a.getTime() === b.getTime();
+        }
+        if (a instanceof ArrayBuffer || ArrayBuffer.isView(a)) {
+            const bytes = (v) => v instanceof ArrayBuffer ? new Uint8Array(v) : new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+            const aa = bytes(a);
+            const bb = bytes(b);
+            return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
+        }
+        if (a instanceof Map) {
+            return a.size === b.size && Array.from(a).every(([key, value]) =>
+                b.has(key) && this._valuesEqual(value, b.get(key), seen));
+        }
+        if (a instanceof Set) {
+            return a.size === b.size && Array.from(a).every((value) => b.has(value));
+        }
+        // Tensor payloads may be remote: compare their metadata without fetching weight bytes.
+        if (a.type && a.type.shape && ('values' in a || 'encoding' in a)) {
+            return this._valuesEqual([a.type, a.encoding, a.layout, a.quantization],
+                [b.type, b.encoding, b.layout, b.quantization], seen);
+        }
+        const keysA = Object.keys(a);
+        const keysB = Object.keys(b);
+        return keysA.length === keysB.length && keysA.every((key) =>
+            Object.prototype.hasOwnProperty.call(b, key) && this._valuesEqual(a[key], b[key], seen));
     }
 
     _applyDiffHighlighting(graphA, graphB, targetA, targetB, diffResult) {
@@ -1032,17 +976,16 @@ comparator.Controller = class {
             node._diffClass = className;
             if (node.element) {
                 node.element.classList.remove('node-diff-modified', 'node-diff-added', 'node-diff-removed');
-                node.element.classList.add(className);
+                if (className) {
+                    node.element.classList.add(className);
+                }
             }
         };
 
         for (const pair of diffResult.pairs) {
-            if (pair.status === 'modified') {
-                const viewNodeA = getViewNode(graphA, nodesA[pair.indexA]);
-                const viewNodeB = getViewNode(graphB, nodesB[pair.indexB]);
-                apply(viewNodeA, 'node-diff-modified');
-                apply(viewNodeB, 'node-diff-modified');
-            }
+            const className = pair.status === 'modified' ? 'node-diff-modified' : null;
+            apply(getViewNode(graphA, nodesA[pair.indexA]), className);
+            apply(getViewNode(graphB, nodesB[pair.indexB]), className);
         }
         for (const idx of diffResult.onlyInA) {
             const viewNode = getViewNode(graphA, nodesA[idx]);
@@ -1163,9 +1106,9 @@ comparator.Controller = class {
         if (diffInfo.status === 'identical') {
             this._renderIdenticalStatus(document, content, typeName);
         } else if (diffInfo.status === 'added') {
-            this._renderSingleStatus(document, content, typeName, 'added', 'Only in Model B');
+            this._renderSingleStatus(document, content, typeName, 'added', 'No confident match in Model A');
         } else if (diffInfo.status === 'removed') {
-            this._renderSingleStatus(document, content, typeName, 'removed', 'Only in Model A');
+            this._renderSingleStatus(document, content, typeName, 'removed', 'No confident match in Model B');
         } else if (diffInfo.status === 'modified') {
             this._renderModifiedDiff(document, content, diffInfo.nodeA, diffInfo.nodeB);
         }
@@ -1222,10 +1165,10 @@ comparator.Controller = class {
         div.className = 'diff-status';
         const badge = document.createElement('div');
         badge.className = 'diff-status-badge diff-status-identical';
-        badge.textContent = 'Identical';
+        badge.textContent = 'Same structure';
         div.appendChild(badge);
         const text = document.createElement('div');
-        text.textContent = `This node (${typeName}) is identical in both models.`;
+        text.textContent = `This node (${typeName}) has the same compared structure and metadata. Weight values are not compared.`;
         div.appendChild(text);
         container.appendChild(div);
     }
@@ -1235,7 +1178,7 @@ comparator.Controller = class {
         div.className = 'diff-status';
         const badge = document.createElement('div');
         badge.className = `diff-status-badge diff-status-${status}`;
-        badge.textContent = status === 'added' ? 'Added' : 'Removed';
+        badge.textContent = status === 'added' ? 'Unmatched in B' : 'Unmatched in A';
         div.appendChild(badge);
         const text = document.createElement('div');
         text.textContent = `${typeName}: ${message}`;
@@ -1247,7 +1190,7 @@ comparator.Controller = class {
         if (!nodeA || !nodeB) {
             const typeName = (nodeA || nodeB).type && (nodeA || nodeB).type.name ? (nodeA || nodeB).type.name : 'Node';
             this._renderSingleStatus(document, container, typeName,
-                nodeA ? 'removed' : 'added', nodeA ? 'Only in Model A' : 'Only in Model B');
+                nodeA ? 'removed' : 'added', nodeA ? 'No confident match in Model B' : 'No confident match in Model A');
             return;
         }
         // Type section
@@ -1295,7 +1238,7 @@ comparator.Controller = class {
         const attrsB = Array.isArray(nodeB.attributes) ? nodeB.attributes : [];
         const attrDiffs = this._diffNamedItems(attrsA, attrsB, (attr) => {
             try {
-                return new Formatter(attr.value, attr.type).toString();
+                return `${new Formatter(attr.value, attr.type).toString()} (${attr.type || 'unknown type'})`;
             } catch {
                 return String(attr.value);
             }
@@ -1334,8 +1277,7 @@ comparator.Controller = class {
 
         // Fallback if no specific diffs found
         if (!container.hasChildNodes()) {
-            const typeName = nodeA.type && nodeA.type.name ? nodeA.type.name : 'Node';
-            this._renderIdenticalStatus(document, container, typeName);
+            container.textContent = 'Graph connections or tensor metadata differ.';
         }
     }
 
@@ -1383,7 +1325,7 @@ comparator.Controller = class {
                 diffs.push({ name, valueA: formatter(a), valueB: '', type: 'removed' });
             } else if (!a && b) {
                 diffs.push({ name, valueA: '', valueB: formatter(b), type: 'added' });
-            } else if (a && b && !this._valuesEqual(a.value, b.value)) {
+            } else if (a && b && (a.type !== b.type || !this._valuesEqual(a.value, b.value))) {
                 diffs.push({ name, valueA: formatter(a), valueB: formatter(b), type: 'changed' });
             }
         }
@@ -1392,30 +1334,21 @@ comparator.Controller = class {
 
     _diffConnections(connectionsA, connectionsB) {
         const diffs = [];
-        const mapA = new Map();
-        const mapB = new Map();
-        for (let i = 0; i < connectionsA.length; i++) {
+        for (let i = 0; i < Math.max(connectionsA.length, connectionsB.length); i++) {
             const a = connectionsA[i];
-            const name = a && a.name ? a.name : `[${i}]`;
-            mapA.set(name, a);
-        }
-        for (let i = 0; i < connectionsB.length; i++) {
             const b = connectionsB[i];
-            const name = b && b.name ? b.name : `[${i}]`;
-            mapB.set(name, b);
-        }
-        const allNames = new Set([...mapA.keys(), ...mapB.keys()]);
-        for (const name of allNames) {
-            const a = mapA.get(name);
-            const b = mapB.get(name);
             const descA = a ? this._describeConnection(a) : '';
             const descB = b ? this._describeConnection(b) : '';
-            if (a && !b) {
-                diffs.push({ name, valueA: descA, valueB: '', type: 'removed' });
-            } else if (!a && b) {
-                diffs.push({ name, valueA: '', valueB: descB, type: 'added' });
-            } else if (descA !== descB) {
-                diffs.push({ name, valueA: descA, valueB: descB, type: 'changed' });
+            let type = 'changed';
+            if (a === undefined) {
+                type = 'added';
+            } else if (b === undefined) {
+                type = 'removed';
+            }
+            if (!a || !b || descA !== descB || !this._valuesEqual(this._portMetadata([a]), this._portMetadata([b]))) {
+                diffs.push({ name: `${a?.name || b?.name || 'port'} [${i}]`, valueA: descA,
+                    valueB: descB === descA ? `${descB} (metadata changed)` : descB,
+                    type });
             }
         }
         return diffs;
@@ -1502,13 +1435,15 @@ comparator.Controller = class {
         const added = (diffResult.onlyInB || []).length;
         const removed = (diffResult.onlyInA || []).length;
         bar.innerHTML = [
-            `<span class="summary-count summary-identical">${identical} identical</span>`,
+            `<span title="Primary graph structure and metadata only; weight values are not compared." class="summary-count summary-identical">${identical} same structure</span>`,
             `<span class="summary-sep">|</span>`,
             `<span class="summary-count summary-modified">${modified} modified</span>`,
             `<span class="summary-sep">|</span>`,
-            `<span class="summary-count summary-added">${added} added</span>`,
+            `<span class="summary-count summary-added">${added} unmatched in B</span>`,
             `<span class="summary-sep">|</span>`,
-            `<span class="summary-count summary-removed">${removed} removed</span>`
+            `<span class="summary-count summary-removed">${removed} unmatched in A</span>`,
+            `<span class="summary-sep"> | </span>`,
+            `<span>${diffResult.pending ? 'Matching… ' : ''}Primary graph; weight values are not compared.</span>`
         ].join('');
     }
 

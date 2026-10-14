@@ -822,11 +822,11 @@ if (typeof window !== 'undefined') {
         const isComparator = document.getElementById('target-left') !== null;
         if (isComparator) {
             const host = new desktop.ComparatorHost();
-            const { Controller } = await import('./comparator.js');
-            const controller = new Controller(host);
+            // The main process sends compare at did-finish-load, before the dynamic import may finish.
+            const controller = import('./comparator.js').then(({ Controller }) => new Controller(host));
 
             electron.ipcRenderer.on('compare', (event, data) => {
-                controller.compare(data.pathA, data.pathB).catch((error) => {
+                controller.then((instance) => instance.compare(data.pathA, data.pathB)).catch((error) => {
                     // eslint-disable-next-line no-console
                     console.error('Comparison failed:', error);
                 });

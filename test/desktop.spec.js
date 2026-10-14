@@ -107,3 +107,63 @@ playwright.test('desktop', async () => {
         await app.close();
     }
 });
+
+playwright.test('comparator detects rewiring in real model files', async ({ playwright: driver }, testInfo) => {
+    const dir = path.dirname(url.fileURLToPath(import.meta.url));
+    const graph = {
+        name: 'comparison',
+        node: [
+            { name: 'left', opType: 'Relu', input: ['x'], output: ['left:0'] },
+            { name: 'right', opType: 'Relu', input: ['x'], output: ['right:0'] },
+            { name: 'sink', opType: 'Relu', input: ['left:0'], output: ['y'] }
+        ],
+        input: [{ name: 'x', type: { tensorType: { elemType: 1, shape: { dim: [{ dimValue: '2' }] } } } }],
+        output: [{ name: 'y', type: { tensorType: { elemType: 1, shape: { dim: [{ dimValue: '2' }] } } } }]
+    };
+    const a = testInfo.outputPath('a.onnx');
+    const b = testInfo.outputPath('b.onnx');
+    fs.mkdirSync(path.dirname(a), { recursive: true });
+    const model = { irVersion: '8', opsetImport: [{ domain: '', version: '13' }], graph };
+    fs.writeFileSync(a, JSON.stringify(model));
+    graph.node[2].input = ['right:0'];
+    fs.writeFileSync(b, JSON.stringify(model));
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox'], env });
+    try {
+        await app.firstWindow();
+        const pathname = path.resolve(dir, '../source/comparator.html');
+        const windowPromise = app.waitForEvent('window');
+        await app.evaluate(async ({ BrowserWindow }, options) => {
+            const window = new BrowserWindow({ width: 1200, height: 800, webPreferences: {
+                preload: options.preload, contextIsolation: true, nodeIntegration: true
+            } });
+            window.webContents.once('did-finish-load', () => {
+                window.webContents.send('compare', { pathA: { path: options.a, label: 'a.onnx' }, pathB: { path: options.b, label: 'b.onnx' } });
+            });
+            await window.loadURL(options.data, { baseURLForDataURL: options.baseURL });
+        }, {
+            preload: path.resolve(dir, '../source/desktop.mjs'),
+            data: `data:text/html;charset=utf-8,${encodeURIComponent(fs.readFileSync(pathname, 'utf8'))}`,
+            baseURL: url.pathToFileURL(pathname).toString(), a, b
+        });
+        const page = await windowPromise;
+        playwright.expect(page).toBeDefined();
+        await page.waitForLoadState('load');
+        try {
+            await playwright.expect(page.locator('#diff-summary')).toContainText('1 modified', { timeout: 30000 });
+        } catch (error) {
+            throw new Error(`${error.message}\nComparator: ${await page.locator('.spinner-text').innerText()}`);
+        }
+        await playwright.expect(page.locator('#diff-summary')).toContainText('2 same structure');
+        await playwright.expect(page.locator('#diff-summary')).not.toContainText('Matching…');
+        await playwright.expect(page.locator('#diff-summary')).toContainText('weight values are not compared');
+        await playwright.expect(page.locator('#target-left svg')).toBeVisible();
+        await playwright.expect(page.locator('#target-right svg')).toBeVisible();
+        await page.locator('#target-left .node-diff-modified text').filter({ hasText: 'Relu' }).first().click();
+        await playwright.expect(page.locator('#diff-panel-content')).toContainText('Inputs');
+        await playwright.expect(page.locator('#diff-panel-content')).not.toContainText('Same structure');
+    } finally {
+        await app.close();
+    }
+});

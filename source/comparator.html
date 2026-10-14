@@ -32,7 +32,7 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
 .legend-swatch { width: 12px; height: 12px; border-radius: 2px; border: 2px solid; }
 
 .comparator-footer { display: flex; flex-direction: column; flex-shrink: 0; }
-.diff-summary { display: flex; align-items: center; justify-content: center; gap: 6px;
+.diff-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
     padding: 4px 12px; font-size: 11px; background: #f0f0f0; border-top: 1px solid #ddd;
     user-select: none; min-height: 22px; }
 .summary-count { font-weight: 500; }
@@ -178,10 +178,10 @@ body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 
 <div class="comparator-footer">
     <div id="diff-summary" class="diff-summary"></div>
     <div class="comparator-legend">
-        <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Identical</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #888; background: transparent;"></div> Same structure</div>
         <div class="legend-item"><div class="legend-swatch" style="border-color: #e67e22; background: rgba(230,126,34,0.15);"></div> Modified</div>
-        <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Added</div>
-        <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Removed</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #27ae60; background: rgba(39,174,96,0.15);"></div> Unmatched in B</div>
+        <div class="legend-item"><div class="legend-swatch" style="border-color: #e74c3c; background: rgba(231,76,60,0.15);"></div> Unmatched in A</div>
     </div>
 </div>
 <div id="comparator-spinner" class="comparator-spinner">
