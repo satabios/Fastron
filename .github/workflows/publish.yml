@@ -76,6 +76,7 @@ jobs:
               ;;
             windows*)
               echo "Publishing unsigned Windows packages."
+              unset CSC_LINK CSC_KEY_PASSWORD
               npx electron-builder --win --x64 --arm64 --publish always --config.win.azureSignOptions=
               ;;
           esac

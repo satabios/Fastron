@@ -15,7 +15,10 @@ test('publishing handles absent, partial and complete credentials without maskin
     t.after(() => fs.rm(home, { recursive: true, force: true }));
     const bash = process.platform === 'win32' ? path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : 'bash';
     const stubs = `
-npx() { printf 'npx %s\\n' "$*"; }
+npx() {
+    printf 'npx %s\\n' "$*"
+    if [[ "$*" == *"--win"* && -n "$CSC_LINK$CSC_KEY_PASSWORD" ]]; then return 31; fi
+}
 npm() { printf 'npm %s\\n' "$*"; return "$MOCK_NPM_EXIT"; }
 sudo() { printf 'sudo %s\\n' "$*"; }
 `;
@@ -64,6 +67,7 @@ sudo() { printf 'sudo %s\\n' "$*"; }
     const windows = run('Publish Electron', 'windows-latest');
     succeeds(windows);
     assert.match(windows.stdout, /--win --x64 --arm64 --publish always --config.win.azureSignOptions=/);
+    succeeds(run('Publish Electron', 'windows-latest', credentials));
     const linux = run('Publish Electron', 'ubuntu-latest');
     succeeds(linux);
     assert.match(linux.stdout, /npm run publish electron linux/);
