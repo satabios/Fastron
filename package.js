@@ -561,6 +561,7 @@ const test = async (target) => {
                 const install = process.platform === 'linux' && (process.env.GITHUB_ACTIONS || process.env.CI) ?
                     'npx playwright install --with-deps chromium' : 'npx playwright install chromium';
                 await exec(install);
+                await exec('node test/browser-repeated.mjs');
                 const headed = process.env.GITHUB_ACTIONS || process.env.CI ? '' :  ' --headed';
                 await exec(`npx playwright test --config=test/playwright.config.js --project=browser${headed}`);
             }

@@ -1,6 +1,7 @@
 
 import * as base from './base.js';
 import * as protobuf from './protobuf.js';
+import { NodeCatalog } from './repeated-blocks.js';
 
 const onnx = {};
 
@@ -1728,14 +1729,34 @@ onnx.Context.Graph = class {
                 return true;
             });
         }
-        for (let node of nodes) {
-            node = new onnx.Node(this, node);
-            this._nodes.push(node);
-
-            // const path = (node.name || '').split('/');
-            // path.pop();
-            // this.group(path.join('/')).get('').push(node);
-        }
+        const boundaries = new Set([...inputs, ...outputs].map((value) => typeof value === 'string' ? value : value.name));
+        this._nodes = new NodeCatalog(nodes, (node) => new onnx.Node(this, node), (node) => {
+            const domain = node.domain || '';
+            const schema = this.type(domain, node.op_type, node.overload || '');
+            const attributes = () => node.attribute.map((attr) => {
+                if (attr.g || attr.graphs?.length || attr.t || attr.tensors?.length || attr.sparse_tensor || attr.sparse_tensors?.length) {
+                    return { name: attr.name, type: 'graph' };
+                }
+                return this.createAttribute(attr, this.attribute(domain, node.op_type, node.overload || '', attr.name));
+            });
+            const args = (list) => list.map((value, index) => ({ name: String(index), value: [{
+                name: value.name, initializer: value.initializer, type: value.initializer?.type || value.type,
+                quantization: value.annotation ? { type: 'annotation', value: value.annotation } : null
+            }] }));
+            return {
+                name: node.name || '', type: { name: node.op_type, domain, identifier: node.overload || '', version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
+                inputs: args(node.input), outputs: args(node.output),
+                get attributes() {
+                    return attributes();
+                }
+            };
+        }, () => {
+            for (const name of this._values.keys()) {
+                if (!boundaries.has(name)) {
+                    this._values.delete(name);
+                }
+            }
+        }).nodes;
     }
 
     pop() {

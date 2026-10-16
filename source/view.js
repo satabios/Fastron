@@ -1,6 +1,7 @@
 
 import * as base from './base.js';
 import * as grapher from './grapher.js';
+import { nodeCatalog, nodeDescriptions, repeatedBlocks } from './repeated-blocks.js';
 
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
@@ -49,7 +50,8 @@ view.View = class {
             names: false,
             direction: 'vertical',
             mousewheel: 'scroll',
-            lazyRender: true
+            lazyRender: true,
+            foldRepeatedBlocks: true
         };
         this._options = { ...this._defaultOptions };
         this._model = null;
@@ -376,6 +378,11 @@ view.View = class {
                     enabled: () => this.activeTarget
                 });
                 view.add({
+                    label: () => this.options.foldRepeatedBlocks ? 'Expand Repeated &Blocks' : 'Fold Repeated &Blocks',
+                    execute: () => this.toggle('foldRepeatedBlocks'),
+                    enabled: () => this.activeTarget
+                });
+                view.add({
                     label: () => this.options.direction === 'vertical' ? 'Show &Horizontal' : 'Show &Vertical',
                     accelerator: 'CmdOrCtrl+K',
                     execute: () => this.toggle('direction'),
@@ -474,7 +481,7 @@ view.View = class {
         this._host.event('screen_view', {
             screen_name: page,
         });
-        if (this._sidebar) {
+        if (this._sidebar && !(page === 'default' && this._retainedFind?.graph === this.activeTarget && this._sidebar.identifier === 'find')) {
             this._sidebar.close();
         }
         if (this._menu) {
@@ -510,21 +517,30 @@ view.View = class {
             sidebar.on('state-changed', (sender, state) => {
                 this._find = state;
             });
-            sidebar.on('select', (sender, value) => {
-                const selection = this._target.select([value]);
-                this._target.scrollToSelection(selection, value);
-            });
+            const navigate = async (value, activate) => {
+                try {
+                    const graph = this.activeTarget;
+                    await this.revealRepeated(value);
+                    if (!this._target || graph !== this.activeTarget) {
+                        return;
+                    }
+                    if (activate) {
+                        this._sidebar.close();
+                    }
+                    const selection = activate ? this._target.activate(value) : this._target.select([value]);
+                    this._target.scrollToSelection(selection, value);
+                } catch (error) {
+                    this.error(error, 'Error revealing search result.', null);
+                }
+            };
+            sidebar.on('select', (sender, value) => navigate(value, false));
             sidebar.on('focus', (sender, value) => {
-                this._target.focus([value]);
+                this._target?.focus([value]);
             });
             sidebar.on('blur', (sender, value) => {
-                this._target.blur([value]);
+                this._target?.blur([value]);
             });
-            sidebar.on('activate', (sender, value) => {
-                this._sidebar.close();
-                const selection = this._target.activate(value);
-                this._target.scrollToSelection(selection, value);
-            });
+            sidebar.on('activate', (sender, value) => navigate(value, true));
             this._sidebar.open(sidebar, 'Find');
         }
     }
@@ -537,6 +553,8 @@ view.View = class {
         if (this._model !== value) {
             // New model loaded — stale cached graphs from prior model no longer valid.
             this._renderCache = [];
+            this._repeatStates = new WeakMap();
+            this._repeatRevision = 0;
         }
         this._model = value;
     }
@@ -585,6 +603,11 @@ view.View = class {
             case 'names':
             case 'attributes':
                 this._options[name] = !this._options[name];
+                this._reload();
+                break;
+            case 'foldRepeatedBlocks':
+                this._options.foldRepeatedBlocks = !this._options.foldRepeatedBlocks;
+                this._discardRepeatedViews();
                 this._reload();
                 break;
             case 'direction':
@@ -653,6 +676,8 @@ view.View = class {
             direction: this._options.direction || 'vertical',
             layout: this._options.layout || 'dagre',
             lazyRender: this._options.lazyRender,
+            foldRepeatedBlocks: this._options.foldRepeatedBlocks === true,
+            repeatRevision: this._repeatRevision || 0,
             skipTensorWeights: config.skipTensorWeights !== false
         });
     }
@@ -711,13 +736,13 @@ view.View = class {
         if (Array.isArray(this._model.functions)) {
             modules = modules.concat(this._model.functions);
         }
-        const idx = modules.indexOf(target);
+        const idx = modules.indexOf(target._originalGraph || target);
         const moduleIdx = idx >= 0 ? idx : 0;
         const direction = this._options.direction || 'vertical';
         const engine = this._options.layout || 'dagre';
         const display = `${this._options.names ? 1 : 0}${this._options.attributes ? 1 : 0}${this._options.weights ? 1 : 0}`;
         const fingerprint = this._graphFingerprint(target, signature);
-        return `v2::${identifier}::${moduleIdx}::${direction}::${engine}::${display}::${fingerprint}`;
+        return `v3::${identifier}::${moduleIdx}::${direction}::${engine}::${display}::${this._renderOptionsKey()}::${fingerprint}`;
     }
 
     _timeout(delay) {
@@ -731,6 +756,7 @@ view.View = class {
     }
 
     _updateDtypeLegend(activeTarget) {
+        activeTarget = this._target?._displayGraph || activeTarget;
         const DTYPE_LABELS = {
             'fp32-fp32': 'FP32', 'fp16-fp16': 'FP16', 'bf16-bf16': 'BF16', 'fp8-fp8': 'FP8',
             'int8-int8': 'W8A8', 'int4-int4': 'W4A4', 'int16-int16': 'INT16',
@@ -836,9 +862,6 @@ view.View = class {
                     ? 'Weights: Disabled (Fast) - Click to enable full weight loading'
                     : 'Weights: Enabled (Full) - Click to disable weight loading';
             }
-
-            // Update menu label
-            this._updateMenu();
 
             // Close any open sidebar to force refresh when re-opened
             if (this._sidebar) {
@@ -1150,6 +1173,112 @@ view.View = class {
         return null;
     }
 
+    _discardRepeatedViews() {
+        this._repeatRevision = (this._repeatRevision || 0) + 1;
+        this._renderCache = [];
+        if (this._target) {
+            this._target._renderModel = null;
+        }
+    }
+
+    async _repeatedPresentation(graph, current) {
+        if (this._options.foldRepeatedBlocks !== true) {
+            return graph;
+        }
+        this._repeatStates = this._repeatStates || new WeakMap();
+        let state = this._repeatStates.get(graph);
+        if (!state) {
+            const analysis = await repeatedBlocks(graph, current);
+            if (!analysis || !current()) {
+                return graph;
+            }
+            state = { analysis, selected: new Map(), expanded: new Set() };
+            this._repeatStates.set(graph, state);
+        }
+        nodeCatalog(graph.nodes)?.release();
+        return state.analysis.project(state.selected, state.expanded);
+    }
+
+    async revealRepeated(value) {
+        const graph = this.activeTarget;
+        const state = this._repeatStates?.get(graph);
+        if (state?.pending) {
+            await state.pending;
+            if (this.activeTarget === graph) {
+                await this.revealRepeated(value);
+            }
+            return;
+        }
+        if (this._options.foldRepeatedBlocks !== true || !state || this._target?._table.has(value)) {
+            return;
+        }
+        const match = state.analysis.locate(value);
+        if (match && !state.expanded.has(match.group.id) && (state.selected.get(match.group.id) || 0) !== match.index) {
+            state.selected.set(match.group.id, match.index);
+            this._discardRepeatedViews();
+            const retained = { graph: this.activeTarget };
+            this._retainedFind = retained;
+            const pending = this._updateTarget(this._model, this._path);
+            state.pending = pending;
+            try {
+                await pending;
+            } finally {
+                if (state.pending === pending) {
+                    state.pending = null;
+                }
+                if (this._retainedFind === retained) {
+                    this._retainedFind = null;
+                }
+            }
+        }
+    }
+
+    showRepeatedBlock(group) {
+        const graph = this.activeTarget;
+        const state = this._repeatStates?.get(graph);
+        if (!state) {
+            return;
+        }
+        const sidebar = new view.ObjectSidebar(this);
+        sidebar.addProperty('stack', group.label, 'nowrap');
+        sidebar.addProperty('structure', 'Matching structure; every instance retains its own parameters.');
+        const select = sidebar.createElement('select', 'sidebar-item-selector sidebar-repeat-select');
+        select.setAttribute('aria-label', 'Representative layer');
+        group.blocks.forEach((block, index) => {
+            const option = sidebar.createElement('option');
+            option.value = String(index);
+            option.textContent = `Layer ${block.index}`;
+            select.appendChild(option);
+        });
+        select.value = String(state.selected.get(group.id) || 0);
+        const update = async () => {
+            if (this.activeTarget === graph) {
+                this._sidebar.close();
+                this._discardRepeatedViews();
+                await this._updateTarget(this._model, this._path);
+                if (this.activeTarget === graph) {
+                    this.showRepeatedBlock(group);
+                }
+            }
+        };
+        select.addEventListener('change', () => {
+            state.selected.set(group.id, Number(select.value));
+            update().catch((error) => this.error(error, 'Error changing representative layer.', null));
+        });
+        sidebar.element.appendChild(select);
+        const expanded = state.expanded.has(group.id);
+        sidebar.addProperty('view', expanded ? 'All instances' : `Representative layer ${group.blocks[Number(select.value)].index}`)
+            .action(expanded ? 'Fold stack' : 'Expand stack', 'Show or hide every instance in this stack', () => {
+                if (expanded) {
+                    state.expanded.delete(group.id);
+                } else {
+                    state.expanded.add(group.id);
+                }
+                update().catch((error) => this.error(error, 'Error expanding repeated blocks.', null));
+            });
+        this._sidebar.open(sidebar, 'Repeated Blocks');
+    }
+
     async render(target, signature) {
         this._renderGeneration = (this._renderGeneration || 0) + 1;
         const generation = this._renderGeneration;
@@ -1217,7 +1346,10 @@ view.View = class {
             }
 
             const document = this._host.document;
-            const graph = target;
+            const graph = await this._repeatedPresentation(target, () => generation === this._renderGeneration);
+            if (generation !== this._renderGeneration) {
+                return 'superseded';
+            }
             const groups = graph.groups || false;
             const nodes = graph.nodes;
             this._host.event('graph_view', {
@@ -1226,6 +1358,7 @@ view.View = class {
             });
             this.progress(10);
             const viewGraph = new view.Graph(this, groups);
+            viewGraph._displayGraph = graph;
             // Tag the viewGraph so we can key the cache on next navigation.
             viewGraph._renderModel = this._model;
             viewGraph._renderTarget = target;
@@ -1253,7 +1386,7 @@ view.View = class {
             this.progress(45);
 
             // Opt-1: Check IndexedDB layout cache before running expensive measure()+layout().
-            const idbKey = this._layoutCacheKey(target, signature);
+            const idbKey = this._layoutCacheKey(graph, signature);
             const idbHit = idbKey ? await this._layoutCache.get(idbKey) : null;
             if (generation !== this._renderGeneration) {
                 return 'superseded';
@@ -1511,6 +1644,7 @@ view.View = class {
     }
 
     showNodeProperties(node) {
+        node = node?._originalNode || node;
         if (node) {
             try {
                 if (this._menu) {
@@ -2291,6 +2425,9 @@ view.Graph = class extends grapher.Graph {
         this._values = new Map();
         this._tensors = new Map();
         this._table = new Map();
+        this._namedNodes = new Map();
+        this._namedArguments = new Map();
+        this._repeatNames = new Map();
         this._selection = new Set();
         this._zoom = 1;
         this._viewportObserver = null;
@@ -2314,6 +2451,12 @@ view.Graph = class extends grapher.Graph {
         const obj = new view.Node(this, node);
         obj.name = (this._nodeKey++).toString();
         this._table.set(node, obj);
+        if (node._originalNode) {
+            this._table.set(node._originalNode, obj);
+        }
+        if (node.name) {
+            this._namedNodes.set(node.name, this._namedNodes.has(node.name) ? null : obj);
+        }
         return obj;
     }
 
@@ -2360,6 +2503,11 @@ view.Graph = class extends grapher.Graph {
                 const obj = new view.Argument(this, value);
                 this._tensors.set(value, obj);
                 this._table.set(value, obj);
+                for (const item of value.value) {
+                    if (item?.name) {
+                        this._namedArguments.set(item.name, obj);
+                    }
+                }
             }
             return this._tensors.get(value);
         }
@@ -2466,6 +2614,16 @@ view.Graph = class extends grapher.Graph {
                             this.createValue(value).to.push(viewOutput);
                         }
                     }
+                }
+            }
+        }
+        if (graph._repeatAliases) {
+            for (const [original, displayed] of graph._repeatAliases) {
+                if (original?.name && displayed?.name && !Array.isArray(original.value)) {
+                    this._repeatNames.set(original.name, displayed.name);
+                }
+                if (this._table.has(displayed)) {
+                    this._table.set(original, this._table.get(displayed));
                 }
             }
         }
@@ -2593,6 +2751,16 @@ view.Graph = class extends grapher.Graph {
         }
     }
 
+    _mapRepeatSelection(value) {
+        if (!value || this._table.has(value) || !value.name) {
+            return value;
+        }
+        const identifier = Array.isArray(value.value) && value.value.length === 1 ? value.value[0]?.name || value.name : value.name;
+        const name = this._repeatNames.get(identifier) || identifier;
+        const element = Array.isArray(value.inputs) ? this._namedNodes.get(name) : this._values.get(name) || this._namedArguments.get(name);
+        return element?.value || value;
+    }
+
     select(selection) {
         if (this._selection.size > 0) {
             for (const element of this._selection) {
@@ -2602,7 +2770,8 @@ view.Graph = class extends grapher.Graph {
         }
         if (selection) {
             let array = [];
-            for (const value of selection) {
+            for (let value of selection) {
+                value = this._mapRepeatSelection(value);
                 if (this._table.has(value)) {
                     this._ensureSelectionMaterialized(value);
                     const element = this._table.get(value);
@@ -2624,6 +2793,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     activate(value) {
+        value = this._mapRepeatSelection(value);
         if (this._table.has(value)) {
             this.select(null);
             this._ensureSelectionMaterialized(value);
@@ -2644,7 +2814,8 @@ view.Graph = class extends grapher.Graph {
     }
 
     focus(selection) {
-        for (const value of selection) {
+        for (let value of selection) {
+            value = this._mapRepeatSelection(value);
             this._ensureSelectionMaterialized(value);
             const element = this._table.get(value);
             if (element && !this._selection.has(element)) {
@@ -2654,7 +2825,8 @@ view.Graph = class extends grapher.Graph {
     }
 
     blur(selection) {
-        for (const value of selection) {
+        for (let value of selection) {
+            value = this._mapRepeatSelection(value);
             const element = this._table.get(value);
             if (element && !this._selection.has(element)) {
                 element.deselect();
@@ -3239,6 +3411,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     scrollToValue(value, behavior) {
+        value = this._mapRepeatSelection(value);
         if (!value) {
             return false;
         }
@@ -3405,6 +3578,11 @@ view.Node = class extends grapher.Node {
         title.on('click', () => {
             this.context.activate(value);
         });
+        if (node._repeatHeader) {
+            const group = node._repeatGroup;
+            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `×${group.blocks.length}`, `${group.label}. Select a representative or expand this stack.`);
+            badge.on('click', () => this.context.view.showRepeatedBlock(group));
+        }
         if (node.type.type || (Array.isArray(node.type.nodes) && node.type.nodes.length > 0)) {
             let icon = '\u0192';
             let tooltip = 'Show Function Definition';
@@ -4118,6 +4296,10 @@ view.ObjectSidebar = class extends view.Control {
     constructor(context) {
         super(context);
         this.element = this.createElement('div', 'sidebar-object');
+    }
+
+    render() {
+        return this.element;
     }
 
     addSection(title) {
@@ -5503,7 +5685,7 @@ view.FindSidebar = class extends view.Control {
         if (value.type && !this._exact) {
             const dataType = value.type.dataType ? value.type.dataType.toLowerCase() : null;
             const shape = value.type.shape;
-            const shapeText = shape ? shape.toString().toLowerCase() : null;
+            const shapeText = shape ? (Array.isArray(shape.dimensions) ? `[${shape.dimensions.join(',')}]` : shape.toString()).toLowerCase() : null;
             const dimensions = shape && Array.isArray(shape.dimensions) ? shape.dimensions.map((dimension) => dimension ? dimension.toString().toLowerCase() : '') : null;
             const dimensionsText = dimensions ? dimensions.join(',') : null;
             for (const term of this._terms) {
@@ -5648,7 +5830,7 @@ view.FindSidebar = class extends view.Control {
                     }
                 }
             }
-            for (const node of this._target.nodes) {
+            for (const node of nodeDescriptions(this._target)) {
                 this._node(node);
             }
             if (this._state.connection) {
@@ -7042,22 +7224,22 @@ metrics.Target = class {
             const keys = new Set(this._metrics.map((metrics) => metrics.name));
             if (!keys.has('parameters')) {
                 let parameters = 0;
-                const initializers = new Set();
+                const initializers = new Map();
                 if (this._target && Array.isArray(this._target.nodes)) {
-                    for (const node of this._target.nodes) {
+                    for (const node of nodeDescriptions(this._target)) {
                         for (const argument of node.inputs || []) {
                             if (argument && Array.isArray(argument.value)) {
                                 for (const value of argument.value) {
                                     if (value && value.initializer) {
-                                        initializers.add(value.initializer);
+                                        initializers.set(value.initializer, value.type || value.initializer.type);
                                     }
                                 }
                             }
                         }
                     }
                 }
-                for (const tensor of initializers) {
-                    const shape = tensor && tensor.type && tensor.type.shape && Array.isArray(tensor.type.shape.dimensions) ? tensor.type.shape.dimensions : [];
+                for (const type of initializers.values()) {
+                    const shape = type && type.shape && Array.isArray(type.shape.dimensions) ? type.shape.dimensions : [];
                     if (!shape.every((dim) => typeof dim === 'number')) {
                         parameters = 0;
                         break;

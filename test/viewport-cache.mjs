@@ -3,7 +3,7 @@ import { Edge, Graph, Node } from '../source/grapher.js';
 import { Host } from './mock.js';
 import { test } from 'node:test';
 
-const fixture = async (groups = 6) => {
+const fixture = async (groups = 6, estimatedNodeSizeThreshold = 10000) => {
     const host = new Host({});
     const document = Object.create(host.document);
     document.activeElement = null;
@@ -31,7 +31,7 @@ const fixture = async (groups = 6) => {
     };
     const graph = new Graph(false);
     graph.enableViewportCulling(true, 100);
-    graph.configureDeferredRendering({ detachInvisible: true, estimatedNodeSizeThreshold: 10000 });
+    graph.configureDeferredRendering({ detachInvisible: true, estimatedNodeSizeThreshold });
     graph._detachedElementLimit = 3;
     const nodes = [];
     const edges = [];
@@ -79,6 +79,25 @@ const fixture = async (groups = 6) => {
     };
     return { graph, document, nodes, edges, pan };
 };
+
+test('medium deferred graphs allocate SVG only for the viewport and release distant visuals', async () => {
+    const { graph, document, nodes, edges, pan } = await fixture(300, 500);
+    assert.equal(graph._nodeGroupElement.childNodes.length, 0);
+    assert.equal(graph._renderedNodes.size, 0);
+    assert.ok(nodes.every((node) => node.element === null));
+    assert.ok(edges.every((edge) => !edge.element));
+    const geometry = nodes.map(({ x, y, width, height }) => [x, y, width, height]);
+    pan(0);
+    assert.equal(nodes.filter((node) => node.element).length, 2);
+    pan(150);
+    pan(299);
+    assert.ok(nodes.filter((node) => node.element).length <= graph._detachedElementLimit + 2);
+    assert.equal(nodes[0].element, null);
+    assert.deepEqual(nodes.map(({ x, y, width, height }) => [x, y, width, height]), geometry);
+    await graph.materializeAll(document);
+    assert.ok(nodes.every((node) => node.element));
+    assert.deepEqual(nodes.map(({ x, y, width, height }) => [x, y, width, height]), geometry);
+});
 
 test('panning bounds detached DOM and rebuilds evicted nodes and edge hit tests', async () => {
     const { graph, nodes, edges, pan } = await fixture();

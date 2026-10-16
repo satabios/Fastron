@@ -897,37 +897,14 @@ grapher.Graph = class {
         edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
 
         const deferLeafNodeBuild = this._viewportCulling && this._deferredNodeBuild && this.useEstimatedNodeSizes();
-        const nodesToRender = Array.from(this.nodes.keys());
-        // For very large graphs, skip placeholder DOM creation entirely to avoid
-        // O(N) createElement calls.  Nodes get their DOM elements on first viewport
-        // visibility via _ensureNodeElement().
-        const zeroDomBuild = deferLeafNodeBuild && nodesToRender.length > 5000;
-        // Batch all deferred placeholder insertions into a single DOM reflow
-        // instead of N individual appendChild() calls (saves ~O(N) style recalcs).
-        const deferredFragment = deferLeafNodeBuild && !zeroDomBuild ? document.createDocumentFragment() : null;
-
-        for (const nodeId of nodesToRender) {
+        for (const nodeId of this.nodes.keys()) {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this._isLeafNode(nodeId)) {
-                if (zeroDomBuild) {
-                    // Zero-DOM: no placeholder element, just mark as simplified.
-                    // _ensureNodeElement() will create the full DOM on demand.
+                if (deferLeafNodeBuild) {
+                    // Metadata supplies layout dimensions; SVG is needed only on visibility.
                     node.element = null;
                     node._simplified = true;
-                    this._renderedNodes.add(nodeId);
-                } else if (deferLeafNodeBuild) {
-                    // Create simplified placeholder shape for deferred nodes
-                    node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                    node.element.setAttribute('class', node.class ? `node ${node.class}` : 'node');
-                    node.element.style.opacity = 0;
-                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                    rect.setAttribute('class', 'node node-border');
-                    node.element.appendChild(rect);
-                    node._parentElement = nodeGroup;
-                    node._simplified = true;
-                    deferredFragment.appendChild(node.element);
-                    this._renderedNodes.add(nodeId);
                 } else {
                     node.build(document, nodeGroup);
                     this._renderedNodes.add(nodeId);
@@ -948,11 +925,6 @@ grapher.Graph = class {
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
             }
-        }
-
-        // Flush all deferred placeholder nodes in a single DOM operation.
-        if (deferredFragment) {
-            nodeGroup.appendChild(deferredFragment);
         }
 
         this._focusable.clear();

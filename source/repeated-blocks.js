@@ -1,0 +1,423 @@
+// Full-graph consumers retain ordinary array semantics; the overview uses descriptors.
+const catalogs = new WeakMap();
+const analyses = new WeakMap();
+
+export class NodeCatalog {
+    constructor(records, create, describe, release = null) {
+        this.records = records;
+        this.create = create;
+        this.describe = describe;
+        this.cache = new Map();
+        this._release = release;
+        const index = (array, key) => typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < array.length;
+        const materialize = (array) => {
+            if (catalogs.has(this.nodes)) {
+                for (let i = 0; i < array.length; i++) {
+                    array[i] = this.nodes[i];
+                }
+                catalogs.delete(this.nodes);
+            }
+        };
+        this.nodes = new Proxy(new Array(records.length), {
+            get: (array, key, receiver) => {
+                if (index(array, key) && !Object.hasOwn(array, key) && catalogs.has(this.nodes)) {
+                    const i = Number(key);
+                    if (!this.cache.has(i)) {
+                        this.cache.set(i, create(records[i]));
+                    }
+                    return this.cache.get(i);
+                }
+                return Reflect.get(array, key, receiver);
+            },
+            has: (array, key) => (catalogs.has(this.nodes) && index(array, key)) || Reflect.has(array, key),
+            ownKeys: (array) => catalogs.has(this.nodes) ? [...Array.from({ length: array.length }, (_, i) => String(i)), 'length'] : Reflect.ownKeys(array),
+            getOwnPropertyDescriptor: (array, key) => {
+                if (catalogs.has(this.nodes) && index(array, key) && !Object.hasOwn(array, key)) {
+                    return { configurable: true, enumerable: true, get: () => this.nodes[key] };
+                }
+                return Reflect.getOwnPropertyDescriptor(array, key);
+            },
+            set: (array, key, value) => {
+                materialize(array);
+                return Reflect.set(array, key, value);
+            },
+            deleteProperty: (array, key) => {
+                materialize(array);
+                return Reflect.deleteProperty(array, key);
+            },
+            defineProperty: (array, key, descriptor) => {
+                materialize(array);
+                return Reflect.defineProperty(array, key, descriptor);
+            },
+            preventExtensions: (array) => {
+                materialize(array);
+                return Reflect.preventExtensions(array);
+            }
+        });
+        catalogs.set(this.nodes, this);
+    }
+
+    release() {
+        this.cache.clear();
+        this._release?.();
+    }
+}
+
+export const nodeCatalog = (nodes) => catalogs.get(nodes);
+
+export const nodeDescriptions = function* (graph) {
+    const catalog = nodeCatalog(graph.nodes);
+    if (catalog) {
+        for (const record of catalog.records) {
+            yield catalog.describe(record);
+        }
+    } else {
+        yield* graph.nodes;
+    }
+};
+
+const pathOf = (name) => {
+    const match = typeof name === 'string' && name.match(/^(.*?(?:^|[./])(?:layers?|blocks?|blk|h)[./])(0|[1-9][0-9]*)(?:[./]|$)/);
+    if (!match || !Number.isSafeInteger(Number(match[2]))) {
+        return null;
+    }
+    return { prefix: match[1], index: Number(match[2]), relative: name.slice(match[0].length) };
+};
+
+const scalar = (value, depth = 0) => {
+    if (depth > 32) {
+        throw new Error('Structural attribute exceeds nesting limit.');
+    }
+    if (value === null || value === undefined) {
+        return [String(value)];
+    }
+    if (['string', 'number', 'boolean', 'bigint'].includes(typeof value)) {
+        return [typeof value, Object.is(value, -0) ? '-0' : String(value)];
+    }
+    if (Array.isArray(value)) {
+        if (value.length > 4096) {
+            throw new Error('Structural attribute exceeds size limit.');
+        }
+        return ['array', value.map((item) => scalar(item, depth + 1))];
+    }
+    if (ArrayBuffer.isView(value)) {
+        if (value instanceof DataView) {
+            return ['DataView', scalar(new Uint8Array(value.buffer, value.byteOffset, value.byteLength), depth + 1)];
+        }
+        if (value.length > 4096) {
+            throw new Error('Structural attribute exceeds size limit.');
+        }
+        return [value.constructor.name, Array.from(value, (item) => scalar(item, depth + 1))];
+    }
+    if (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) {
+        return ['object', Object.keys(value).sort().map((key) => [key, scalar(value[key], depth + 1)])];
+    }
+    throw new Error('Unsupported structural attribute.');
+};
+
+const tensorType = (value) => {
+    const type = value && value.type;
+    return type ? [type.dataType, type.layout, scalar(type.shape?.dimensions || []), scalar(value.quantization || value.initializer?.quantization)] : null;
+};
+
+const values = (args) => (args || []).flatMap((arg) => Array.isArray(arg.value) ? arg.value : []);
+const overlay = (source, properties) => Object.create(source, Object.fromEntries(Object.entries(properties).map(([key, value]) =>
+    [key, { value, enumerable: true, configurable: true, writable: true }])));
+
+class RepeatedBlocks {
+    constructor(graph, groups) {
+        this.graph = graph;
+        this.groups = groups;
+    }
+
+    locate(value) {
+        const names = [value?.name, ...(Array.isArray(value?.value) ? value.value.map((item) => item?.name) : [])];
+        for (const name of names) {
+            const path = pathOf(name);
+            if (path) {
+                for (const group of this.groups) {
+                    const index = group.blocks.findIndex((block) => block.index === path.index);
+                    if (group.prefix === path.prefix && index !== -1) {
+                        return { group, index };
+                    }
+                }
+            }
+            if (name) {
+                for (const group of this.groups) {
+                    const index = group.blocks.findIndex((block) => Array.from(block.outputs.values()).some((value) => value.name === name));
+                    if (index !== -1) {
+                        return { group, index };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    project(selected = new Map(), expanded = new Set()) {
+        const graph = this.graph;
+        const nodes = [];
+        const owners = new Int32Array(graph.nodes.length).fill(-1);
+        const aliases = new Map();
+        for (const group of this.groups) {
+            for (const i of group.members) {
+                owners[i] = group.id;
+            }
+        }
+        for (let i = 0; i < graph.nodes.length; i++) {
+            const group = this.groups[owners[i]];
+            if (!group || expanded.has(group.id)) {
+                const node = graph.nodes[i];
+                if (group && i === group.anchor) {
+                    nodes.push(overlay(node, { _originalNode: node, _repeatGroup: group, _repeatHeader: true }));
+                } else {
+                    nodes.push(node);
+                }
+                continue;
+            }
+            if (i !== group.anchor) {
+                continue;
+            }
+            const block = group.blocks[selected.get(group.id) || 0];
+            const replacements = new Map();
+            block.external.forEach((value, slot) => replacements.set(value.name, group.blocks[0].external[slot]));
+            for (const [role, value] of group.exposed) {
+                replacements.set(block.outputs.get(role).name, value);
+            }
+            const args = (list) => (list || []).map((arg) => {
+                const clone = { ...arg, value: arg.value.map((value) => replacements.get(value?.name) || value) };
+                aliases.set(arg, clone);
+                arg.value.forEach((value, index) => aliases.set(value, clone.value[index]));
+                return clone;
+            });
+            block.indices.forEach((index, n) => {
+                const node = graph.nodes[index];
+                nodes.push(overlay(node, {
+                    inputs: args(node.inputs), outputs: args(node.outputs),
+                    group: `Repeated block ${group.id + 1} ×${group.blocks.length}`,
+                    _originalNode: node, _repeatGroup: group, _repeatHeader: n === 0
+                }));
+            });
+        }
+        return overlay(graph, { nodes, groups: true, _repeatAliases: aliases, _originalGraph: graph });
+    }
+}
+
+export const repeatedBlocks = async (graph, current = () => true) => {
+    if (analyses.has(graph)) {
+        return analyses.get(graph);
+    }
+    const catalog = nodeCatalog(graph.nodes);
+    const records = catalog ? catalog.records : graph.nodes;
+    const describe = (i) => catalog ? catalog.describe(records[i]) : records[i];
+    const families = new Map();
+    let deadline = Date.now() + 8;
+    const yieldWork = async () => {
+        if (Date.now() >= deadline) {
+            deadline = Date.now() + 8;
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        }
+        return current();
+    };
+    for (let i = 0; i < records.length; i++) {
+        const path = pathOf(records[i].name);
+        if (path) {
+            if (!families.has(path.prefix)) {
+                families.set(path.prefix, new Map());
+            }
+            const family = families.get(path.prefix);
+            if (!family.has(path.index)) {
+                family.set(path.index, { index: path.index, indices: [] });
+            }
+            family.get(path.index).indices.push(i);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        if (i % 256 === 0 && !await yieldWork()) {
+            return null;
+        }
+    }
+    const producers = new Map();
+    const consumers = new Map();
+    const blockOf = new Map();
+    const signatures = new Map();
+    const makeBlock = (block) => {
+        const nodes = block.indices.map(describe);
+        const local = new Map();
+        block.outputs = new Map();
+        block.external = [];
+        nodes.forEach((node, i) => {
+            (node.outputs || []).forEach((arg, j) => {
+                (arg.value || []).forEach((value, k) => {
+                    if (value?.name) {
+                        const role = `${i}:${j}:${k}`;
+                        if (local.has(value.name)) {
+                            throw new Error('Duplicate block output.');
+                        }
+                        local.set(value.name, role);
+                        block.outputs.set(role, value);
+                    }
+                });
+            });
+        });
+        const external = new Map();
+        const signature = nodes.map((node) => {
+            if (!node.type || node.type.nodes || node.chain?.length || node.blocks?.length || node.controlDependencies?.length) {
+                throw new Error('Nested or stateful block.');
+            }
+            const inputs = (node.inputs || []).map((arg) => [arg.name, (arg.value || []).map((value) => {
+                if (!value) {
+                    return null;
+                }
+                const type = tensorType(value);
+                if (value.initializer) {
+                    return ['parameter', type];
+                }
+                if (!value.name) {
+                    throw new Error('Unnamed block input.');
+                }
+                if (local.has(value.name)) {
+                    return ['local', local.get(value.name), type];
+                }
+                if (!external.has(value.name)) {
+                    external.set(value.name, block.external.length);
+                    block.external.push(value);
+                }
+                return ['input', external.get(value.name), type];
+            })]);
+            const attrs = (node.attributes || []).map((arg) => {
+                if (['graph', 'graph[]', 'tensor', 'tensor[]', 'function', 'function[]', 'object', 'object[]'].includes(arg.type)) {
+                    throw new Error('Nested block attribute.');
+                }
+                return [arg.name, arg.type, scalar(arg.value)];
+            }).sort((a, b) => a[0].localeCompare(b[0]));
+            return [node.type.name, node.type.domain, node.type.module, node.type.identifier, node.type.version, pathOf(node.name)?.relative, inputs,
+                (node.outputs || []).map((arg) => [arg.name, (arg.value || []).map(tensorType)]), attrs];
+        });
+        const key = JSON.stringify(signature);
+        if (!signatures.has(key)) {
+            signatures.set(key, key);
+        }
+        block.signature = signatures.get(key);
+    };
+    for (const family of families.values()) {
+        if (family.size < 2) {
+            continue;
+        }
+        for (const block of family.values()) {
+            try {
+                makeBlock(block);
+                for (const i of block.indices) {
+                    blockOf.set(i, block);
+                }
+            } catch {
+                block.signature = null;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            if (!await yieldWork()) {
+                return null;
+            }
+        }
+    }
+    if (!blockOf.size) {
+        analyses.set(graph, null);
+        return null;
+    }
+    // Boundary checks include consumers outside the candidate stack and graph outputs.
+    for (let i = 0; i < records.length; i++) {
+        const node = describe(i);
+        for (const value of values(node.outputs)) {
+            if (value?.name) {
+                if (producers.has(value.name)) {
+                    analyses.set(graph, null);
+                    return null;
+                }
+                producers.set(value.name, i);
+            }
+        }
+        for (const value of [...values(node.inputs), ...(node.controlDependencies || [])]) {
+            if (value?.name && !value.initializer) {
+                if (!consumers.has(value.name)) {
+                    consumers.set(value.name, []);
+                }
+                consumers.get(value.name).push(i);
+            }
+        }
+        // eslint-disable-next-line no-await-in-loop
+        if (i % 256 === 0 && !await yieldWork()) {
+            return null;
+        }
+    }
+    for (const value of values(graph.outputs)) {
+        if (value?.name) {
+            if (!consumers.has(value.name)) {
+                consumers.set(value.name, []);
+            }
+            consumers.get(value.name).push(-1);
+        }
+    }
+    const groups = [];
+    const accept = (prefix, blocks) => {
+        if (blocks.length < 2) {
+            return;
+        }
+        const members = new Set(blocks.flatMap((block) => block.indices));
+        const first = blocks[0];
+        const last = blocks[blocks.length - 1];
+        const carry = new Map();
+        if (first.external.some((value) => members.has(producers.get(value.name)))) {
+            return;
+        }
+        for (let i = 1; i < blocks.length; i++) {
+            const block = blocks[i];
+            for (let slot = 0; slot < block.external.length; slot++) {
+                const input = block.external[slot];
+                let connection = 'shared';
+                if (input.name !== first.external[slot].name) {
+                    const producer = producers.get(input.name);
+                    if (blockOf.get(producer) !== blocks[i - 1]) {
+                        return;
+                    }
+                    const role = Array.from(blocks[i - 1].outputs).find(([, value]) => value.name === input.name)?.[0];
+                    connection = role;
+                }
+                if (carry.has(slot) && carry.get(slot) !== connection) {
+                    return;
+                }
+                carry.set(slot, connection);
+            }
+        }
+        for (const block of blocks) {
+            for (const value of block.outputs.values()) {
+                if (block !== last && (consumers.get(value.name) || []).some((i) => !members.has(i))) {
+                    return;
+                }
+            }
+        }
+        const exposed = new Map(Array.from(last.outputs).filter(([, value]) => (consumers.get(value.name) || []).some((i) => !members.has(i))));
+        const indices = Uint32Array.from(members).sort();
+        const group = { id: groups.length, prefix, blocks, members: indices, exposed, anchor: indices[0], label: `${prefix}${first.index}–${last.index} ×${blocks.length}` };
+        groups.push(group);
+    };
+    for (const [prefix, family] of families) {
+        let run = [];
+        for (const block of Array.from(family.values()).sort((a, b) => a.index - b.index)) {
+            const previous = run[run.length - 1];
+            if (previous && (block.index !== previous.index + 1 || !block.signature || block.signature !== previous.signature)) {
+                accept(prefix, run);
+                run = [];
+            }
+            if (block.signature) {
+                run.push(block);
+            }
+        }
+        accept(prefix, run);
+    }
+    if (!current()) {
+        return null;
+    }
+    const result = groups.length ? new RepeatedBlocks(graph, groups) : null;
+    analyses.set(graph, result);
+    return result;
+};

@@ -1,6 +1,7 @@
 
 import * as base from './base.js';
 import * as json from './json.js';
+import { NodeCatalog } from './repeated-blocks.js';
 
 const safetensors = {};
 
@@ -65,7 +66,6 @@ safetensors.Module = class {
     constructor(entries) {
         this.inputs = [];
         this.outputs = [];
-        this.nodes = [];
         const layers = new Map();
         for (const [key, value] of Array.from(entries)) {
             if (key === '__metadata__') {
@@ -79,10 +79,11 @@ safetensors.Module = class {
             }
             layers.get(layer).push([name, key, value]);
         }
-        for (const [name, values] of layers) {
-            const node = new safetensors.Node(name, values);
-            this.nodes.push(node);
-        }
+        this.nodes = new NodeCatalog(Array.from(layers, ([name, values]) => ({ name, values })),
+            (record) => new safetensors.Node(record.name, record.values),
+            (record) => ({ name: record.name, type: { name: 'Module' }, outputs: [], attributes: [],
+                inputs: record.values.map(([name, key, obj]) => ({ name, value: [{ name: key,
+                    type: { dataType: safetensors.TensorType.dataType(obj.dtype), shape: { dimensions: obj.shape } }, initializer: {} }] })) })).nodes;
     }
 };
 
@@ -123,25 +124,29 @@ safetensors.Node = class {
 safetensors.TensorType = class {
 
     constructor(dtype, shape) {
+        this.dataType = safetensors.TensorType.dataType(dtype);
+        this.shape = shape;
+    }
+
+    static dataType(dtype) {
         switch (dtype) {
-            case 'I8':      this.dataType = 'int8'; break;
-            case 'I16':     this.dataType = 'int16'; break;
-            case 'I32':     this.dataType = 'int32'; break;
-            case 'I64':     this.dataType = 'int64'; break;
-            case 'U8':      this.dataType = 'uint8'; break;
-            case 'U16':     this.dataType = 'uint16'; break;
-            case 'U32':     this.dataType = 'uint32'; break;
-            case 'U64':     this.dataType = 'uint64'; break;
-            case 'BF16':    this.dataType = 'bfloat16'; break;
-            case 'F16':     this.dataType = 'float16'; break;
-            case 'F32':     this.dataType = 'float32'; break;
-            case 'F64':     this.dataType = 'float64'; break;
-            case 'BOOL':    this.dataType = 'boolean'; break;
-            case 'F8_E4M3': this.dataType = 'float8e4m3fn'; break;
-            case 'F8_E5M2': this.dataType = 'float8e5m2'; break;
+            case 'I8':      return 'int8';
+            case 'I16':     return 'int16';
+            case 'I32':     return 'int32';
+            case 'I64':     return 'int64';
+            case 'U8':      return 'uint8';
+            case 'U16':     return 'uint16';
+            case 'U32':     return 'uint32';
+            case 'U64':     return 'uint64';
+            case 'BF16':    return 'bfloat16';
+            case 'F16':     return 'float16';
+            case 'F32':     return 'float32';
+            case 'F64':     return 'float64';
+            case 'BOOL':    return 'boolean';
+            case 'F8_E4M3': return 'float8e4m3fn';
+            case 'F8_E5M2': return 'float8e5m2';
             default: throw new safetensors.Error(`Unsupported data type '${dtype}'.`);
         }
-        this.shape = shape;
     }
 
     toString() {
@@ -167,6 +172,16 @@ safetensors.Tensor = class {
         this.type = new safetensors.TensorType(obj.dtype, shape);
         this.encoding = '<';
         this.data = obj.__data__;
+        if (obj.__source__) {
+            const source = obj.__source__;
+            const position = source.position;
+            try {
+                source.seek(obj.__offset__ + obj.data_offsets[0]);
+                this.data = source.stream(obj.data_offsets[1] - obj.data_offsets[0]);
+            } finally {
+                source.seek(position);
+            }
+        }
     }
 
     get values() {
@@ -231,9 +246,17 @@ safetensors.Container = class {
             if (key === '__metadata__') {
                 continue;
             }
+            if (!value || !Array.isArray(value.data_offsets) || value.data_offsets.length !== 2) {
+                throw new safetensors.Error(`Invalid tensor metadata for '${key}'.`);
+            }
             const [start, end] = value.data_offsets;
-            stream.seek(offset + start);
-            value.__data__ = stream.stream(end - start);
+            safetensors.TensorType.dataType(value.dtype);
+            if (!Array.isArray(value.shape) || !value.shape.every((dim) => Number.isSafeInteger(dim) && dim >= 0) ||
+                !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > stream.length - offset) {
+                throw new safetensors.Error(`Invalid tensor metadata for '${key}'.`);
+            }
+            value.__source__ = stream;
+            value.__offset__ = offset;
             this.entries.set(key, value);
         }
         stream.seek(position);

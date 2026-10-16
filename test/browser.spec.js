@@ -66,13 +66,16 @@ playwright.test('browser', async ({ page }) => {
     const findMenuItem = await page.locator('button:has-text("Find...")');
     await findMenuItem.click();
     await page.waitForTimeout(500);
-    const search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
+    let search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
     playwright.expect(search).toBeDefined();
 
     // Enable weights by clicking the weights toggle button and waiting for reload
     const weightsButton = await page.waitForSelector('#weights-toggle-button', { state: 'visible', timeout: 5000 });
     await weightsButton.click();
-    await page.waitForTimeout(2000); // Wait for model to reload with weights
+    await page.waitForSelector('body.default');
+    await menuButton.click();
+    await findMenuItem.click();
+    search = await page.waitForSelector('#search', { state: 'visible' });
 
     // Find and activate tensor
     await search.fill('convolution1_W');

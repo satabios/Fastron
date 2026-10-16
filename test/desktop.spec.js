@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as playwright from '@playwright/test';
 import * as url from 'url';
+import { writeRepeatedModel } from './repeated-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
 
@@ -76,13 +77,15 @@ playwright.test('desktop', async () => {
             }
         });
         await page.waitForTimeout(500);
-        const search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
+        let search = await page.waitForSelector('#search', { state: 'visible', timeout: 5000 });
         playwright.expect(search).toBeDefined();
 
         // Enable weights by clicking the weights toggle button and waiting for reload
         const weightsButton = await page.waitForSelector('#weights-toggle-button', { state: 'visible', timeout: 5000 });
         await weightsButton.click();
-        await page.waitForTimeout(2000); // Wait for model to reload with weights
+        await page.waitForSelector('body.default');
+        await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('find', {}));
+        search = await page.waitForSelector('#search', { state: 'visible' });
 
         // Find and activate tensor
         await search.fill('convolution1_W');
@@ -163,6 +166,45 @@ playwright.test('comparator detects rewiring in real model files', async ({ play
         await page.locator('#target-left .node-diff-modified text').filter({ hasText: 'Relu' }).first().click();
         await playwright.expect(page.locator('#diff-panel-content')).toContainText('Inputs');
         await playwright.expect(page.locator('#diff-panel-content')).not.toContainText('Same structure');
+    } finally {
+        await app.close();
+    }
+});
+
+playwright.test('desktop folds repeated blocks and reveals the actual hidden weights', async ({ playwright: driver }, testInfo) => {
+    const folder = testInfo.outputPath('repeated');
+    fs.mkdirSync(folder, { recursive: true });
+    const { file } = writeRepeatedModel(folder, 'safetensors');
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${path.join(folder, 'profile')}`], env });
+    try {
+        const page = await app.firstWindow();
+        await page.waitForSelector('body.welcome', { timeout: 30000 });
+        const consent = page.locator('#message-button');
+        if (await consent.isVisible()) {
+            await consent.click();
+        }
+        await app.evaluate(({ BrowserWindow }, file) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('open', { path: file });
+        }, file);
+        const nodes = page.locator('#canvas .graph-node');
+        await playwright.expect(nodes).toHaveCount(2, { timeout: 30000 });
+        await page.locator('.node-item-repeat').click();
+        await page.getByLabel('Representative layer').selectOption('17');
+        await playwright.expect(page.getByLabel('Representative layer')).toHaveValue('17');
+        await page.getByText('Expand stack', { exact: true }).click();
+        await playwright.expect(nodes).toHaveCount(48);
+        await page.getByText('Fold stack', { exact: true }).click();
+        await playwright.expect(nodes).toHaveCount(2);
+        await playwright.expect(page.getByText('Expand stack', { exact: true })).toBeVisible();
+        await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('find', {}));
+        await page.locator('#search').fill('encoder.layers.7.q_proj.weight');
+        await page.locator('.sidebar-find-content li').filter({ hasText: 'encoder.layers.7.q_proj.weight' }).dblclick();
+        const entry = page.locator('#sidebar-content .sidebar-item:has(.sidebar-item-name input[value="value"])');
+        await entry.locator('.sidebar-item-value-button').first().click();
+        await entry.locator('pre').click();
+        await playwright.expect(entry.locator('pre').last()).toContainText('70');
     } finally {
         await app.close();
     }

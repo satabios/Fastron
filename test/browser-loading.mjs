@@ -98,6 +98,14 @@ try {
         }
         assert.ok(await page.locator('#canvas g').count() > 0);
         assert.ok(transferred - beforeOpen < 131072, `Unexpected weight download: ${transferred - beforeOpen}`);
+        if (input === 'large') {
+            await expect(page.locator('#canvas .graph-node').first()).toBeVisible();
+            assert.ok(await page.locator('#canvas .graph-node').count() < 601, 'Offscreen nodes must not allocate SVG placeholders.');
+            const beforePan = transferred;
+            await page.locator('#target').hover();
+            await page.mouse.wheel(0, 1500);
+            assert.equal(transferred, beforePan, 'Panning must not fetch tensor payloads.');
+        }
         await page.locator('#menu-button').click();
         await page.locator('button:has-text("Find...")').first().click();
         await page.locator('#search').fill('weight');

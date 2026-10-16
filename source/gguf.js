@@ -1,4 +1,5 @@
 import * as base from './base.js';
+import { NodeCatalog } from './repeated-blocks.js';
 
 const gguf = {};
 
@@ -85,13 +86,16 @@ gguf.Graph = class {
     constructor(graph, type = '') {
         this.name = graph.type;
         this.type = type;
-        this.nodes = [];
         this.inputs = [];
         this.outputs = [];
-        for (const layer of graph.layers) {
-            const node = new gguf.Node(layer);
-            this.nodes.push(node);
-        }
+        this.nodes = new NodeCatalog(graph.layers, (layer) => new gguf.Node(layer), (layer) => ({
+            name: layer.name || '', type: { name: layer.type, ...(layer.layers?.length ? { nodes: [] } : {}) },
+            attributes: Array.from(layer.metadata || [], ([name, value]) => ({ name, value })), outputs: [],
+            inputs: Array.from(layer.weights || [], ([name, weight]) => ({ name, value: [{ name: weight.name,
+                type: { dataType: weight.dtype, shape: { dimensions: weight.ne } },
+                initializer: { quantization: weight.type !== gguf.QuantizationType.F32 && weight.type !== gguf.QuantizationType.F16 ?
+                    { type: gguf.Utility.enum(gguf.QuantizationType, weight.type).toLowerCase() } : null } }] }))
+        })).nodes;
     }
 };
 
@@ -170,6 +174,16 @@ gguf.Tensor = class {
     constructor(tensor) {
         const shape = new gguf.TensorShape(tensor.ne);
         this.type = new gguf.TensorType(tensor.dtype, shape);
+        if (tensor.__source__) {
+            const source = tensor.__source__;
+            const position = source.position;
+            try {
+                source.seek(tensor.__offset__);
+                tensor = { ...tensor, data: source.stream(tensor.__length__) };
+            } finally {
+                source.seek(position);
+            }
+        }
         if (tensor.type !== gguf.QuantizationType.F32 && tensor.type !== gguf.QuantizationType.F16) {
             this.quantization = {
                 type: gguf.Utility.enum(gguf.QuantizationType, tensor.type).toLowerCase()
@@ -301,8 +315,13 @@ gguf.Reader = class {
                     if (offset < reader.length) {
                         const n_elems = tensor.ne.reduce((a, b) => a * b, 1);
                         const n_bytes = Math.floor((n_elems * type_size) / block_size);
-                        reader.seek(offset + tensor.offset);
-                        tensor.data = reader.stream(n_bytes);
+                        const start = offset + tensor.offset;
+                        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(n_bytes) || start < offset || n_bytes < 0 || n_bytes > reader.length - start) {
+                            throw new gguf.Error(`Invalid tensor byte range for '${tensor.name}'.`);
+                        }
+                        tensor.__source__ = reader;
+                        tensor.__offset__ = start;
+                        tensor.__length__ = n_bytes;
                     }
                 }
             }
