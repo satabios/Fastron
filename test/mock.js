@@ -76,6 +76,11 @@ class DOMTokenList {
         }
         return value.split(' ').some((s) => s === token);
     }
+
+    remove(...tokens) {
+        const value = this._element.getAttribute('class') || '';
+        this._element.setAttribute('class', value.split(' ').filter((token) => !tokens.includes(token)).join(' '));
+    }
 }
 
 class HTMLElement {

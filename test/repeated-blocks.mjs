@@ -3,7 +3,7 @@ import * as base from '../source/base.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModelFactoryService, View } from '../source/view.js';
+import { Graph, ModelFactoryService, View } from '../source/view.js';
 import { NodeCatalog, nodeCatalog, nodeDescriptions, repeatedBlocks } from '../source/repeated-blocks.js';
 import { Controller } from '../source/comparator.js';
 import { Host } from './mock.js';
@@ -99,21 +99,39 @@ test('the lazy catalog retains array semantics without constructing every node',
     assert.equal(created, 0);
     const repeats = await repeatedBlocks(graph);
     assert.equal(created, 0);
-    repeats.project();
-    assert.equal(created, 2);
+    const overview = repeats.project();
+    assert.equal(created, 0);
+    assert.equal(overview.nodes[0]._originalNode, graph.nodes[0]);
+    assert.equal(created, 1);
     assert.equal(graph.nodes[0], graph.nodes[0]);
     assert.equal(graph.nodes.map((node) => node.name).length, 192);
     assert.equal(created, 192);
     catalog.release();
     assert.equal(catalog.cache.size, 0);
-    repeats.project(new Map([[0, 95]]));
-    assert.equal(catalog.cache.size, 2);
+    const selected = repeats.project(new Map([[0, 95]]));
+    assert.equal(catalog.cache.size, 0);
+    assert.equal(selected.nodes[0]._originalNode.name, 'encoder.layers.95.fc1');
+    assert.equal(catalog.cache.size, 1);
 });
 
 test('analysis can be cancelled before publishing a partial index', async () => {
     const graph = fixture(256);
     assert.equal(await repeatedBlocks(graph, () => false), null);
     assert.equal((await repeatedBlocks(graph)).groups[0].blocks.length, 256);
+});
+
+test('verified repeat records retain indices instead of per-instance boundary maps and signatures', async () => {
+    const graph = fixture(256);
+    const analysis = await repeatedBlocks(graph);
+    for (const group of analysis.groups) {
+        assert.equal(group.external.length, 1);
+        for (const block of group.blocks) {
+            assert.deepEqual(Object.keys(block).sort(), ['index', 'indices']);
+            assert.ok(block.indices instanceof Uint32Array);
+        }
+    }
+    assert.deepEqual(analysis.locate({ name: 'hidden_217' }), { group: analysis.groups[0], index: 217 });
+    assert.equal(analysis.project(new Map([[0, 217]])).nodes[0].inputs[1].value[0].name, 'encoder.layers.217.weight');
 });
 
 test('dtype, quantization, attributes and rewiring differences cannot be folded away', async () => {
@@ -184,6 +202,66 @@ test('comparison still sees modifications in hidden instances', async () => {
 });
 
 for (const format of ['safetensors', 'gguf', 'onnx']) {
+    test(`${format}: expanded rendering retains model and UI objects only near the viewport`, async () => {
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-viewport-model-'));
+        const host = new Host({ serial: true });
+        const { file } = writeRepeatedModel(folder, format, 256);
+        const context = await openSource(host, { path: file });
+        try {
+            const model = await new ModelFactoryService(host).open(context);
+            const graph = model.modules[0];
+            const analysis = await repeatedBlocks(graph);
+            const display = analysis.project(new Map(), new Set([0]));
+            const view = new View(host);
+            view.model = model;
+            const rendered = new Graph(view, display.groups);
+            rendered.enableViewportCulling(true, 300);
+            rendered.configureDeferredRendering({ detachInvisible: true, estimatedNodeSizeThreshold: 500 });
+            rendered._detachedElementLimit = 4;
+            rendered.add(display);
+            const nodes = Array.from(rendered.nodes.values(), (entry) => entry.label).filter((node) => node._loadValue);
+            assert.equal(nodes.length, 512);
+            assert.ok(nodes.every((node) => !node._value && node._blocks.length === 0));
+            assert.equal(nodeCatalog(graph.nodes).cache.size, 0);
+            const before = await context.source.request('stats');
+            rendered.build(host.document);
+            await rendered.measure();
+            assert.ok(nodes.every((node) => !node._value && node._blocks.length === 0));
+            assert.equal(nodeCatalog(display.nodes).cache.size, 0);
+            await rendered.layout(null);
+            rendered.populateTiles();
+            rendered.compactLayout();
+            const geometry = nodes.map(({ x, y, width, height }) => [x, y, width, height]);
+            const pan = (node) => {
+                const delta = rendered.updateViewportVisibility({ x: node.x - 10, y: node.y - 10, width: 200, height: 150 });
+                rendered.updateVisibleElements(host.document, delta);
+            };
+            pan(nodes[0]);
+            assert.ok(nodes.some((node) => node._value && node._blocks.length));
+            assert.ok(nodes.filter((node) => node._value).length < 512);
+            pan(nodes[300]);
+            pan(nodes[510]);
+            assert.equal(nodes[0]._value, null);
+            assert.equal(nodes[0]._blocks.length, 0);
+            const descriptor = { name: nodes[0].id.slice('node-name-'.length), inputs: [] };
+            view.showNodeProperties = (node) => assert.equal(node.name, descriptor.name);
+            rendered.activate(descriptor);
+            assert.ok(nodes[0]._value && nodes[0].element);
+            await rendered.materializeAll(host.document);
+            assert.ok(nodes.every((node) => node._value && node.element));
+            rendered.select(null);
+            rendered.hideAllNodes();
+            rendered.resetViewportVisibility();
+            pan(nodes[510]);
+            assert.ok(nodes.filter((node) => node._value).length < 512);
+            assert.deepEqual(nodes.map(({ x, y, width, height }) => [x, y, width, height]), geometry);
+            assert.equal((await context.source.request('stats')).readBytes, before.readBytes);
+        } finally {
+            context.source.dispose();
+            fs.rmSync(folder, { recursive: true, force: true });
+        }
+    });
+
     test(`${format}: indexed loading materializes one block and reads the selected instance's real bytes`, async () => {
         const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-repeated-'));
         const host = new Host({ serial: true });
@@ -201,7 +279,7 @@ for (const format of ['safetensors', 'gguf', 'onnx']) {
             assert.equal(catalog.cache.size, 0);
             const folded = analysis.project(new Map([[0, 17]]));
             assert.equal(folded.nodes.length, 2);
-            assert.equal(catalog.cache.size, 2);
+            assert.equal(catalog.cache.size, 0);
             const view = new View(host);
             view.model = model;
             view._path = [{ target: graph }];
@@ -212,7 +290,7 @@ for (const format of ['safetensors', 'gguf', 'onnx']) {
             view.showTargetProperties();
             assert.equal(metrics.find((metric) => metric.name === 'parameters').value,
                 format === 'onnx' ? 24 * 1048576 : 48 * (1048576 + 4));
-            assert.equal(catalog.cache.size, 2, 'Graph summaries must not materialize hidden nodes.');
+            assert.equal(catalog.cache.size, 0, 'Graph summaries must not materialize hidden nodes.');
             const tensor = folded.nodes[0].inputs.flatMap((arg) => arg.value).find((value) => value.initializer).initializer;
             const before = await context.source.request('stats');
             const preview = await tensor.preview(1);
@@ -223,7 +301,7 @@ for (const format of ['safetensors', 'gguf', 'onnx']) {
             assert.equal(all.nodes.length, 48);
             catalog.release();
             analysis.project();
-            assert.equal(catalog.cache.size, 2);
+            assert.equal(catalog.cache.size, 0);
             assert.equal((await context.source.request('stats')).readBytes, after.readBytes);
             await tensor.read();
             assert.equal(new DataView(tensor.values.buffer, tensor.values.byteOffset, 4).getFloat32(0, true), 170);

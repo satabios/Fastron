@@ -516,16 +516,16 @@ grapher.Graph = class {
 
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
 
-        // Ensure endpoint nodes of visible edges are also included in the visible set.
-        // TileManager can return an edge whose path crosses visible tiles even when one
-        // or both endpoint nodes are outside the tile buffer.  With _detachInvisible=true
-        // those endpoint nodes would be detached from the DOM, making the edge appear to
-        // terminate in empty space ("floating node" / dangling connector).
+        // Locked geometry routes crossing edges without constructing distant endpoint UI.
         for (const edgeKey of visibleEdges) {
             const edgeEntry = this._edges.get(edgeKey);
             if (edgeEntry) {
-                visibleNodes.add(edgeEntry.v);
-                visibleNodes.add(edgeEntry.w);
+                if (!edgeEntry.label.from?._geometryLocked) {
+                    visibleNodes.add(edgeEntry.v);
+                }
+                if (!edgeEntry.label.to?._geometryLocked) {
+                    visibleNodes.add(edgeEntry.w);
+                }
             }
         }
 
@@ -1184,6 +1184,22 @@ grapher.Graph = class {
             }
         }
         return '';
+    }
+
+    compactLayout() {
+        let count = 0;
+        for (const { label } of this.edges.values()) {
+            if (label instanceof grapher.Edge) {
+                count += (label.points?.length || 0) * 2;
+            }
+        }
+        const coordinates = new Float64Array(count);
+        let offset = 0;
+        for (const { label } of this.edges.values()) {
+            if (label instanceof grapher.Edge) {
+                offset = label.packPoints(coordinates, offset);
+            }
+        }
     }
 
     // Opt-1: Snapshot current node positions + edge routing for IndexedDB caching.
@@ -2389,6 +2405,39 @@ grapher.Edge = class {
         this._hitTestParentElement = null;
         this._labelParentElement = null;
         this._needsUpdate = true;
+        if (this._pointBuffer && this._points) {
+            const sameLength = this._points.length === this._pointCount;
+            this.packPoints(sameLength ? this._pointBuffer : new Float64Array(this._points.length * 2), sameLength ? this._pointOffset : 0);
+        }
+    }
+
+    get points() {
+        if (!this._points && this._pointBuffer) {
+            this._points = Array.from({ length: this._pointCount }, (_, i) => ({
+                x: this._pointBuffer[this._pointOffset + i * 2],
+                y: this._pointBuffer[this._pointOffset + i * 2 + 1]
+            }));
+        }
+        return this._points;
+    }
+
+    set points(points) {
+        this._pointBuffer = null;
+        this._points = points;
+    }
+
+    packPoints(buffer, offset) {
+        const points = this.points || [];
+        const start = offset;
+        for (const point of points) {
+            buffer[offset++] = point.x;
+            buffer[offset++] = point.y;
+        }
+        this._pointBuffer = buffer;
+        this._pointOffset = start;
+        this._pointCount = points.length;
+        this._points = null;
+        return offset;
     }
 
     get pathPoints() {

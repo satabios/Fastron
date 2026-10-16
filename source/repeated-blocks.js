@@ -3,12 +3,13 @@ const catalogs = new WeakMap();
 const analyses = new WeakMap();
 
 export class NodeCatalog {
-    constructor(records, create, describe, release = null) {
+    constructor(records, create, describe, release = null, evict = null) {
         this.records = records;
         this.create = create;
         this.describe = describe;
         this.cache = new Map();
         this._release = release;
+        this._evict = evict;
         const index = (array, key) => typeof key === 'string' && /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < array.length;
         const materialize = (array) => {
             if (catalogs.has(this.nodes)) {
@@ -60,6 +61,11 @@ export class NodeCatalog {
     release() {
         this.cache.clear();
         this._release?.();
+    }
+
+    evict(index) {
+        this.cache.delete(index);
+        this._evict?.(index);
     }
 }
 
@@ -121,6 +127,28 @@ const tensorType = (value) => {
 };
 
 const values = (args) => (args || []).flatMap((arg) => Array.isArray(arg.value) ? arg.value : []);
+const boundaries = (nodes) => {
+    const outputs = new Map();
+    const names = new Set();
+    nodes.forEach((node, i) => (node.outputs || []).forEach((arg, j) => (arg.value || []).forEach((value, k) => {
+        if (value?.name) {
+            if (names.has(value.name)) {
+                throw new Error('Duplicate block output.');
+            }
+            names.add(value.name);
+            outputs.set(`${i}:${j}:${k}`, value);
+        }
+    })));
+    const external = new Map();
+    for (const node of nodes) {
+        for (const value of values(node.inputs)) {
+            if (value?.name && !value.initializer && !names.has(value.name) && !external.has(value.name)) {
+                external.set(value.name, value);
+            }
+        }
+    }
+    return { outputs, external: Array.from(external.values()) };
+};
 const overlay = (source, properties) => Object.create(source, Object.fromEntries(Object.entries(properties).map(([key, value]) =>
     [key, { value, enumerable: true, configurable: true, writable: true }])));
 
@@ -128,6 +156,11 @@ class RepeatedBlocks {
     constructor(graph, groups) {
         this.graph = graph;
         this.groups = groups;
+    }
+
+    _describe(index) {
+        const catalog = nodeCatalog(this.graph.nodes);
+        return catalog ? catalog.describe(catalog.records[index]) : this.graph.nodes[index];
     }
 
     locate(value) {
@@ -144,7 +177,7 @@ class RepeatedBlocks {
             }
             if (name) {
                 for (const group of this.groups) {
-                    const index = group.blocks.findIndex((block) => Array.from(block.outputs.values()).some((value) => value.name === name));
+                    const index = group.blocks.findIndex((block) => block.indices.some((i) => values(this._describe(i).outputs).some((value) => value.name === name)));
                     if (index !== -1) {
                         return { group, index };
                     }
@@ -156,7 +189,8 @@ class RepeatedBlocks {
 
     project(selected = new Map(), expanded = new Set()) {
         const graph = this.graph;
-        const nodes = [];
+        const catalog = nodeCatalog(graph.nodes);
+        const records = [];
         const owners = new Int32Array(graph.nodes.length).fill(-1);
         const aliases = new Map();
         for (const group of this.groups) {
@@ -167,38 +201,42 @@ class RepeatedBlocks {
         for (let i = 0; i < graph.nodes.length; i++) {
             const group = this.groups[owners[i]];
             if (!group || expanded.has(group.id)) {
-                const node = graph.nodes[i];
-                if (group && i === group.anchor) {
-                    nodes.push(overlay(node, { _originalNode: node, _repeatGroup: group, _repeatHeader: true }));
-                } else {
-                    nodes.push(node);
-                }
+                records.push({ index: i, group: group && i === group.anchor ? group : null });
                 continue;
             }
             if (i !== group.anchor) {
                 continue;
             }
             const block = group.blocks[selected.get(group.id) || 0];
+            const detail = boundaries(Array.from(block.indices, (index) => this._describe(index)));
             const replacements = new Map();
-            block.external.forEach((value, slot) => replacements.set(value.name, group.blocks[0].external[slot]));
+            detail.external.forEach((value, slot) => replacements.set(value.name, group.external[slot]));
             for (const [role, value] of group.exposed) {
-                replacements.set(block.outputs.get(role).name, value);
+                replacements.set(detail.outputs.get(role).name, value);
             }
             const args = (list) => (list || []).map((arg) => {
                 const clone = { ...arg, value: arg.value.map((value) => replacements.get(value?.name) || value) };
-                aliases.set(arg, clone);
-                arg.value.forEach((value, index) => aliases.set(value, clone.value[index]));
+                arg.value.forEach((value, index) => {
+                    if (value?.name && value.name !== clone.value[index]?.name) {
+                        aliases.set(value.name, clone.value[index].name);
+                    }
+                });
                 return clone;
             });
             block.indices.forEach((index, n) => {
-                const node = graph.nodes[index];
-                nodes.push(overlay(node, {
-                    inputs: args(node.inputs), outputs: args(node.outputs),
-                    group: `Repeated block ${group.id + 1} ×${group.blocks.length}`,
-                    _originalNode: node, _repeatGroup: group, _repeatHeader: n === 0
-                }));
+                records.push({ index, group, args, header: n === 0 });
             });
         }
+        const project = (node, record) => record.group ? overlay(node, {
+            ...(record.args ? { inputs: record.args(node.inputs), outputs: record.args(node.outputs),
+                group: `Repeated block ${record.group.id + 1} ×${record.group.blocks.length}` } : {}),
+            _originalNode: node, _repeatGroup: record.group, _repeatHeader: record.args ? record.header : true
+        }) : node;
+        const projected = new NodeCatalog(records,
+            (record) => project(graph.nodes[record.index], record),
+            (record) => project(this._describe(record.index), record),
+            () => catalog?.release(), (index) => catalog?.evict(records[index].index));
+        const nodes = catalog ? projected.nodes : Array.from(projected.nodes);
         return overlay(graph, { nodes, groups: true, _repeatAliases: aliases, _originalGraph: graph });
     }
 }
@@ -244,24 +282,9 @@ export const repeatedBlocks = async (graph, current = () => true) => {
     const signatures = new Map();
     const makeBlock = (block) => {
         const nodes = block.indices.map(describe);
-        const local = new Map();
-        block.outputs = new Map();
-        block.external = [];
-        nodes.forEach((node, i) => {
-            (node.outputs || []).forEach((arg, j) => {
-                (arg.value || []).forEach((value, k) => {
-                    if (value?.name) {
-                        const role = `${i}:${j}:${k}`;
-                        if (local.has(value.name)) {
-                            throw new Error('Duplicate block output.');
-                        }
-                        local.set(value.name, role);
-                        block.outputs.set(role, value);
-                    }
-                });
-            });
-        });
-        const external = new Map();
+        Object.assign(block, boundaries(nodes));
+        const local = new Map(Array.from(block.outputs, ([role, value]) => [value.name, role]));
+        const external = new Map(block.external.map((value, index) => [value.name, index]));
         const signature = nodes.map((node) => {
             if (!node.type || node.type.nodes || node.chain?.length || node.blocks?.length || node.controlDependencies?.length) {
                 throw new Error('Nested or stateful block.');
@@ -279,10 +302,6 @@ export const repeatedBlocks = async (graph, current = () => true) => {
                 }
                 if (local.has(value.name)) {
                     return ['local', local.get(value.name), type];
-                }
-                if (!external.has(value.name)) {
-                    external.set(value.name, block.external.length);
-                    block.external.push(value);
                 }
                 return ['input', external.get(value.name), type];
             })]);
@@ -416,6 +435,10 @@ export const repeatedBlocks = async (graph, current = () => true) => {
     }
     if (!current()) {
         return null;
+    }
+    for (const group of groups) {
+        group.external = group.blocks[0].external;
+        group.blocks = group.blocks.map((block) => ({ index: block.index, indices: Uint32Array.from(block.indices) }));
     }
     const result = groups.length ? new RepeatedBlocks(graph, groups) : null;
     analyses.set(graph, result);

@@ -607,6 +607,9 @@ view.View = class {
                 break;
             case 'foldRepeatedBlocks':
                 this._options.foldRepeatedBlocks = !this._options.foldRepeatedBlocks;
+                if (this._options.foldRepeatedBlocks) {
+                    this._repeatStates?.get(this.activeTarget)?.expanded.clear();
+                }
                 this._discardRepeatedViews();
                 this._reload();
                 break;
@@ -700,7 +703,7 @@ view.View = class {
         add(signature);
         const nodes = target && Array.isArray(target.nodes) ? target.nodes : [];
         add(nodes.length);
-        for (const node of nodes) {
+        for (const node of target ? nodeDescriptions(target) : []) {
             add(node && (node.name || node.identifier));
             add(node && node.type && (node.type.name || node.type.identifier));
             for (const list of [node && node.inputs, node && node.outputs]) {
@@ -781,7 +784,7 @@ view.View = class {
             return;
         }
         const dtypeSet = new Set();
-        for (const node of activeTarget.nodes) {
+        for (const node of nodeDescriptions(activeTarget)) {
             const key = view.Node._getDtypeKey(node);
             if (key) {
                 dtypeSet.add(key);
@@ -1432,6 +1435,9 @@ view.View = class {
                 // Populate tiles after layout completes
                 if (viewGraph.isViewportCullingEnabled()) {
                     viewGraph.populateTiles();
+                }
+                if (viewGraph.useEstimatedNodeSizes()) {
+                    viewGraph.compactLayout();
                 }
 
                 this.target = viewGraph;
@@ -2423,8 +2429,8 @@ view.Graph = class extends grapher.Graph {
         this.counter = 0;
         this._nodeKey = 0;
         this._values = new Map();
-        this._tensors = new Map();
-        this._table = new Map();
+        this._tensors = new WeakMap();
+        this._table = new WeakMap();
         this._namedNodes = new Map();
         this._namedArguments = new Map();
         this._repeatNames = new Map();
@@ -2447,8 +2453,8 @@ view.Graph = class extends grapher.Graph {
         return this.view.options;
     }
 
-    createNode(node) {
-        const obj = new view.Node(this, node);
+    createNode(node, load = null, release = null) {
+        const obj = new view.Node(this, node, undefined, load, release);
         obj.name = (this._nodeKey++).toString();
         this._table.set(node, obj);
         if (node._originalNode) {
@@ -2497,15 +2503,18 @@ view.Graph = class extends grapher.Graph {
         return this._values.get(key);
     }
 
-    createArgument(value) {
+    createArgument(value, owner = null) {
         if (Array.isArray(value.value) && value.value.length === 1 && value.value[0].initializer) {
             if (!this._tensors.has(value)) {
                 const obj = new view.Argument(this, value);
+                obj.owner = owner;
                 this._tensors.set(value, obj);
                 this._table.set(value, obj);
                 for (const item of value.value) {
                     if (item?.name) {
-                        this._namedArguments.set(item.name, obj);
+                        if (!this._namedArguments.has(item.name)) {
+                            this._namedArguments.set(item.name, owner ? { owner, index: owner.value.inputs.indexOf(value) } : obj);
+                        }
                     }
                 }
             }
@@ -2521,7 +2530,7 @@ view.Graph = class extends grapher.Graph {
         const clusterParentMap = new Map();
         const groups = graph.groups;
         if (groups) {
-            for (const node of graph.nodes) {
+            for (const node of nodeDescriptions(graph)) {
                 let name = node.group;
                 // shortcut: stops at the first already-mapped ancestor (its ancestors are mapped too), upgrade never needed
                 while (name && !clusterParentMap.has(name)) {
@@ -2545,8 +2554,15 @@ view.Graph = class extends grapher.Graph {
                 }
             }
         }
-        for (const node of graph.nodes) {
-            const viewNode = this.createNode(node);
+        const catalog = nodeCatalog(graph.nodes);
+        const defer = catalog && this._viewportCulling && this._deferredNodeBuild && graph.nodes.length > this._estimatedNodeSizeThreshold;
+        for (let i = 0; i < graph.nodes.length; i++) {
+            const node = graph.nodes[i];
+            const attributes = !defer || Array.isArray(node._rawAttributes) ? [] : node.attributes || [];
+            const simple = !node.chain?.length && !node.blocks?.length && !node.nodes?.length && !node.inner &&
+                !(node.inputs || []).some((arg) => arg.type && !arg.type.endsWith('*')) &&
+                !attributes.some((arg) => /^(graph|object|function)/.test(arg.type));
+            const viewNode = defer && simple ? this.createNode(node, () => graph.nodes[i], () => catalog.evict(i)) : this.createNode(node);
             this.setNode(viewNode);
             let outputs = node.outputs;
             if (node.chain && node.chain.length > 0) {
@@ -2603,6 +2619,10 @@ view.Graph = class extends grapher.Graph {
                     }
                 }
             }
+            if (viewNode._loadValue) {
+                viewNode._value = null;
+                catalog.evict(i);
+            }
         }
         if (Array.isArray(outputs)) {
             for (const argument of outputs) {
@@ -2619,13 +2639,11 @@ view.Graph = class extends grapher.Graph {
         }
         if (graph._repeatAliases) {
             for (const [original, displayed] of graph._repeatAliases) {
-                if (original?.name && displayed?.name && !Array.isArray(original.value)) {
-                    this._repeatNames.set(original.name, displayed.name);
-                }
-                if (this._table.has(displayed)) {
-                    this._table.set(original, this._table.get(displayed));
-                }
+                this._repeatNames.set(original, displayed);
             }
+        }
+        if (defer) {
+            catalog.release();
         }
     }
 
@@ -2757,7 +2775,10 @@ view.Graph = class extends grapher.Graph {
         }
         const identifier = Array.isArray(value.value) && value.value.length === 1 ? value.value[0]?.name || value.name : value.name;
         const name = this._repeatNames.get(identifier) || identifier;
-        const element = Array.isArray(value.inputs) ? this._namedNodes.get(name) : this._values.get(name) || this._namedArguments.get(name);
+        let element = Array.isArray(value.inputs) ? this._namedNodes.get(name) : this._values.get(name) || this._namedArguments.get(name);
+        if (element?.owner && !(element instanceof view.Argument)) {
+            element = this.createArgument(element.owner.value.inputs[element.index], element.owner);
+        }
         return element?.value || value;
     }
 
@@ -2875,6 +2896,9 @@ view.Graph = class extends grapher.Graph {
             }
         };
         const element = this._table.get(value);
+        if (element?.owner) {
+            materializeNode(element.owner);
+        }
         if (value.node) {
             const parentNode = this._table.get(value.node);
             materializeNode(parentNode);
@@ -3503,18 +3527,30 @@ view.Graph = class extends grapher.Graph {
 
 view.Node = class extends grapher.Node {
 
-    constructor(context, value, type) {
+    constructor(context, value, type, load = null, release = null) {
         super();
         this.context = context;
         this.value = value;
+        this._loadValue = load;
+        this._releaseValue = release;
         this.id = `node-${value.name ? `name-${value.name}` : `id-${(context.counter++)}`}`;
-        this._add(value, type);
+        this._minlen = (value.inputs || []).every((arg) => (!arg.type || arg.type.endsWith('*')) && Array.isArray(arg.value) && arg.value.every((value) => value?.initializer)) ? 2 : 1;
+        if (!load) {
+            this._add(value, type);
+        }
         const inputs = value.inputs;
         if (type !== 'graph' && Array.isArray(inputs)) {
             for (const argument of inputs) {
                 if (!argument.type || argument.type.endsWith('*')) {
                     if (Array.isArray(argument.value) && argument.value.length === 1 && argument.value[0].initializer) {
-                        context.createArgument(argument);
+                        if (load) {
+                            const name = argument.value[0].name;
+                            if (name && !context._namedArguments.has(name)) {
+                                context._namedArguments.set(name, { owner: this, index: inputs.indexOf(argument) });
+                            }
+                        } else {
+                            context.createArgument(argument, this);
+                        }
                     } else {
                         for (const value of argument.value) {
                             if (value === null) {
@@ -3534,6 +3570,48 @@ view.Node = class extends grapher.Node {
                     }
                 }
             }
+        }
+    }
+
+    get value() {
+        if (!this._value && this._loadValue) {
+            this._value = this._loadValue();
+            this.context._table.set(this._value, this);
+            if (this._value._originalNode) {
+                this.context._table.set(this._value._originalNode, this);
+            }
+        }
+        return this._value;
+    }
+
+    set value(value) {
+        this._value = value;
+    }
+
+    build(document, parent) {
+        if (this._loadValue && this._blocks.length === 0) {
+            this._add(this.value);
+            super.measure();
+        }
+        super.build(document, parent);
+    }
+
+    measure() {
+        if (this._loadValue && this._blocks.length === 0) {
+            this._add(this.value);
+        }
+        super.measure();
+        if (this._loadValue && !this.element) {
+            this.release();
+        }
+    }
+
+    release() {
+        super.release();
+        if (this._loadValue) {
+            this._blocks = [];
+            this._value = null;
+            this._releaseValue();
         }
     }
 
@@ -3647,7 +3725,7 @@ view.Node = class extends grapher.Node {
                     (type === 'object[]' || type === 'function' || type === 'function[]'))) {
                     objects.push(argument);
                 } else if (options.weights && argument.visible !== false && argument.type !== 'attribute' && Array.isArray(argument.value) && argument.value.length === 1 && argument.value[0].initializer) {
-                    const item = this.context.createArgument(argument);
+                    const item = this.context.createArgument(argument, this);
                     list().add(item);
                 } else if (options.weights && (argument.visible === false || Array.isArray(argument.value) && argument.value.length > 1) && (!argument.type || argument.type.endsWith('*')) && argument.value.some((value) => value !== null && value.initializer)) {
                     hiddenTensors = true;
@@ -4004,6 +4082,9 @@ view.Edge = class extends grapher.Edge {
     }
 
     get minlen() {
+        if (this.from._minlen) {
+            return this.from._minlen;
+        }
         if (this.from.inputs.every((argument) => (!argument.type || argument.type.endsWith('*')) && argument.value.every((value) => value.initializer))) {
             return 2;
         }

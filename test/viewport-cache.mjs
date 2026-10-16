@@ -99,6 +99,33 @@ test('medium deferred graphs allocate SVG only for the viewport and release dist
     assert.deepEqual(nodes.map(({ x, y, width, height }) => [x, y, width, height]), geometry);
 });
 
+test('packed layout routes preserve exact points and SVG paths across eviction', async () => {
+    const { graph, edges, pan } = await fixture();
+    edges[0].points = [{ x: -123.125, y: 100.25 }, { x: 0.125, y: -20.75 }, { x: 200.5, y: 100.25 }];
+    for (const edge of edges) {
+        const point = edge.points[Math.floor(edge.points.length / 2)];
+        edge.x = point.x;
+        edge.y = point.y;
+    }
+    const snapshot = graph.getLayoutSnapshot();
+    const paths = edges.map((edge) => new Edge.Curve(edge.pathPoints).path.data);
+    graph.compactLayout();
+    assert.equal(new Set(edges.map((edge) => edge._pointBuffer)).size, 1);
+    assert.ok(edges.every((edge) => edge._points === null));
+    pan(0);
+    pan(3);
+    pan(5);
+    assert.equal(edges[0]._points, null);
+    assert.deepEqual(edges.map((edge) => new Edge.Curve(edge.pathPoints).path.data), paths);
+    assert.deepEqual(graph.getLayoutSnapshot(), snapshot);
+    edges[0].points[0].x = 17.125;
+    edges[0].release();
+    assert.equal(edges[0].points[0].x, 17.125);
+    edges[0].points = [{ x: 1, y: 2 }, { x: 3, y: 4 }];
+    edges[0].release();
+    assert.deepEqual(edges[0].points, [{ x: 1, y: 2 }, { x: 3, y: 4 }]);
+});
+
 test('panning bounds detached DOM and rebuilds evicted nodes and edge hit tests', async () => {
     const { graph, nodes, edges, pan } = await fixture();
     pan(0);

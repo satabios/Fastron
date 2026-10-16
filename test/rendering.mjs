@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as mock from './mock.js';
-import { Edge, TileManager, ViewportObserver } from '../source/grapher.js';
+import { Edge, Graph, TileManager, ViewportObserver } from '../source/grapher.js';
 import { TextLayoutService } from '../source/text-layout-service.js';
 import { Graph as ViewGraph } from '../source/view.js';
 import { test } from 'node:test';
@@ -176,6 +176,28 @@ test('edge labels remain visible when their bounds extend beyond the curve tiles
     manager.addEdge('labelled', [{ x: 10, y: 10 }, { x: 10, y: 500 }], { x: 200, y: 200, width: 400, height: 30 });
     assert.equal(manager.queryViewport({ x: 550, y: 210, width: 20, height: 10 }, 0).edges.has('labelled'), true);
     assert.equal(manager.queryViewport({ x: 700, y: 210, width: 20, height: 10 }, 0).edges.has('labelled'), false);
+});
+
+test('crossing edges with locked geometry do not materialize distant endpoint nodes', () => {
+    const graph = new Graph(false);
+    graph.enableViewportCulling(true, 100);
+    const from = { name: 'from', x: 0, y: 0, width: 100, height: 50, _geometryLocked: true };
+    const to = { name: 'to', x: 100000, y: 0, width: 100, height: 50, _geometryLocked: true };
+    graph.setNode(from);
+    graph.setNode(to);
+    const edge = new Edge(from, to);
+    edge.v = from.name;
+    edge.w = to.name;
+    edge.points = [{ x: 0, y: 0 }, { x: 100000, y: 0 }];
+    graph.setEdge(edge);
+    graph.populateTiles();
+    const viewport = { x: 50000, y: -50, width: 100, height: 100 };
+    const delta = graph.updateViewportVisibility(viewport);
+    assert.equal(delta.addedEdges.size, 1);
+    assert.equal(graph._visibleNodes.size, 0);
+    from._geometryLocked = false;
+    to._geometryLocked = false;
+    assert.equal(graph.updateViewportVisibility(viewport).addedNodes.size, 2);
 });
 
 test('model validation DOM provides a finite viewport through zoom and scrolling', () => {

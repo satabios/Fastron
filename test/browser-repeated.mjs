@@ -12,6 +12,8 @@ const fixtures = new Map(['safetensors', 'gguf', 'onnx'].map((format) => {
     const { file } = writeRepeatedModel(folder, format);
     return [`/repeated.${format}`, file];
 }));
+await fs.mkdir(path.join(folder, 'large'));
+fixtures.set('/large.safetensors', writeRepeatedModel(path.join(folder, 'large'), 'safetensors', 256).file);
 let transferred = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
@@ -140,6 +142,42 @@ try {
     await check('safetensors');
     await check('gguf');
     await check('onnx');
+    const context = await browser.newContext();
+    await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+    const page = await context.newPage();
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${origin}/?url=/large.safetensors&identifier=large.safetensors`);
+    await expect(page.locator('.node-item-repeat text')).toHaveText('×256');
+    const metadataBytes = transferred;
+    await page.locator('.node-item-repeat').click();
+    await page.getByText('Expand stack', { exact: true }).click();
+    await expect(page.getByText('Fold stack', { exact: true })).toBeVisible();
+    assert.ok(await page.locator('#canvas .graph-node').count() < 512);
+    await page.locator('#menu-button').click();
+    await page.locator('button:has-text("Find...")').first().click();
+    await page.locator('#search').fill('encoder.layers.217.q_proj.weight');
+    await page.locator('.sidebar-find-content li').filter({ hasText: 'encoder.layers.217.q_proj.weight' }).dblclick();
+    const entry = page.locator('#sidebar-content .sidebar-item:has(.sidebar-item-name input[value="value"])');
+    await entry.locator('.sidebar-item-value-button').first().click();
+    await expect(entry.locator('pre')).toContainText('Click to load on demand');
+    assert.equal(transferred, metadataBytes);
+    await entry.locator('pre').click();
+    await expect(entry.locator('pre').last()).toContainText('2170');
+    assert.equal(transferred - metadataBytes, 4000);
+    await page.locator('#menu-button').click();
+    const download = page.waitForEvent('download');
+    await page.locator('button:has-text("Export as SVG")').first().click();
+    const svg = await fs.readFile(await (await download).path(), 'utf-8');
+    assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 512);
+    await page.locator('#menu-button').click();
+    await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
+    await expect(page.locator('body')).toHaveClass(/default/);
+    await page.locator('#menu-button').click();
+    await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+    await expect(page.locator('#canvas .graph-node')).toHaveCount(2);
+    assert.deepEqual(errors, []);
+    await context.close();
+    process.stdout.write('512-node expanded stack: viewport eviction, distant real weights, full SVG export and folding passed.\n');
 } finally {
     await browser?.close();
     await new Promise((resolve) => {
