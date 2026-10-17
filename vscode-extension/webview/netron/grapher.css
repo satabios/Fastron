@@ -1,6 +1,7 @@
 .node path { stroke: #333; fill: none; stroke-width: 1px; }
 .node rect.node-border { stroke: #333; fill: none; stroke-width: 1px; }
 .node line { stroke: #333; fill: none; stroke-width: 1px; }
+text.node-overview-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", sans-serif; font-size: var(--overview-font-size, 24px); fill: #222; stroke: #fff; stroke-width: calc(var(--overview-font-size, 24px) / 6); paint-order: stroke; pointer-events: none; user-select: none; }
 
 .node-item path { stroke-width: 0; stroke: #000; fill: #fff; }
 .node-item text { font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 11px; text-rendering: geometricPrecision; user-select: none; }

@@ -14,12 +14,32 @@ This review covered Rust indexing, source reads, repeated-block folding, worker/
 | Folding ignored parameter sharing within a block | A representative could hide a change from a shared parameter to separate parameters of identical type | Include parameter reference roles in structural signatures, using names or anonymous initializer identity; check shared and independent tensors without reading values |
 | Image export could outlive navigation or overlap another export | Obsolete graphs kept materializing, detached canvases could throw, and one export could hide another's SVG | Cancel materialization when its graph is unregistered, serialize exports, and skip queued exports whose graph changed; cover cancellation and failure recovery |
 | Canvas failures escaped the PNG image callback | Allocation or drawing errors could leave the export promise pending | Reject the export promise for callback errors and report a clear allocation error; test null contexts and drawing exceptions |
+| Long ONNX connections expanded into millions of Dagre dummy nodes | Opening the 19,449-node Qwen example spent over 20 seconds preparing 4.4 million routing nodes before crossing minimization even began | Keep ranks from every connection, bound dummy-node expansion to the greater of 100,000 and four times the real layout-node count, and restore the longest links as rounded exterior routes; preserve endpoints, labels, cycles and compound groups |
+| Widely separated graph inputs centered an empty region | The Qwen example's 64 inputs span most of the graph, leaving no visible nodes at their combined center | Center the earliest real input when the input group cannot fit the viewport; preserve combined centering for nearby inputs |
+| Orthogonal routes used broad curve hulls for tile indexing | Long exterior routes indexed large empty areas and inflated memory | Index each straight segment and its rounded corners; preserve stroke coverage, cached routing style and full route/label bounds |
+| Electron discarded initial scroll offsets while the graph was hidden | A completed layout could still open on a blank canvas | Restore graph position after the target becomes visible, preserve saved selection/zoom, and reject stale callbacks |
+| Tensor attributes and per-layer cache outputs prevented exact repetition proof in Qwen | Folding left thousands of operators visible despite preserved layer/module scopes | Fall back to an explicitly labeled module hierarchy, preserve every boundary tensor, split at intervening operations and open individual instances lazily |
 
-Overview shapes have accessible names and keyboard activation. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks**; verified results are reused when folding again, and the option resets to off for each newly opened model. The shipped WASM was rebuilt alongside its Rust source.
+Overview shapes have accessible names, keyboard activation and compact type labels. Labels stay approximately 12 screen pixels high, with a small spatial grid suppressing neighboring labels to avoid overlap; node data and controls remain deferred. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks** or the toolbar; results are reused when folding again, and the option resets to off for each newly opened model. Module-hierarchy code is imported only when requested folding cannot prove exact repetition. The shipped WASM was rebuilt alongside its Rust source in the previous optimization.
 
 Desktop smoke tests also now use independent Electron profiles, avoiding shared-profile launch failures and changes to a normal application's profile.
 
 ## Measurements
+
+The supplied `qwen3_vl_p2b_instruct_d28_1111111011011100010_slim.onnx` contains 19,449 operators and 27,466 displayed connections including graph ports. A fresh local Chromium session with an HTTP range source took about **4.5 seconds** from navigation to visible nodes after these fixes; reopening with the layout cache took about **1.0 second**. Parsing took about 0.12 seconds, folding analysis was skipped, layout took 3.2 seconds, and tile indexing took 0.11 seconds. Before the fix, normalization alone took 13.3 seconds and parent-chain preparation another 7.1 seconds; the subsequent crossing-minimization run did not finish within the worker budget. The optimized run used 99,851 temporary routing nodes instead of 4,385,996. Normal graphs below the routing budget retain their previous geometry (including the existing 1,000/10,000-node and compound-graph checksums).
+
+Large graphs that reach this budget use simpler exterior routes for the longest connections. All operator nodes, edge endpoints, direction and labels remain present; the rank calculation still uses every connection. Weights remain on demand, and folding remains off until requested. Layout cache keys were advanced so old geometry is recomputed once.
+
+The local Electron run opened the same Qwen file with visible operators in about **4.0 seconds**. After opting into folding, its preserved scopes produce **12 main nodes** plus two input/output bundles. Layers 0–2 stay separate around their additional residual connections; layers 3–27 form a **25-instance module group**. Selecting an instance exposes its own attention/MLP submodules and original parameter offsets. The file contains text-model layers, not the vision tower from the complete PyTorch architecture. The browser check verifies module navigation causes no extra source reads. Scope grouping counts instances and does not claim their operations, constants or weights are identical.
+
+To check this or another local model without browser overhead:
+
+```bash
+node test/benchmark-model-opening.mjs /path/to/model.onnx
+node test/benchmark-model-opening.mjs /path/to/model.onnx --fold
+```
+
+This benchmark uses the mock DOM and serial layout. It checks stable node/connection counts, finite routes, disabled initial folding and zero additional source reads during rendering. Its timings and instantaneous heap use do not represent browser paint, process peak RSS or network-mount latency.
 
 Run the synthetic overview benchmark:
 
@@ -31,11 +51,11 @@ Both modes show the same 2,048-node graph in fresh Node processes. The detailed 
 
 | Format | Retained heap, detail → overview | Node SVG elements, detail → overview |
 | --- | --- | --- |
-| Safetensors | 54.33 → 18.68 MiB | 43,008 → 4,096 |
-| GGUF | 53.35 → 17.68 MiB | 43,008 → 4,096 |
-| ONNX | 49.42 → 30.47 MiB | 21,514 → 4,106 |
+| Safetensors | 54.38 → 20.22 MiB | 43,008 → 6,144 |
+| GGUF | 53.40 → 19.21 MiB | 43,008 → 6,144 |
+| ONNX | 49.69 → 31.96 MiB | 21,514 → 6,154 |
 
-That is approximately 38–67% less retained heap and 81–90% fewer node SVG elements in this synthetic overview. Ordinary rich node/header counts fell from 2,048 to zero; ONNX still retains graph ports, edges and canonical metadata. Node counts, connections and weight offsets are unchanged. These are mock DOM construction/memory measurements, not browser frame rates, real process RSS, or remote-drive throughput.
+That is approximately 36–64% less retained heap and 71–86% fewer node SVG elements in this synthetic overview, including the compact type-label elements. Ordinary rich node/header counts fell from 2,048 to zero; ONNX still retains graph ports, edges and canonical metadata. Node counts, connections and weight offsets are unchanged. These are mock DOM construction/memory measurements, not browser frame rates, real process RSS, or remote-drive throughput.
 
 Run the warm Rust/WASM CPU benchmark:
 

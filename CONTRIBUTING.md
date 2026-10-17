@@ -100,6 +100,10 @@ Verified consecutive `layers.N`, `blocks.N`, `blk.N` and `h.N` paths fold into o
 
 Folding compares exact operator types, relative names, attributes, tensor types, quantization and connection roles. Different layers split runs. Unsupported nested/control-flow blocks, irregular connections and externally tapped intermediate outputs remain unfolded. Safetensors/GGUF show repeated weight structure, not inferred execution operators. All metadata still needs indexing; ONNX retains raw protobuf records and initializer metadata. This saves rich node objects, layout and SVG work, without merging weights or skipping metadata validation.
 
+If exact repetition cannot be established, graphs with preserved module scopes can instead show a module hierarchy. Here **×N counts exported module instances**, which may have different operations or weights. Contiguous scopes preserve the original DAG; intervening residual operations remain explicit. Input/output bundles retain every named tensor. Click a module badge to select an instance, then **Open module** (or its **ƒ** icon) to inspect child modules and real operators. Find expands the containing group when needed. This view uses exported scope names; it cannot recover absent PyTorch class names or modules omitted from the ONNX export.
+
+At distant zoom, large graphs retain readable type labels for a spaced selection of nodes. Nearby labels are suppressed to avoid overlap, while each node remains accessible through its full name and type. This adds one lightweight text element per visible overview node without constructing its full controls or reading weights.
+
 ONNX-generated dimension labels such as `unk__34` are matched by their equality relationships within a block. Named dimensions, concrete sizes, anonymous dimensions and symbols bound to parameters remain distinct. This recognizes repeated attention stacks without altering the original shape metadata or treating unknown dimensions as wildcards.
 
 For the EfficientViT B3 example, provide your local model (the 186 MiB file is not bundled):

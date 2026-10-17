@@ -17,6 +17,9 @@ fixtures.set('/large.safetensors', writeRepeatedModel(path.join(folder, 'large')
 if (process.argv[2]) {
     fixtures.set('/efficientvit.onnx', path.resolve(process.argv[2]));
 }
+if (process.argv[3]) {
+    fixtures.set('/qwen.onnx', path.resolve(process.argv[3]));
+}
 let transferred = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
@@ -188,6 +191,7 @@ try {
     }
     await expect(overview.first()).toBeVisible();
     await expect(overview.first()).toHaveAttribute('role', 'button');
+    await expect(page.locator('.node-overview-label:visible').first()).toHaveText('Module');
     await overview.first().focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#canvas .graph-node.select:not(.node-overview)')).toHaveCount(1);
@@ -273,6 +277,31 @@ try {
         assert.deepEqual(errors, []);
         await context.close();
         process.stdout.write('EfficientViT B3: four real stacks, 682 → 206 nodes, metadata-only folding and SVG export passed.\n');
+    }
+    if (fixtures.has('/qwen.onnx')) {
+        const context = await browser.newContext();
+        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+        const page = await context.newPage();
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.goto(`${origin}/?url=/qwen.onnx&identifier=qwen.onnx`);
+        await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
+        await expect(page.locator('#canvas .graph-node').first()).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Graph Stacking', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        const metadataBytes = transferred;
+        await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(12);
+        const stack = page.locator('.node-item-repeat').filter({ hasText: '×25' });
+        await expect(stack).toBeVisible();
+        await stack.click();
+        await expect(page.getByText('Exported module scopes;', { exact: false })).toBeVisible();
+        await page.getByLabel('Representative layer').selectOption('7');
+        await page.getByText('Open module', { exact: true }).click();
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^self_attn$/ })).toBeVisible();
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^mlp$/ })).toBeVisible();
+        assert.equal(transferred, metadataBytes, 'Module folding, selection and navigation must not fetch weights.');
+        assert.deepEqual(errors, []);
+        await context.close();
+        process.stdout.write('Qwen: visible initial graph, 12 module nodes, per-instance navigation and zero weight reads passed.\n');
     }
 } finally {
     await browser?.close();

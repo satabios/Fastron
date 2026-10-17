@@ -7,6 +7,7 @@ const dagre = {};
 
 dagre.layout = (nodes, edges, layout, state) => {
 
+    const longEdges = [];
     let uniqueIdCounter = 0;
     const uniqueId = (prefix) => {
         const id = ++uniqueIdCounter;
@@ -714,6 +715,22 @@ dagre.layout = (nodes, edges, layout, state) => {
     //   3. The graph is augmented with a 'dummyChains' attribute which contains
     //      the first dummy in each chain of dummy nodes produced.
     const normalize = (g, state) => {
+        const spans = Array.from(g.edges.values(), (edge) => ({ edge,
+            count: Math.max(0, edge.wNode.label.rank - edge.vNode.label.rank - 1) }));
+        let count = spans.reduce((sum, entry) => sum + entry.count, 0);
+        const budget = Math.max(100000, g.nodes.size * 4);
+        if (count > budget) {
+            // Retain ranks from the full graph; route only the longest links without per-rank dummy nodes.
+            spans.sort((a, b) => b.count - a.count);
+            for (const entry of spans) {
+                if (count <= budget) {
+                    break;
+                }
+                g.removeEdge(entry.edge);
+                longEdges.push(entry.edge);
+                count -= entry.count;
+            }
+        }
         state.dummyChains = [];
         for (const e of g.edges.values()) {
             let v = e.v;
@@ -2022,6 +2039,41 @@ dagre.layout = (nodes, edges, layout, state) => {
         }
     };
 
+    const restoreLongEdges = (g, state, layout) => {
+        if (!longEdges.length) {
+            return;
+        }
+        const rows = new Map();
+        let right = -Infinity;
+        for (const { label } of g.nodes.values()) {
+            right = Math.max(right, label.x + label.width / 2);
+            if (Number.isFinite(label.rank)) {
+                const row = rows.get(label.rank) || { top: Infinity, bottom: -Infinity };
+                row.top = Math.min(row.top, label.y - label.height / 2);
+                row.bottom = Math.max(row.bottom, label.y + label.height / 2);
+                rows.set(label.rank, row);
+            }
+        }
+        for (const edge of longEdges) {
+            const source = g.node(edge.v).label;
+            const target = g.node(edge.w).label;
+            const label = edge.label;
+            if (['lr', 'rl'].includes(layout.rankdir.toLowerCase())) {
+                [label.width, label.height] = [label.height, label.width];
+            }
+            const x = right + layout.edgesep + label.width;
+            const start = rows.get(source.rank).bottom + layout.ranksep / 2;
+            const end = rows.get(target.rank).top - layout.ranksep / 2;
+            label.points = [{ x: source.x, y: start }, { x, y: start }, { x, y: end }, { x: target.x, y: end }];
+            label._pathStyle = 'orthogonal';
+            if (label.width || label.height) {
+                label.x = x;
+                label.y = (start + end) / 2;
+            }
+            g.setEdge(edge.v, edge.w, label, edge.name);
+        }
+    };
+
     const translateGraph = (g, state) => {
         let minX = Number.POSITIVE_INFINITY;
         let maxX = 0;
@@ -2154,6 +2206,7 @@ dagre.layout = (nodes, edges, layout, state) => {
         positionSelfEdges,
         removeBorderNodes,
         denormalize,
+        restoreLongEdges,
         fixupEdgeLabelCoords,
         coordinateSystem_undo,
         translateGraph,
@@ -2181,6 +2234,11 @@ dagre.layout = (nodes, edges, layout, state) => {
     for (const edge of edges) {
         const label = g.edge(edge.v, edge.w).label;
         edge.points = label.points;
+        if (label._pathStyle) {
+            edge._pathStyle = label._pathStyle;
+        } else {
+            delete edge._pathStyle;
+        }
         if ('x' in label) {
             edge.x = label.x;
             edge.y = label.y;

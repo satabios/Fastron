@@ -1746,6 +1746,7 @@ onnx.Context.Graph = class {
             return {
                 name: node.name || '', type: { name: node.op_type, domain, identifier: node.overload || '', version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
                 inputs: args(node.input), outputs: args(node.output),
+                _hasSubgraphs: node.attribute.some((attr) => attr.g || attr.graphs?.length),
                 get attributes() {
                     return attributes();
                 }

@@ -771,7 +771,7 @@ view.View = class {
         const engine = this._options.layout || 'dagre';
         const display = `${this._options.names ? 1 : 0}${this._options.attributes ? 1 : 0}${this._options.weights ? 1 : 0}`;
         const fingerprint = this._graphFingerprint(target, signature);
-        return `v3::${identifier}::${moduleIdx}::${direction}::${engine}::${display}::${this._renderOptionsKey()}::${fingerprint}`;
+        return `v4::${identifier}::${moduleIdx}::${direction}::${engine}::${display}::${this._renderOptionsKey()}::${fingerprint}`;
     }
 
     _timeout(delay) {
@@ -1109,13 +1109,12 @@ view.View = class {
         }
         this.show(null);
         this._updateDtypeLegend(this.activeTarget);
-        // restore() may have computed zoom/centering while the container was still hidden
-        // (opacity:0), so clientHeight/clientWidth could be zero or stale at that point.
+        // Hidden containers discard scroll offsets; restore again after the graph becomes visible.
         if (this._target) {
             const target = this._target;
             requestAnimationFrame(() => {
                 if (target === this._target) {
-                    target._updateZoom(target._zoom);
+                    target.restore(this._path?.[0]?.state || null);
                 }
             });
         }
@@ -1217,7 +1216,11 @@ view.View = class {
         this._repeatStates = this._repeatStates || new WeakMap();
         let state = this._repeatStates.get(graph);
         if (!state) {
-            const analysis = await repeatedBlocks(graph, current);
+            let analysis = await repeatedBlocks(graph, current);
+            if (!analysis && current()) {
+                const { moduleBlocks } = await import('./module-blocks.js');
+                analysis = current() ? await moduleBlocks(graph, current) : null;
+            }
             if (!analysis || !current()) {
                 return graph;
             }
@@ -1242,8 +1245,11 @@ view.View = class {
             return;
         }
         const match = state.analysis.locate(value);
-        if (match && !state.expanded.has(match.group.id) && (state.selected.get(match.group.id) || 0) !== match.index) {
+        if (match && !state.expanded.has(match.group.id) && (match.group.kind === 'module' || (state.selected.get(match.group.id) || 0) !== match.index)) {
             state.selected.set(match.group.id, match.index);
+            if (match.group.kind === 'module') {
+                state.expanded.add(match.group.id);
+            }
             this._discardRepeatedViews();
             const retained = { graph: this.activeTarget };
             this._retainedFind = retained;
@@ -1270,7 +1276,9 @@ view.View = class {
         }
         const sidebar = new view.ObjectSidebar(this);
         sidebar.addProperty('stack', group.label, 'nowrap');
-        sidebar.addProperty('structure', 'Matching structure; every instance retains its own parameters.');
+        sidebar.addProperty('structure', group.kind === 'module'
+            ? 'Exported module scopes; instances can differ. Open a module or expand to inspect its exact operations.'
+            : 'Matching structure; every instance retains its own parameters.');
         const select = sidebar.createElement('select', 'sidebar-item-selector sidebar-repeat-select');
         select.setAttribute('aria-label', 'Representative layer');
         group.blocks.forEach((block, index) => {
@@ -1305,6 +1313,13 @@ view.View = class {
                 }
                 update().catch((error) => this.error(error, 'Error expanding repeated blocks.', null));
             });
+        if (group.kind === 'module') {
+            sidebar.addProperty('module', group.title).action('Open module', 'View the selected module and its child modules', async () => {
+                const block = group.blocks[Number(select.value)];
+                const module = state.analysis.subgraph(block.indices, group.title, block.scope);
+                await this.pushTarget(module);
+            });
+        }
         this._sidebar.open(sidebar, 'Repeated Blocks');
     }
 
@@ -3021,8 +3036,10 @@ view.Graph = class extends grapher.Graph {
                 let top = Number.POSITIVE_INFINITY;
                 let bottom = Number.NEGATIVE_INFINITY;
                 let hasCoords = false;
+                let first = null;
+                const axis = this.options.direction === 'vertical' ? 'y' : 'x';
                 for (const node of inputNodes) {
-                    if (typeof node.x === 'number' && typeof node.y === 'number') {
+                    if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
                         const hw = (node.width || 0) / 2;
                         const hh = (node.height || 0) / 2;
                         left = Math.min(left, node.x - hw);
@@ -3030,12 +3047,24 @@ view.Graph = class extends grapher.Graph {
                         top = Math.min(top, node.y - hh);
                         bottom = Math.max(bottom, node.y + hh);
                         hasCoords = true;
+                        if (!first || node[axis] < first[axis]) {
+                            first = node;
+                        }
                     }
                 }
                 if (!hasCoords) {
                     return false;
                 }
-                this._scrollToGraphBounds({ x: left, y: top, width: right - left, height: bottom - top }, 'auto');
+                let bounds = { x: left, y: top, width: right - left, height: bottom - top };
+                const width = (container.clientWidth || this.host.window.innerWidth || 0) / this._zoom;
+                const height = (container.clientHeight || this.host.window.innerHeight || 0) / this._zoom;
+                if ((width > 0 && bounds.width > width) || (height > 0 && bounds.height > height)) {
+                    // Widely separated cache inputs can put their combined center in empty space.
+                    const width = first.width || 0;
+                    const height = first.height || 0;
+                    bounds = { x: first.x - width / 2, y: first.y - height / 2, width, height };
+                }
+                this._scrollToGraphBounds(bounds, 'auto');
                 return true;
             })();
             if (!scrolledToInputs) {
@@ -3607,6 +3636,7 @@ view.Node = class extends grapher.Node {
         this._loadValue = load;
         this._releaseValue = release;
         this._overviewLabel = `${value.name || value.identifier || ''} [${value.type?.name || type || 'node'}]`;
+        this._overviewType = (value.type?.name || type || 'node').split('.').pop();
         const category = value.type?.category;
         const dtype = view.Node._getDtypeKey(value);
         this._overviewClass = ['node-item-type', category ? `node-item-type-${category.toLowerCase()}` : '', dtype ? `node-dtype-${dtype}` : ''].filter(Boolean).join(' ');
@@ -3735,7 +3765,8 @@ view.Node = class extends grapher.Node {
         });
         if (node._repeatHeader) {
             const group = node._repeatGroup;
-            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `×${group.blocks.length}`, `${group.label}. Select a representative or expand this stack.`);
+            const count = group.kind === 'module' && group.blocks.length === 1 ? `${group.members.length} ops` : `×${group.blocks.length}`;
+            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], count, `${group.label}. Select a representative or expand this stack.`);
             badge.on('click', () => this.context.view.showRepeatedBlock(group));
         }
         if (node.type.type || (Array.isArray(node.type.nodes) && node.type.nodes.length > 0)) {

@@ -164,7 +164,7 @@ const boundaries = (nodes) => {
     }
     return { outputs, external: Array.from(external.values()) };
 };
-const overlay = (source, properties) => Object.create(source, Object.fromEntries(Object.entries(properties).map(([key, value]) =>
+export const overlay = (source, properties) => Object.create(source, Object.fromEntries(Object.entries(properties).map(([key, value]) =>
     [key, { value, enumerable: true, configurable: true, writable: true }])));
 
 class RepeatedBlocks {

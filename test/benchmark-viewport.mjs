@@ -71,7 +71,7 @@ if (process.argv[2] === '--child') {
         process.stdout.write(JSON.stringify({ format, mode, nodes: nodes.length, retainedModels: count,
             retainedHeaders: nodes.filter((node) => node._blocks.length).length,
             heapMiB: round(memory.heapUsed / 1048576), arrayBuffersMiB: round(memory.arrayBuffers / 1048576),
-            prepareMs: round(prepareMs), renderMs: round(renderMs), nodeSvgElements: elements(graph._nodeGroupElement) - 1, sourceBytesDuringRender: 0,
+            prepareMs: round(prepareMs), renderMs: round(renderMs), nodeSvgElements: elements(graph._nodeGroupElement) - 1 + elements(graph._overviewLabelGroupElement) - 1, sourceBytesDuringRender: 0,
             geometry: nodes.reduce((sum, node) => (sum + Math.round((node.x + node.y + node.width + node.height) * 1000)) | 0, 0) }));
     } finally {
         context.source.dispose();

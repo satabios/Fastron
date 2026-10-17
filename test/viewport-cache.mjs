@@ -315,6 +315,7 @@ test('overview skips rich node builds, retains geometry and restores detail for 
     const { graph, document, nodes, edges } = await fixture(4, 0);
     const node = nodes[0];
     node._overviewLabel = 'Layer zero [Add]';
+    node._overviewType = 'Add';
     node._overviewClass = 'node-item-type node-item-type-layer node-dtype-fp32';
     node.activateOverview = () => {};
     const geometry = nodes.map(({ x, y, width, height }) => [x, y, width, height]);
@@ -333,6 +334,12 @@ test('overview skips rich node builds, retains geometry and restores detail for 
     assert.equal(builds, 0);
     assert.equal(node._simplified, true);
     assert.equal(node.element.childNodes.length, 1);
+    assert.equal(node._overviewText.textContent, 'Add');
+    assert.equal(node._overviewText.parentNode, graph._overviewLabelGroupElement);
+    graph._hideNode(node);
+    assert.equal(node._overviewText.parentNode, null, 'Offscreen labels detach with their nodes.');
+    graph._showNode(node);
+    assert.equal(node._overviewText.parentNode, graph._overviewLabelGroupElement);
     assert.equal(node.element.getAttribute('role'), 'button');
     assert.equal(node.element.getAttribute('tabindex'), '0');
     assert.equal(node.element.getAttribute('aria-label'), node._overviewLabel);
@@ -340,6 +347,7 @@ test('overview skips rich node builds, retains geometry and restores detail for 
     assert.equal(node.element.classList.contains('node-dtype-fp32'), true);
     assert.ok(edges[0].element);
     zoom(1);
+    assert.equal(graph._overviewLabelGroupElement.childNodes.length, 0, 'Detailed rendering releases overlay labels.');
     assert.equal(builds, 1);
     assert.equal(node._simplified, false);
     assert.ok(node._blocks[0]._entries[0].text);

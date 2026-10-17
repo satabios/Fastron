@@ -3,7 +3,129 @@ import * as mock from './mock.js';
 import { Edge, Graph, TileManager, ViewportObserver } from '../source/grapher.js';
 import { TextLayoutService } from '../source/text-layout-service.js';
 import { Graph as ViewGraph } from '../source/view.js';
+import { layout } from '../source/dagre.js';
 import { test } from 'node:test';
+
+test('long fan-out connections keep their endpoints and labels without unbounded routing chains', { timeout: 20000 }, () => {
+    for (const rankdir of ['TB', 'LR']) {
+        const nodes = Array.from({ length: 400 }, (_, i) => ({ v: String(i), width: 80 + i % 3, height: 30 + i % 5 }));
+        const edges = nodes.slice(1).map((node, i) => ({ v: String(i), w: node.v }));
+        edges.push(...nodes.slice(2).map((node) => ({ v: '0', w: node.v, width: 24, height: 10, labelpos: 'r' })));
+        edges.push({ v: '399', w: '1', width: 16, height: 8, labelpos: 'l' });
+        const endpoints = edges.map(({ v, w }) => [v, w]);
+        const groups = rankdir === 'LR' ? [{ v: 'group0', width: 0, height: 0 }, { v: 'group1', width: 0, height: 0 }] : [];
+        if (groups.length) {
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].parent = groups[i < 200 ? 0 : 1].v;
+            }
+        }
+        layout([...nodes, ...groups], edges, { rankdir, ranker: 'longest-path' }, {});
+        assert.deepEqual(edges.map(({ v, w }) => [v, w]), endpoints);
+        const horizontal = rankdir === 'LR';
+        const primary = horizontal ? 'x' : 'y';
+        for (let i = 1; i < nodes.length; i++) {
+            assert.ok(nodes[i][primary] > nodes[i - 1][primary]);
+        }
+        assert.equal(edges.at(-2).points.length, 6, 'The longest forward edge needs only four bends and two endpoints.');
+        const reversed = edges.at(-1);
+        assert.ok(reversed.points[0][primary] > reversed.points.at(-1)[primary], 'Cycle arrows retain their original direction.');
+        const outside = Math.max(...nodes.map((node) => horizontal ? node.y + node.height / 2 : node.x + node.width / 2));
+        for (const edge of [edges.at(-2), reversed]) {
+            assert.equal(edge._pathStyle, 'orthogonal');
+            assert.ok(horizontal ? edge.y - edge.height / 2 >= outside : edge.x - edge.width / 2 >= outside);
+        }
+        for (const edge of edges) {
+            assert.ok(edge.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+            assert.ok(!edge.width || (Number.isFinite(edge.x) && Number.isFinite(edge.y)));
+            const source = nodes[Number(edge.v)];
+            const target = nodes[Number(edge.w)];
+            for (const [point, node] of [[edge.points[0], source], [edge.points.at(-1), target]]) {
+                const dx = Math.abs(point.x - node.x);
+                const dy = Math.abs(point.y - node.y);
+                assert.ok(Math.abs(dx - node.width / 2) < 1e-6 || Math.abs(dy - node.height / 2) < 1e-6);
+            }
+        }
+    }
+});
+
+test('layout bounds include connection routes and labels beyond node bounds', async () => {
+    const graph = new Graph(false);
+    graph.options = { direction: 'vertical' };
+    graph.setNode({ name: 'a', width: 80, height: 30, layout() {} });
+    graph.setNode({ name: 'b', width: 80, height: 30, layout() {} });
+    graph.setEdge({ v: 'a', w: 'b', width: 40, height: 10 });
+    await graph.layout({ async request(message) {
+        Object.assign(message.nodes[0], { x: 50, y: 20 });
+        Object.assign(message.nodes[1], { x: 50, y: 120 });
+        Object.assign(message.edges[0], { points: [{ x: 50, y: 35 }, { x: 500, y: 70 }, { x: 50, y: 105 }], x: 600, y: 70, _pathStyle: 'orthogonal' });
+        return message;
+    } });
+    assert.deepEqual(graph._layoutBounds, { x: 10, y: 5, width: 610, height: 130 });
+    const snapshot = graph.getLayoutSnapshot();
+    assert.equal(snapshot.edges[0]._pathStyle, 'orthogonal');
+    delete graph.edge('a', 'b').label._pathStyle;
+    assert.equal(graph.applyLayout(snapshot.nodes, snapshot.edges, snapshot.bounds), true);
+    assert.equal(graph.edge('a', 'b').label._pathStyle, 'orthogonal');
+    snapshot.edges[0]._pathStyle = 'invalid';
+    assert.equal(graph.applyLayout(snapshot.nodes, snapshot.edges, snapshot.bounds), false);
+});
+
+test('initial view centers a real input when graph inputs are far apart', () => {
+    const element = { setAttribute() {} };
+    let centered = null;
+    const graph = { options: { direction: 'vertical' }, _canvasElement: { ...element,
+        getBBox: () => ({ x: 0, y: 0, width: 20000, height: 20000 }) },
+    _originElement: element, _backgroundElement: element,
+    _containerElement: { clientWidth: 800, clientHeight: 600 },
+    _updateZoom() {}, isViewportCullingEnabled: () => false,
+    _scrollToGraphBounds(bounds) {
+        centered = bounds;
+    } };
+    graph._inputNodes = [{ x: 10000, y: 20000, width: 80, height: 30 }, { x: 100, y: 20, width: 80, height: 30 }];
+    ViewGraph.prototype.restore.call(graph, null);
+    assert.deepEqual(centered, { x: 60, y: 5, width: 80, height: 30 });
+    graph.options.direction = 'horizontal';
+    graph._inputNodes[0].x = 10;
+    ViewGraph.prototype.restore.call(graph, null);
+    assert.deepEqual(centered, { x: -30, y: 19985, width: 80, height: 30 });
+    graph._inputNodes = [{ x: 100, y: 20, width: 80, height: 30 }, { x: 200, y: 20, width: 80, height: 30 }];
+    ViewGraph.prototype.restore.call(graph, null);
+    assert.deepEqual(centered, { x: 60, y: 5, width: 180, height: 30 });
+});
+
+test('graph centering is restored after hidden loading finishes without resetting a newer graph', async (context) => {
+    const { View } = await import('../source/view.js');
+    const original = globalThis.requestAnimationFrame;
+    const frames = [];
+    globalThis.requestAnimationFrame = (callback) => frames.push(callback);
+    context.after(() => {
+        if (original === undefined) {
+            delete globalThis.requestAnimationFrame;
+        } else {
+            globalThis.requestAnimationFrame = original;
+        }
+    });
+    let shown = false;
+    const restored = [];
+    const target = { restore(state) {
+        assert.equal(shown, true);
+        restored.push(state);
+    } };
+    const state = { _target: target, _updateGeneration: 1, render: async () => '', activeTarget: {}, activeSignature: null,
+        show() {
+            shown = true;
+        }, _updateDtypeLegend() {}, _select: { update() {} },
+        _element: () => ({ children: [], style: {}, setAttribute() {} }) };
+    const saved = { zoom: 0.5, context: {} };
+    await View.prototype._updatePath.call(state, {}, [{ target: {}, state: saved }], 1);
+    assert.deepEqual(restored, []);
+    frames.shift()();
+    assert.deepEqual(restored, [saved]);
+    await View.prototype._updatePath.call(state, {}, [{ target: {} }], 1);
+    state._target = {};
+    frames.shift()();
+    assert.deepEqual(restored, [saved]);
+});
 
 test('continuous panning updates once per frame with the latest viewport', () => {
     const frames = new Map();
@@ -52,6 +174,22 @@ test('continuous panning updates once per frame with the latest viewport', () =>
     }
 });
 
+test('overview labels keep a readable size and avoid nearby labels without loading node data', () => {
+    const graph = new Graph(false);
+    graph.enableViewportCulling();
+    graph.configureDeferredRendering({ estimatedNodeSizeThreshold: 0 });
+    const nodes = [0, 10, 2000].map((x, i) => ({ name: String(i), x, y: 0, _overviewType: 'MatMul' }));
+    nodes.forEach((node) => graph.setNode(node));
+    graph._tileManager.queryViewport = () => ({ nodes: new Set(['0', '1', '2']), edges: new Set() });
+    let size = '';
+    graph._nodeGroupElement = { style: { setProperty(name, value) {
+        size = value;
+    } } };
+    graph.updateViewportVisibility({ x: 0, y: 0, width: 3000, height: 600, zoom: 0.2 });
+    assert.equal(size, '60px');
+    assert.deepEqual(nodes.map((node) => node._overviewLabelVisible), [true, false, true]);
+});
+
 test('viewport scheduling works and cancels without animation-frame APIs', (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] });
     const updates = [];
@@ -76,6 +214,14 @@ test('diagonal edges index path tiles without filling empty bounding-box tiles',
     assert.equal(manager.queryViewport({ x: 10, y: 15000, width: 100, height: 100 }, 0).edges.has('diagonal'), false);
 });
 
+test('long orthogonal routes index their segments without filling the enclosed area', () => {
+    const manager = new TileManager(100);
+    manager.addEdge('route', [{ x: 0, y: 0 }, { x: 100000, y: 0 }, { x: 100000, y: 100000 }, { x: 0, y: 100000 }], null, 'orthogonal');
+    assert.ok(manager.getTileInfo().tileCount < 8000);
+    assert.equal(manager.queryViewport({ x: 50000, y: 50000, width: 100, height: 100 }, 0).edges.has('route'), false);
+    assert.equal(manager.queryViewport({ x: 100000, y: 50000, width: 100, height: 100 }, 0).edges.has('route'), true);
+});
+
 test('curve indexing contains sampled SVG curves, including bends and negative coordinates', () => {
     const paths = [
         [{ x: -800, y: -100 }, { x: 700, y: -600 }, { x: -500, y: 900 }, { x: 900, y: 600 }],
@@ -84,9 +230,9 @@ test('curve indexing contains sampled SVG curves, including bends and negative c
         [{ x: 10, y: 10 }]
     ];
     for (const points of paths) {
-        const manager = new TileManager(50);
-        manager.addEdge('curve', points);
         for (const style of ['basis', 'orthogonal']) {
+            const manager = new TileManager(50);
+            manager.addEdge('curve', points, null, style);
             const path = style === 'basis' ? new Edge.Curve(points).path.data : new Edge.Polyline(points, 30).path.data;
             let start = null;
             for (const match of path.matchAll(/([MLCQ])([^MLCQ]*)/g)) {

@@ -8,6 +8,7 @@ const textLayout = getTextLayoutService();
 const NODE_FONT = '11px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
 const ARGUMENT_FONT = '9px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
 const EDGE_FONT = '10px -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"';
+const EDGE_CORNER_RADIUS = 30;
 
 grapher.Graph = class {
 
@@ -100,7 +101,7 @@ grapher.Graph = class {
         }
         node._simplified = simplified;
         if (simplified) {
-            node.buildOverview(document, this._nodeGroupElement);
+            node.buildOverview(document, this._nodeGroupElement, this._overviewLabelGroupElement);
         } else {
             node.build(document, this._nodeGroupElement);
         }
@@ -274,6 +275,12 @@ grapher.Graph = class {
         } else {
             node.element.style.display = '';
         }
+        if (node._overviewText && node._overviewLabelParent) {
+            if (!node._overviewText.parentNode) {
+                node._overviewLabelParent.appendChild(node._overviewText);
+            }
+            node._overviewText.style.display = node._overviewLabelVisible === false ? 'none' : '';
+        }
     }
 
     _hideNode(node) {
@@ -285,6 +292,13 @@ grapher.Graph = class {
             return;
         }
         this._pinnedElements.delete(node);
+        if (node._overviewText && node._overviewLabelParent) {
+            if (this._detachInvisible && node._overviewText.parentNode) {
+                node._overviewText.parentNode.removeChild(node._overviewText);
+            } else {
+                node._overviewText.style.display = 'none';
+            }
+        }
         if (this._detachInvisible) {
             if (node.element.parentNode) {
                 node.element.parentNode.removeChild(node.element);
@@ -539,11 +553,40 @@ grapher.Graph = class {
             return { addedNodes: new Set(), removedNodes: new Set(), addedEdges: new Set(), removedEdges: new Set() };
         }
 
-        // At distant zoom, skip tiny node text while keeping geometry and hit targets.
+        // At distant zoom, retain compact type labels without constructing node controls.
         const overview = this.useEstimatedNodeSizes() && Number.isFinite(viewportBounds.zoom) && viewportBounds.zoom < 0.4;
+        if (overview && this._nodeGroupElement) {
+            (this._overviewLabelGroupElement || this._nodeGroupElement).style.setProperty('--overview-font-size', `${12 / Math.max(0.01, viewportBounds.zoom)}px`);
+        }
         const detailChanged = overview !== this._overview;
         this._overview = overview;
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
+        if (overview) {
+            const occupied = new Set();
+            for (const id of visibleNodes) {
+                const node = this.node(id)?.label;
+                if (!node?._overviewType) {
+                    continue;
+                }
+                const x = Math.floor(node.x * viewportBounds.zoom / 136);
+                const y = Math.floor(node.y * viewportBounds.zoom / 20);
+                let visible = true;
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        visible = visible && !occupied.has(`${x + dx}:${y + dy}`);
+                    }
+                }
+                if (visible) {
+                    occupied.add(`${x}:${y}`);
+                }
+                if (node._overviewLabelVisible !== visible) {
+                    node._overviewLabelVisible = visible;
+                    if (node._overviewText) {
+                        node._overviewText.style.display = visible ? '' : 'none';
+                    }
+                }
+            }
+        }
 
         // Locked geometry routes crossing edges without constructing distant endpoint UI.
         for (const edgeKey of visibleEdges) {
@@ -858,7 +901,7 @@ grapher.Graph = class {
             if (label.points && label.points.length > 0) {
                 const bounds = label.width && label.height && Number.isFinite(label.x) && Number.isFinite(label.y) ?
                     { x: label.x - label.width / 2, y: label.y - label.height / 2, width: label.width, height: label.height } : null;
-                this._tileManager.addEdge(edgeKey, label.pathPoints, bounds);
+                this._tileManager.addEdge(edgeKey, label.pathPoints, bounds, label._pathStyle);
             }
         }
     }
@@ -882,11 +925,13 @@ grapher.Graph = class {
         const edgePathHitTestGroup = createGroup('edge-paths-hit-test');
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
+        const overviewLabelGroup = createGroup('overview-labels');
         // Tunnel edges (cross-subgraph connectors) render in a separate layer
         // so they appear behind regular edges and nodes.  Matches Netron's
         // tunnelGroup pattern.
         const tunnelGroup = createGroup('tunnel');
         this._nodeGroupElement = nodeGroup;
+        this._overviewLabelGroupElement = overviewLabelGroup;
         this._edgePathGroupElement = edgePathGroup;
         this._edgePathHitTestGroupElement = edgePathHitTestGroup;
         this._edgeLabelGroupElement = edgeLabelGroup;
@@ -996,6 +1041,7 @@ grapher.Graph = class {
         // above edge labels on dense layouts.
         origin.appendChild(edgeLabelGroup);
         origin.appendChild(nodeGroup);
+        origin.appendChild(overviewLabelGroup);
     }
 
     async measure() {
@@ -1190,7 +1236,6 @@ grapher.Graph = class {
             boundsMaxX = Math.max(boundsMaxX, node.x + hw);
             boundsMaxY = Math.max(boundsMaxY, node.y + hh);
         }
-        this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const edge of edges) {
             const entry = this.edge(edge.v, edge.w);
             if (!entry || !entry.label) {
@@ -1201,6 +1246,16 @@ grapher.Graph = class {
             if ('x' in edge) {
                 label.x = edge.x;
                 label.y = edge.y;
+                boundsMinX = Math.min(boundsMinX, edge.x - (label.width || 0) / 2);
+                boundsMinY = Math.min(boundsMinY, edge.y - (label.height || 0) / 2);
+                boundsMaxX = Math.max(boundsMaxX, edge.x + (label.width || 0) / 2);
+                boundsMaxY = Math.max(boundsMaxY, edge.y + (label.height || 0) / 2);
+            }
+            for (const point of edge.points || []) {
+                boundsMinX = Math.min(boundsMinX, point.x);
+                boundsMinY = Math.min(boundsMinY, point.y);
+                boundsMaxX = Math.max(boundsMaxX, point.x);
+                boundsMaxY = Math.max(boundsMaxY, point.y);
             }
             // Transfer per-edge visual overrides set by _fastLayout so that
             // Edge.update() can apply them as SVG attributes.
@@ -1220,6 +1275,7 @@ grapher.Graph = class {
                 label._pathStyle = edge._pathStyle;
             }
         }
+        this._layoutBounds = isFinite(boundsMinX) ? { x: boundsMinX, y: boundsMinY, width: boundsMaxX - boundsMinX, height: boundsMaxY - boundsMinY } : null;
         for (const key of this.nodes.keys()) {
             const entry = this.node(key);
             if (this.children(key).length === 0) {
@@ -1270,6 +1326,9 @@ grapher.Graph = class {
                     e.x = label.x;
                     e.y = label.y;
                 }
+                if (label._pathStyle) {
+                    e._pathStyle = label._pathStyle;
+                }
                 edges.push(e);
             }
         }
@@ -1305,6 +1364,7 @@ grapher.Graph = class {
             const geometryChanged = current && Number.isFinite(current.width) && Number.isFinite(current.height) &&
                 (Math.abs(current.width - edge.width) > 0.5 || Math.abs(current.height - edge.height) > 0.5);
             if (!edge || !entry || edgeIds.has(key) || geometryChanged ||
+                (edge._pathStyle !== undefined && edge._pathStyle !== 'orthogonal') ||
                 !Number.isFinite(edge.width) || !Number.isFinite(edge.height) || edge.width < 0 || edge.height < 0 || !Array.isArray(edge.points) ||
                 edge.points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) ||
                 ('x' in edge && (!Number.isFinite(edge.x) || !Number.isFinite(edge.y)))) {
@@ -1335,6 +1395,11 @@ grapher.Graph = class {
             }
             const label = entry.label;
             label.points = e.points;
+            if (e._pathStyle) {
+                label._pathStyle = e._pathStyle;
+            } else {
+                delete label._pathStyle;
+            }
             if ('x' in e) {
                 label.x = e.x;
                 label.y = e.y;
@@ -1848,11 +1913,16 @@ grapher.Node = class {
         }
         this.element = null;
         this.border = null;
+        if (this._overviewText?.parentNode) {
+            this._overviewText.parentNode.removeChild(this._overviewText);
+        }
+        this._overviewText = null;
+        this._overviewLabelParent = null;
         this._parentElement = null;
         this._needsUpdate = true;
     }
 
-    buildOverview(document, parent) {
+    buildOverview(document, parent, labelParent = null) {
         this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         if (this.id) {
             this.element.setAttribute('id', this.id);
@@ -1875,6 +1945,16 @@ grapher.Node = class {
         this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         this.border.setAttribute('class', 'node node-border');
         this.element.appendChild(this.border);
+        this._overviewText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        this._overviewText.setAttribute('class', 'node-overview-label');
+        this._overviewText.setAttribute('text-anchor', 'middle');
+        this._overviewText.setAttribute('dominant-baseline', 'middle');
+        this._overviewText.setAttribute('aria-hidden', 'true');
+        this._overviewText.style.display = this._overviewLabelVisible === false ? 'none' : '';
+        const type = this._overviewType || 'Node';
+        this._overviewText.textContent = type.length > 18 ? `${type.slice(0, 17)}…` : type;
+        this._overviewLabelParent = labelParent;
+        (labelParent || this.element).appendChild(this._overviewText);
         this._parentElement = parent;
         parent.appendChild(this.element);
     }
@@ -1883,6 +1963,8 @@ grapher.Node = class {
         this.border.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, true, true, true, true));
         this.element.setAttribute('transform', `translate(${grapher.Node.snap(this.x - this.width / 2)},${grapher.Node.snap(this.y - this.height / 2)})`);
         this.element.style.removeProperty('opacity');
+        this._overviewText.setAttribute('x', this._overviewLabelParent ? this.x : this.width / 2);
+        this._overviewText.setAttribute('y', this._overviewLabelParent ? this.y : this.height / 2);
     }
 
     measure() {
@@ -2551,7 +2633,7 @@ grapher.Edge = class {
     update() {
         const points = this.pathPoints;
         const edgePath = this._pathStyle === 'orthogonal' ?
-            new grapher.Edge.Polyline(points, 30).path.data : new grapher.Edge.Curve(points).path.data;
+            new grapher.Edge.Polyline(points, EDGE_CORNER_RADIUS).path.data : new grapher.Edge.Curve(points).path.data;
         this.element.setAttribute('d', edgePath);
         this.hitTest.setAttribute('d', edgePath);
         // Apply per-edge visual overrides for large-graph readability.
@@ -2857,7 +2939,7 @@ grapher.TileManager = class {
         this._nodeTiles.set(nodeKey, tileset);
     }
 
-    addEdge(edgeKey, points, bounds = null) {
+    addEdge(edgeKey, points, bounds = null, pathStyle = undefined) {
         // points: array of {x, y} coordinates for edge path
         if (!points || points.length === 0) {
             return;
@@ -2880,12 +2962,14 @@ grapher.TileManager = class {
         // Basis and rounded curves stay inside the convex hull of neighboring waypoints.
         // Scan that hull by tile row instead of filling each segment's bounding box.
         const segments = singleTile ? 0 : points.length - 1;
+        const padding = pathStyle === 'orthogonal' ? 1 : 0; // Include strokes on tile boundaries.
         for (let i = 0; i < segments; i++) {
-            const hull = points.slice(Math.max(0, i - 1), Math.min(points.length, i + 3));
-            const minY = Math.floor(Math.min(...hull.map((point) => point.y)) / ts);
-            const maxY = Math.floor(Math.max(...hull.map((point) => point.y)) / ts);
-            const minTileX = Math.floor(Math.min(...hull.map((point) => point.x)) / ts);
-            const maxTileX = Math.floor(Math.max(...hull.map((point) => point.x)) / ts);
+            const hull = pathStyle === 'orthogonal' ? points.slice(i, i + 2) :
+                points.slice(Math.max(0, i - 1), Math.min(points.length, i + 3));
+            const minY = Math.floor((Math.min(...hull.map((point) => point.y)) - padding) / ts);
+            const maxY = Math.floor((Math.max(...hull.map((point) => point.y)) + padding) / ts);
+            const minTileX = Math.floor((Math.min(...hull.map((point) => point.x)) - padding) / ts);
+            const maxTileX = Math.floor((Math.max(...hull.map((point) => point.x)) + padding) / ts);
             if (minY === maxY || minTileX === maxTileX || (maxY - minY + 1) * (maxTileX - minTileX + 1) <= 4) {
                 for (let x = minTileX; x <= maxTileX; x++) {
                     for (let y = minY; y <= maxY; y++) {
@@ -2924,7 +3008,7 @@ grapher.TileManager = class {
                         }
                     }
                 }
-                for (let tx = Math.floor(minX / ts); tx <= Math.floor(maxX / ts); tx++) {
+                for (let tx = Math.floor((minX - padding) / ts); tx <= Math.floor((maxX + padding) / ts); tx++) {
                     const key = this._getTileKey(tx, ty);
                     if (!tileset.has(key)) {
                         this._ensureTile(key).edges.add(edgeKey);
@@ -2934,7 +3018,12 @@ grapher.TileManager = class {
             }
         }
 
-        if (bounds) {
+        const extraBounds = bounds ? [bounds] : [];
+        if (pathStyle === 'orthogonal') {
+            extraBounds.push(...points.map((point) => ({ x: point.x - EDGE_CORNER_RADIUS, y: point.y - EDGE_CORNER_RADIUS,
+                width: EDGE_CORNER_RADIUS * 2, height: EDGE_CORNER_RADIUS * 2 })));
+        }
+        for (const bounds of extraBounds) {
             const topLeft = this._getTileCoords(bounds.x, bounds.y);
             const bottomRight = this._getTileCoords(bounds.x + bounds.width, bounds.y + bounds.height);
             for (let x = topLeft.tileX; x <= bottomRight.tileX; x++) {
