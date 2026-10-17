@@ -226,11 +226,12 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
         await page.locator('.node-item-repeat').click();
         await page.getByLabel('Representative layer').selectOption('17');
         await playwright.expect(page.getByLabel('Representative layer')).toHaveValue('17');
-        await page.getByText('Expand stack', { exact: true }).click();
+        const sidebar = page.locator('#sidebar-content');
+        await sidebar.getByText('Expand stack', { exact: true }).click();
         await playwright.expect(nodes).toHaveCount(48);
-        await page.getByText('Fold stack', { exact: true }).click();
+        await sidebar.getByText('Fold stack', { exact: true }).click();
         await playwright.expect(nodes).toHaveCount(2);
-        await playwright.expect(page.getByText('Expand stack', { exact: true })).toBeVisible();
+        await playwright.expect(sidebar.getByText('Expand stack', { exact: true })).toBeVisible();
         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('find', {}));
         await page.locator('#search').fill('encoder.layers.7.q_proj.weight');
         await page.locator('.sidebar-find-content li').filter({ hasText: 'encoder.layers.7.q_proj.weight' }).dblclick();
