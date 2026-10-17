@@ -47,8 +47,15 @@ test('opening a model skips repetition analysis until folding is requested and r
         saved = null;
     };
     const view = new View(host);
+    const button = host.document.createElement('button');
+    button.setAttribute('id', 'fold-repeated-blocks-button');
+    host.document.body.appendChild(button);
     const model = { modules: [graph] };
     view.model = model;
+    assert.equal(button.disabled, true);
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    view.target = { register() {}, unregister() {} };
+    assert.equal(button.disabled, false);
     view._path = [{ target: graph }];
     view._reload = () => {};
     assert.equal(view.options.lazyRender, true);
@@ -56,12 +63,18 @@ test('opening a model skips repetition analysis until folding is requested and r
     assert.equal(await view._repeatedPresentation(graph, () => true), graph);
     assert.equal(scans, 0);
     view.toggle('foldRepeatedBlocks');
+    assert.equal(button.classList.contains('active'), true);
+    assert.equal(button.getAttribute('aria-pressed'), 'true');
+    assert.equal(button.title, 'Expand Repeated Blocks');
     assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
     const scanned = scans;
     assert.ok(scanned > 0);
     view.toggle('names');
     assert.deepEqual(saved, { names: true }, 'Folding must not become a saved startup preference.');
     view.toggle('foldRepeatedBlocks');
+    assert.equal(button.classList.contains('active'), false);
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    assert.equal(button.title, 'Fold Repeated Blocks');
     assert.equal(await view._repeatedPresentation(graph, () => true), graph);
     view.toggle('foldRepeatedBlocks');
     assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
@@ -70,6 +83,9 @@ test('opening a model skips repetition analysis until folding is requested and r
     assert.equal(view.options.foldRepeatedBlocks, true, 'Redrawing the current model preserves the user choice.');
     view.model = { modules: [fixture(2)] };
     assert.equal(view.options.foldRepeatedBlocks, false, 'Every new model opens without a repetition scan.');
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    view.target = null;
+    assert.equal(button.disabled, true);
 });
 
 const dynamicFixture = (count = 3) => {

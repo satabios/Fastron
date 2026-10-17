@@ -210,6 +210,19 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
             await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
         }
         await playwright.expect(nodes).toHaveCount(2, { timeout: 30000 });
+        const stacking = page.getByRole('button', { name: 'Graph Stacking', exact: true });
+        await playwright.expect(stacking).toHaveAttribute('aria-pressed', 'true');
+        await stacking.click();
+        await playwright.expect(nodes).toHaveCount(48);
+        await playwright.expect(stacking).toHaveAttribute('aria-pressed', 'false');
+        await stacking.click();
+        await playwright.expect(nodes).toHaveCount(2);
+        if (process.platform === 'darwin') {
+            await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
+            await playwright.expect.poll(() => app.evaluate(({ Menu }) =>
+                Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks').label
+            )).toContain('Expand');
+        }
         await page.locator('.node-item-repeat').click();
         await page.getByLabel('Representative layer').selectOption('17');
         await playwright.expect(page.getByLabel('Representative layer')).toHaveValue('17');

@@ -260,6 +260,10 @@ view.View = class {
                     this.zoomOut();
                 });
             }
+            const foldBlocksButton = this._element('fold-repeated-blocks-button');
+            if (foldBlocksButton) {
+                foldBlocksButton.addEventListener('click', () => this.toggle('foldRepeatedBlocks'));
+            }
             const lazyRenderBtn = this._element('lazy-render-button');
             if (lazyRenderBtn) {
                 lazyRenderBtn.addEventListener('click', async () => {
@@ -559,6 +563,7 @@ view.View = class {
             this._repeatStates = new WeakMap();
             this._repeatRevision = 0;
             this._options.foldRepeatedBlocks = false;
+            this._updateFoldButton();
         }
         this._model = value;
     }
@@ -599,6 +604,21 @@ view.View = class {
             if (this._target) {
                 this._target.register();
             }
+            this._updateFoldButton();
+        }
+    }
+
+    _updateFoldButton() {
+        const button = this._element('fold-repeated-blocks-button');
+        if (button) {
+            const folded = this._options.foldRepeatedBlocks;
+            button.disabled = !this._target;
+            button.classList.remove('active');
+            if (folded) {
+                button.classList.add('active');
+            }
+            button.setAttribute('aria-pressed', String(folded));
+            button.title = folded ? 'Expand Repeated Blocks' : 'Fold Repeated Blocks';
         }
     }
 
@@ -611,6 +631,8 @@ view.View = class {
                 break;
             case 'foldRepeatedBlocks':
                 this._options.foldRepeatedBlocks = !this._options.foldRepeatedBlocks;
+                this._updateFoldButton();
+                this._host.update({ foldRepeatedBlocks: this._options.foldRepeatedBlocks });
                 if (this._options.foldRepeatedBlocks) {
                     this._repeatStates?.get(this.activeTarget)?.expanded.clear();
                 }
