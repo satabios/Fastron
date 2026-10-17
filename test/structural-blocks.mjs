@@ -3,9 +3,10 @@ import { NodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
 import { structuralBlocks } from '../source/structural-blocks.js';
 import { test } from 'node:test';
 
-const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = '', compact = false, grouped = false } = {}) => {
+const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = '', compact = false, grouped = false,
+    normalization = 'LayerNormalization', gated = '', fused = '' } = {}) => {
     let sequence = 0;
-    const value = (dims, initializer = false) => ({ name: `v${sequence++}`, type: { dataType: 'float32', shape: { dimensions: dims } },
+    const value = (dims, initializer = false) => ({ name: `v${sequence++}`, type: { dataType: normalization === 'rms-cast' ? 'float16' : 'float32', shape: { dimensions: dims } },
         ...(initializer ? { initializer: { get values() {
             throw new Error('Pattern detection must never read payloads.');
         } } } : {}) });
@@ -20,7 +21,32 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
             inputs: inputs.map((item, i) => ({ name: String(i), value: [item] })), outputs: [{ name: '0', value: [output] }] });
         return output;
     };
-    const norm = (x) => add('LayerNormalization', [x, value([8], true)], activation, [{ name: 'axis', type: 'int64', value: -1 }, { name: 'epsilon', type: 'float32', value: 1e-6 }]);
+    const norm = (x) => {
+        if (normalization.startsWith('rms-')) {
+            const start = nodes.length;
+            const data = normalization === 'rms-cast' ? add('Cast', [x], activation, [{ name: 'to', type: 'int64', value: 1 }]) : x;
+            const square = normalization === 'rms-pow' ? add('Pow', [data, value([], true)], activation) : add('Mul', [data, data], activation);
+            const mean = add('ReduceMean', [square], [1, 3, 1], [{ name: 'axes', type: 'int64[]', value: [-1] }]);
+            const epsilon = add('Add', [mean, value([], true)], [1, 3, 1]);
+            const root = add('Sqrt', [epsilon], [1, 3, 1]);
+            const normalized = normalization === 'rms-reciprocal'
+                ? add('Mul', [data, add('Reciprocal', [root], [1, 3, 1])], activation) : add('Div', [data, root], activation);
+            const result = add('Mul', [normalized, value([8], true)], activation);
+            if (normalization === 'rms-cast') {
+                for (const node of nodes.slice(start)) {
+                    for (const item of [...node.outputs.flatMap((arg) => arg.value), ...node.inputs.flatMap((arg) => arg.value).filter((item) => item.initializer)]) {
+                        item.type.dataType = 'float32';
+                    }
+                }
+                return add('Cast', [result], activation, [{ name: 'to', type: 'int64', value: 10 }]);
+            }
+            return result;
+        }
+        const result = add(normalization, [x, value([8], true)], activation,
+            [{ name: 'axis', type: 'int64', value: -1 }, { name: 'epsilon', type: 'float32', value: 1e-6 }]);
+        nodes.at(-1).type.version = normalization === 'SimplifiedLayerNormalization' ? 1 : 23;
+        return result;
+    };
     const project = (x, c, f) => add('MatMul', [x, value([c, f], true)], [1, 3, f]);
     for (let i = 0; i < count; i++) {
         if (gap && i === 1) {
@@ -31,42 +57,72 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
         const width = 8 / heads;
         const keyValueHeads = Array.isArray(kvHeads) ? kvHeads[i] : kvHeads;
         const batches = grouped ? [1, keyValueHeads, heads / keyValueHeads] : [1, heads];
-        const q = add('Reshape', [project(normalized, 8, 8)], [...batches, 3, width]);
-        const kv = () => {
-            let x = add('Reshape', [project(normalized, 8, keyValueHeads * width)], [1, keyValueHeads, 3, width]);
-            if (repeat) {
-                x = add('Unsqueeze', [x, value([1], true)], [1, keyValueHeads, 1, 3, width]);
-                x = add(repeat, [x, value([5], true)], [1, keyValueHeads, heads / keyValueHeads, 3, width]);
-                x = add('Reshape', [x, value([4], true)], [1, heads, 3, width]);
-            } else if (grouped) {
-                x = add('Unsqueeze', [x, value([1], true)], [1, keyValueHeads, 1, 3, width]);
-            } else if (compact) {
-                x = add('Squeeze', [x, value([1], true)], [1, 3, width]);
+        const attention = () => {
+            if (fused === 'packed') {
+                const result = add('Attention', [normalized, value([8, 24], true)], activation, [{ name: 'num_heads', type: 'int64', value: heads }]);
+                nodes.at(-1).type = { name: 'Attention', domain: 'com.microsoft', version: 1 };
+                return { attended: result, softmax: -1, product: -1, tap: result };
             }
-            return x;
+            const q = add('Reshape', [project(normalized, 8, 8)], [...batches, 3, width]);
+            const kv = () => {
+                let x = add('Reshape', [project(normalized, 8, keyValueHeads * width)], [1, keyValueHeads, 3, width]);
+                if (repeat) {
+                    x = add('Unsqueeze', [x, value([1], true)], [1, keyValueHeads, 1, 3, width]);
+                    x = add(repeat, [x, value([5], true)], [1, keyValueHeads, heads / keyValueHeads, 3, width]);
+                    x = add('Reshape', [x, value([4], true)], [1, heads, 3, width]);
+                } else if (grouped) {
+                    x = add('Unsqueeze', [x, value([1], true)], [1, keyValueHeads, 1, 3, width]);
+                } else if (compact) {
+                    x = add('Squeeze', [x, value([1], true)], [1, 3, width]);
+                }
+                return x;
+            };
+            const kvBatches = grouped ? [1, keyValueHeads, 1] : [1, repeat ? heads : keyValueHeads];
+            const permutation = compact ? [0, 2, 1] : [0, 1, 3, 2];
+            const rawK = kv();
+            const k = fused ? rawK : add('Transpose', [rawK], compact ? [1, width, 3] : [...kvBatches, width, 3],
+                [{ name: 'perm', type: 'int64[]', value: grouped ? [0, 1, 2, 4, 3] : permutation }]);
+            const v = kv();
+            if (fused) {
+                const ms = ['MultiHeadAttention', 'GroupQueryAttention'].includes(fused);
+                const rank3 = ms || fused === 'rank3';
+                const inputs = rank3 ? [add('Reshape', [q], activation), add('Reshape', [k], [1, 3, keyValueHeads * width]),
+                    add('Reshape', [v], [1, 3, keyValueHeads * width])] : [q, k, v];
+                const attrs = rank3 ? [{ name: ms ? 'num_heads' : 'q_num_heads', type: 'int64', value: heads },
+                    ...(fused === 'MultiHeadAttention' ? [] : [{ name: 'kv_num_heads', type: 'int64', value: keyValueHeads }])] : [];
+                const result = add(ms ? fused : 'Attention', inputs, rank3 ? activation : [...batches, 3, width], attrs);
+                nodes.at(-1).type = { name: ms ? fused : 'Attention', domain: ms ? 'com.microsoft' : '', version: ms ? 1 : 23 };
+                return { attended: result, softmax: -1, product: -1, tap: result };
+            }
+            const scores = add('MatMul', [q, k], [...batches, 3, 3]);
+            const scaled = add('Mul', [scores, value([], true)], [...batches, 3, 3]);
+            const softmax = nodes.length;
+            const probabilities = add('Softmax', [scaled], [...batches, 3, 3], [{ name: 'axis', type: 'int64', value: -1 }]);
+            const product = nodes.length;
+            const attended = add('MatMul', [probabilities, v], [...batches, 3, width]);
+            return { attended, softmax, product, tap: probabilities };
         };
-        const kvBatches = grouped ? [1, keyValueHeads, 1] : [1, repeat ? heads : keyValueHeads];
-        const permutation = compact ? [0, 2, 1] : [0, 1, 3, 2];
-        const k = add('Transpose', [kv()], compact ? [1, width, 3] : [...kvBatches, width, 3],
-            [{ name: 'perm', type: 'int64[]', value: grouped ? [0, 1, 2, 4, 3] : permutation }]);
-        const v = kv();
-        const scores = add('MatMul', [q, k], [...batches, 3, 3]);
-        const scaled = add('Mul', [scores, value([], true)], [...batches, 3, 3]);
-        const softmax = nodes.length;
-        const probabilities = add('Softmax', [scaled], [...batches, 3, 3], [{ name: 'axis', type: 'int64', value: -1 }]);
-        const product = nodes.length;
-        const attended = add('MatMul', [probabilities, v], [...batches, 3, width]);
+        const { attended, softmax, product, tap } = attention();
         const combined = add('Reshape', [attended], activation);
         const projected = project(combined, 8, 8);
         const attentionAdd = nodes.length;
         const residual = add('Add', [previous, projected], activation);
         const secondNorm = nodes.length;
-        const hidden = project(norm(residual), 8, 16);
-        const activated = add('Gelu', [hidden], [1, 3, 16]);
+        const normalizedMlp = norm(residual);
+        const hidden = project(normalizedMlp, 8, 16);
+        const up = gated ? project(normalizedMlp, 8, 16) : null;
+        const activationType = gated === 'Swish' ? 'Swish' : 'Gelu';
+        let activated = add(gated === 'SwiGLU' || gated === 'GLU' ? 'Sigmoid' : activationType, [hidden], [1, 3, 16]);
+        if (gated === 'SwiGLU') {
+            activated = add('Mul', [hidden, activated], [1, 3, 16]);
+        }
+        if (up) {
+            activated = add('Mul', [activated, up], [1, 3, 16]);
+        }
         const output = project(activated, 16, 8);
         const end = nodes.length;
         previous = add('Add', [residual, output], activation);
-        blocks.push({ start, end, softmax, product, attentionAdd, secondNorm, tap: probabilities });
+        blocks.push({ start, end, softmax, product, attentionAdd, secondNorm, tap });
     }
     return { nodes, inputs: [{ name: 'input', value: [input] }], outputs: [{ name: 'output', value: [previous] }], blocks };
 };
@@ -155,6 +211,153 @@ test('different KV head counts share the attention category but retain separate 
 test('non-broadcastable query and KV head counts cannot form an attention group', async () => {
     assert.equal(await structuralBlocks(fixture(1, false, { heads: 4, kvHeads: 3 })), null);
 });
+
+for (const normalization of ['RMSNormalization', 'SimplifiedLayerNormalization', 'rms-div', 'rms-reciprocal', 'rms-cast']) {
+    test(`normalization pattern: ${normalization}`, async () => {
+        const graph = fixture(3, false, { normalization });
+        const analysis = await structuralBlocks(graph);
+        assert.deepEqual(analysis?.groups.map((group) => group.blocks.length), [3]);
+        const nested = await structuralBlocks([...nodeDescriptions(analysis.project())][0].type);
+        const name = normalization.startsWith('rms-') ? 'RMSNorm' : normalization;
+        assert.deepEqual([...nodeDescriptions(nested.project())].map((node) => node.type.name), [name, 'Attention', 'Add', name, 'MLP', 'Add']);
+    });
+}
+
+test('a Pow exponent that would require a payload read cannot establish RMSNorm', async () => {
+    assert.equal(await structuralBlocks(fixture(1, false, { normalization: 'rms-pow' })), null);
+});
+
+for (const gated of ['SwiGLU', 'GEGLU', 'GLU', 'Swish']) {
+    test(`gated MLP pattern: ${gated}`, async () => {
+        const analysis = await structuralBlocks(fixture(3, false, { gated, normalization: 'RMSNormalization' }));
+        assert.deepEqual(analysis?.groups.map((group) => group.blocks.length), [3]);
+    });
+}
+
+for (const fused of ['rank4', 'rank3', 'MultiHeadAttention', 'GroupQueryAttention', 'packed']) {
+    test(`fused attention pattern: ${fused}`, async () => {
+        const analysis = await structuralBlocks(fixture(3, false, { fused, heads: 4,
+            kvHeads: fused === 'MultiHeadAttention' || fused === 'packed' ? 4 : 2 }));
+        assert.deepEqual(analysis?.groups.map((group) => group.blocks.length), [3]);
+    });
+}
+
+const symbolize = (graph, batch = 'batch', tokens = 'tokens') => {
+    const seen = new Set();
+    for (const arg of [...graph.inputs, ...graph.outputs, ...graph.nodes.flatMap((node) => [...node.inputs, ...node.outputs])]) {
+        for (const value of arg.value) {
+            if (!value.initializer && !seen.has(value)) {
+                seen.add(value);
+                value.type.shape.dimensions = value.type.shape.dimensions.map((dim, i) => {
+                    if (i === 0 && dim === 1) {
+                        return batch;
+                    }
+                    return dim === 3 ? tokens : dim;
+                });
+            }
+        }
+    }
+    return graph;
+};
+
+test('dynamic batch/sequence shapes combine with RMSNorm, gated MLP and fused GQA', async () => {
+    const graph = symbolize(fixture(3, false, { normalization: 'rms-div', gated: 'SwiGLU', fused: 'rank3', heads: 4, kvHeads: 2 }));
+    const analysis = await structuralBlocks(graph);
+    assert.deepEqual(analysis?.groups.map((group) => group.blocks.length), [3]);
+});
+
+test('symbolic MatMul broadcasting accepts equal constraints but rejects unrelated names and anonymous dimensions', async () => {
+    const graph = symbolize(fixture(3));
+    assert.deepEqual((await structuralBlocks(graph))?.groups.map((group) => group.blocks.length), [3]);
+    for (const dimension of ['other_tokens', null, '?', 0]) {
+        const invalid = symbolize(fixture(1));
+        const product = invalid.nodes[invalid.blocks[0].product];
+        const value = product.inputs[1].value[0];
+        product.inputs[1].value[0] = { ...value, type: { dataType: 'float32', shape: { dimensions: ['batch', 2, dimension, 4] } } };
+        // eslint-disable-next-line no-await-in-loop
+        assert.equal(await structuralBlocks(invalid), null);
+    }
+});
+
+test('generated symbolic equality patterns survive renaming without altering original metadata', async () => {
+    const a = symbolize(fixture(3), 'unk__1', 'unk__2');
+    const b = symbolize(fixture(3), 'unk__100', 'unk__200');
+    const aa = await structuralBlocks(a);
+    const bb = await structuralBlocks(b);
+    assert.deepEqual(aa?.groups.map((group) => [...group.members]), bb?.groups.map((group) => [...group.members]));
+    assert.deepEqual(a.inputs[0].value[0].type.shape.dimensions, ['unk__1', 'unk__2', 8]);
+});
+
+test('fused attention auxiliary cache outputs remain connected across folded instances', async () => {
+    const graph = fixture(3, false, { fused: 'rank4' });
+    for (const [i, node] of graph.nodes.filter((node) => node.type.name === 'Attention').entries()) {
+        const cache = { name: `cache_${i}`, type: { dataType: 'float32', shape: { dimensions: [1, 2, 3, 4] } } };
+        node.outputs.push({ name: 'present_key', value: [cache] });
+        graph.outputs.push({ name: `cache_${i}`, value: [cache] });
+    }
+    const analysis = await structuralBlocks(graph);
+    assert.deepEqual(analysis?.groups.map((group) => group.blocks.length), [3]);
+    const summary = [...nodeDescriptions(analysis.project())][0];
+    const outputs = summary.outputs.flatMap((arg) => arg.value.map((value) => value.name));
+    assert.ok(['cache_0', 'cache_1', 'cache_2'].every((name) => outputs.includes(name)));
+});
+
+test('legacy MultiHeadAttention does not borrow the GQA head-count schema', async () => {
+    assert.equal(await structuralBlocks(fixture(1, false, { fused: 'MultiHeadAttention', heads: 4, kvHeads: 2 })), null);
+});
+
+test('two-projection Swish MLP remains supported without inventing a gated branch', async () => {
+    const graph = fixture();
+    for (const node of graph.nodes.filter((node) => node.type.name === 'Gelu')) {
+        node.type = { name: 'Swish', domain: '', version: 24 };
+    }
+    assert.deepEqual((await structuralBlocks(graph))?.groups.map((group) => group.blocks.length), [3]);
+});
+
+test('packed Attention accepts an omitted/default QKV width attribute without reading weights', async () => {
+    const graph = fixture(3, false, { fused: 'packed' });
+    for (const node of graph.nodes.filter((node) => node.type.name === 'Attention')) {
+        node.attributes.push({ name: 'qkv_hidden_sizes', type: 'int64[]', value: [] });
+    }
+    assert.deepEqual((await structuralBlocks(graph))?.groups.map((group) => group.blocks.length), [3]);
+});
+
+for (const [name, options, mutate] of [
+    ['non-multiplicative gate', { gated: 'GEGLU' }, (graph) => {
+        graph.nodes[graph.blocks[0].end - 2].type.name = 'Add';
+    }],
+    ['SwiGLU sigmoid on the wrong branch', { gated: 'SwiGLU' }, (graph) => {
+        const sigmoid = graph.nodes.find((node) => node.type.name === 'Sigmoid');
+        sigmoid.inputs[0].value = graph.inputs[0].value;
+    }],
+    ['incompatible gate width', { gated: 'GLU' }, (graph) => {
+        graph.nodes[graph.blocks[0].end - 1].inputs[1].value[0].type.shape.dimensions = [15, 8];
+    }],
+    ['RMSNorm reduction on the wrong axis', { normalization: 'rms-div' }, (graph) => {
+        graph.nodes.find((node) => node.type.name === 'ReduceMean').attributes[0].value = [1];
+    }],
+    ['RMSNorm with a different squared input', { normalization: 'rms-div' }, (graph) => {
+        graph.nodes[0].inputs[1].value = [{ ...graph.inputs[0].value[0], name: 'unrelated' }];
+    }],
+    ['fused operator in an unknown domain', { fused: 'rank4' }, (graph) => {
+        graph.nodes.find((node) => node.type.name === 'Attention').type.domain = 'unknown';
+    }],
+    ['fused head count not divisible', { fused: 'rank3' }, (graph) => {
+        graph.nodes.find((node) => node.type.name === 'Attention').attributes[0].value = 3;
+    }],
+    ['fused attention with different K/V lengths', { fused: 'rank4' }, (graph) => {
+        graph.nodes.find((node) => node.type.name === 'Attention').inputs[2].value[0].type.shape.dimensions = [1, 2, 7, 4];
+    }],
+    ['packed attention with wrong weight width', { fused: 'packed' }, (graph) => {
+        graph.nodes.find((node) => node.type.name === 'Attention').inputs[1].value[0].type.shape.dimensions = [7, 24];
+    }]
+]) {
+    test(`invalid extended pattern remains unfolded: ${name}`, async () => {
+        const graph = fixture(1, false, options);
+        mutate(graph);
+        assert.equal(await structuralBlocks(graph), null);
+    });
+}
 
 const failures = {
     'broadcast residual': (graph) => {
