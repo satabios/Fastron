@@ -94,6 +94,8 @@ Distribution builds validate slim metadata and separated examples against the de
 
 ## Repeated blocks
 
+Models open unfolded with viewport rendering and on-demand weights; initial loading skips repeated-block analysis. After the graph loads, choose **View → Fold Repeated Blocks** to scan and stack matching blocks. The verified result is cached for that model, so expanding and folding again does not repeat the scan. Folding resets to off when opening another model and is not restored from saved startup preferences.
+
 Verified consecutive `layers.N`, `blocks.N`, `blk.N` and `h.N` paths fold into one representative block with a clickable ×N badge. The badge lets users select a real layer or expand that stack; **View → Expand Repeated Blocks** expands all stacks. Find can reveal a hidden layer. Each instance keeps its own parameter offsets, and tensor preview/export reads that selected instance. Image export uses the displayed graph; model comparison and parameter totals use all instances.
 
 Folding compares exact operator types, relative names, attributes, tensor types, quantization and connection roles. Different layers split runs. Unsupported nested/control-flow blocks, irregular connections and externally tapped intermediate outputs remain unfolded. Safetensors/GGUF show repeated weight structure, not inferred execution operators. All metadata still needs indexing; ONNX retains raw protobuf records and initializer metadata. This saves rich node objects, layout and SVG work, without merging weights or skipping metadata validation.

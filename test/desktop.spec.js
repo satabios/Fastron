@@ -191,6 +191,24 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
             BrowserWindow.getAllWindows()[0].webContents.send('open', { path: file });
         }, file);
         const nodes = page.locator('#canvas .graph-node');
+        await playwright.expect(nodes).toHaveCount(48, { timeout: 30000 });
+        await page.waitForSelector('body.default');
+        await playwright.expect(page.locator('.node-item-repeat')).toHaveCount(0);
+        if (process.platform === 'darwin') {
+            // Background test sessions may not grant OS focus; dispatch the native window event.
+            await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
+            await playwright.expect.poll(() => app.evaluate(({ Menu }) => {
+                const item = Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks');
+                return { present: Boolean(item), enabled: item?.enabled, label: item?.label };
+            })).toMatchObject({ present: true, enabled: true, label: playwright.expect.stringContaining('Fold') });
+            await app.evaluate(({ Menu }) => {
+                const item = Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks');
+                item.click();
+            });
+        } else {
+            await page.locator('#menu-button').click();
+            await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+        }
         await playwright.expect(nodes).toHaveCount(2, { timeout: 30000 });
         await page.locator('.node-item-repeat').click();
         await page.getByLabel('Representative layer').selectOption('17');

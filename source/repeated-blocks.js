@@ -308,6 +308,7 @@ export const repeatedBlocks = async (graph, current = () => true) => {
         Object.assign(block, boundaries(nodes));
         const local = new Map(Array.from(block.outputs, ([role, value]) => [value.name, role]));
         const external = new Map(block.external.map((value, index) => [value.name, index]));
+        const parameters = new Map();
         const symbols = new Map();
         // Keep dimensions shared with parameters literal, including their activation bindings.
         for (const node of nodes) {
@@ -332,7 +333,11 @@ export const repeatedBlocks = async (graph, current = () => true) => {
                 }
                 const type = typeOf(value);
                 if (value.initializer) {
-                    return ['parameter', type];
+                    const key = value.name || value.initializer;
+                    if (!parameters.has(key)) {
+                        parameters.set(key, parameters.size);
+                    }
+                    return ['parameter', parameters.get(key), type];
                 }
                 if (!value.name) {
                     throw new Error('Unnamed block input.');

@@ -543,6 +543,10 @@ app.Application = class {
                         click: async () => await this.execute('toggle', 'names'),
                     },
                     {
+                        id: 'view.toggle-repeated-blocks',
+                        click: async () => await this.execute('toggle', 'foldRepeatedBlocks'),
+                    },
+                    {
                         id: 'view.toggle-direction',
                         accelerator: 'CmdOrCtrl+K',
                         click: async () => await this.execute('toggle', 'direction')
@@ -667,6 +671,10 @@ app.Application = class {
             commandTable.set('view.toggle-names', {
                 enabled: (view) => view && view.path ? true : false,
                 label: (view) => !view || view.get('names') ? 'Hide &Names' : 'Show &Names'
+            });
+            commandTable.set('view.toggle-repeated-blocks', {
+                enabled: (view) => view && view.path && view.get('zoom-reset.enabled') ? true : false,
+                label: (view) => view && view.get('foldRepeatedBlocks') ? 'Expand Repeated &Blocks' : 'Fold Repeated &Blocks'
             });
             commandTable.set('view.toggle-direction', {
                 enabled: (view) => view && view.path ? true : false,

@@ -387,3 +387,124 @@ test('a blocked optional layout cache does not hang model rendering', { timeout:
     assert.equal(closed, 1);
     assert.equal(cache._db, null);
 });
+
+test('navigation during image export cancels the export without rebuilding the obsolete viewport', async () => {
+    const { View } = await import('../source/view.js');
+    let finish = null;
+    let clones = 0;
+    let restored = 0;
+    const canvas = { parentElement: {}, cloneNode() {
+        clones++;
+        throw new Error('Detached canvas cannot be exported.');
+    } };
+    const graph = { _canvasElement: canvas, isViewportCullingEnabled: () => true, materializeAll: () => new Promise((resolve) => {
+        finish = resolve;
+    }), hideAllNodes() {}, markAllNeedsUpdate() {}, resetViewportVisibility() {},
+    _getViewportBounds: () => ({}), _onViewportChange() {
+        restored++;
+    } };
+    const state = { activeTarget: {}, _target: graph, _host: { document: {} }, _element: () => canvas };
+    state._export = (file) => View.prototype._export.call(state, file);
+    const pending = View.prototype.export.call(state, 'old.svg');
+    await new Promise((resolve) => {
+        setImmediate(resolve);
+    });
+    // eslint-disable-next-line require-atomic-updates -- Simulate navigation while export is pending.
+    state._target = {};
+    finish(true);
+    await pending;
+    assert.equal(clones, 0);
+    assert.equal(restored, 0);
+});
+
+test('image exports are serialized, recover after failure and cancel queued work for an obsolete graph', async () => {
+    const { View } = await import('../source/view.js');
+    const started = [];
+    let release = null;
+    const graph = {};
+    const state = { _target: graph, _export(file) {
+        started.push(file);
+        return new Promise((resolve) => {
+            release = resolve;
+        });
+    } };
+    const first = View.prototype.export.call(state, 'first.svg');
+    const second = View.prototype.export.call(state, 'second.svg');
+    await new Promise((resolve) => {
+        setImmediate(resolve);
+    });
+    assert.deepEqual(started, ['first.svg']);
+    release();
+    await first;
+    await new Promise((resolve) => {
+        setImmediate(resolve);
+    });
+    assert.deepEqual(started, ['first.svg', 'second.svg']);
+    const third = View.prototype.export.call(state, 'obsolete.svg');
+    state._target = {};
+    release();
+    await Promise.all([second, third]);
+    assert.deepEqual(started, ['first.svg', 'second.svg']);
+    state._export = async () => {
+        throw new Error('Export failed.');
+    };
+    await assert.rejects(View.prototype.export.call(state, 'failed.svg'), /Export failed/);
+    state._export = async (file) => started.push(file);
+    await View.prototype.export.call(state, 'retry.svg');
+    assert.deepEqual(started, ['first.svg', 'second.svg', 'retry.svg']);
+});
+
+test('hiding a graph during image export does not reactivate its viewport', async () => {
+    const { View } = await import('../source/view.js');
+    let restored = 0;
+    const graph = { _canvasElement: { parentElement: {} }, isViewportCullingEnabled: () => true,
+        materializeAll: async () => false, hideAllNodes() {}, markAllNeedsUpdate() {}, resetViewportVisibility() {},
+        _getViewportBounds: () => ({}), _onViewportChange() {
+            restored++;
+        } };
+    const state = { activeTarget: {}, _target: graph, _host: { document: {} } };
+    await View.prototype._export.call(state, 'hidden.svg');
+    assert.equal(restored, 0);
+});
+
+test('PNG canvas allocation and drawing failures report an error instead of hanging export', { timeout: 1000 }, async (context) => {
+    const originals = new Map(['Image', 'XMLSerializer'].map((name) => [name, globalThis[name]]));
+    context.after(() => {
+        for (const [name, value] of originals) {
+            if (value === undefined) {
+                delete globalThis[name];
+            } else {
+                globalThis[name] = value;
+            }
+        }
+    });
+    globalThis.Image = class {
+        constructor() {
+            queueMicrotask(() => this.onload());
+        }
+    };
+    globalThis.XMLSerializer = class {
+        serializeToString() {
+            return '<svg/>';
+        }
+    };
+    const { View } = await import('../source/view.js');
+    const element = { setAttribute() {}, removeAttribute() {} };
+    const clone = { ...element, style: { removeProperty() {} }, getElementsByTagName: () => [],
+        querySelector: (selector) => selector === '#edge-paths-hit-test' ? null : element,
+        getBBox: () => ({ x: 0, y: 0, width: 10, height: 10 }) };
+    const canvas = { parentElement: { insertBefore() {}, removeChild() {}, appendChild() {} }, cloneNode: () => clone };
+    const errors = [];
+    const state = { activeTarget: {}, _target: { _canvasElement: canvas, isViewportCullingEnabled: () => false },
+        error: async (error) => errors.push(error), _host: { window: { btoa: () => '' }, document: { styleSheets: [] } } };
+    for (const getContext of [() => null, () => ({ scale() {}, drawImage() {
+        throw new Error('Canvas draw failed.');
+    } })]) {
+        state._host.document.createElement = () => ({ getContext });
+        // eslint-disable-next-line no-await-in-loop
+        await View.prototype._export.call(state, 'graph.png');
+    }
+    assert.equal(errors.length, 2);
+    assert.equal(errors[0].message, 'Unable to allocate a canvas for PNG export.');
+    assert.equal(errors[1].message, 'Canvas draw failed.');
+});

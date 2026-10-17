@@ -271,6 +271,23 @@ test('queued viewport builds cannot resurrect nodes that have left the viewport'
     assert.ok(graph._detachedElements.size <= graph._detachedElementLimit);
 });
 
+test('navigating away cancels an in-progress full graph materialization', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const { graph, document, nodes } = await fixture(200, 0);
+    const pending = graph.materializeAll(document);
+    assert.equal(nodes.filter((node) => node.element).length, 250);
+    ViewGraph.prototype.unregister.call(graph);
+    for (let i = 0; i < 3; i++) {
+        context.mock.timers.tick(0);
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.resolve();
+    }
+    const result = await pending;
+    assert.equal(result, false);
+    assert.ok(nodes.slice(250).every((node) => !node.element));
+    assert.equal(graph._materializing, 0);
+});
+
 test('switching away from a graph cancels queued node and edge builds', async (context) => {
     const { graph, document, nodes, edges } = await fixture(65, 0);
     const idle = [];

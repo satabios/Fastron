@@ -51,7 +51,7 @@ view.View = class {
             direction: 'vertical',
             mousewheel: 'scroll',
             lazyRender: true,
-            foldRepeatedBlocks: true
+            foldRepeatedBlocks: false
         };
         this._options = { ...this._defaultOptions };
         this._model = null;
@@ -211,8 +211,11 @@ view.View = class {
             await this._host.view(this);
             await this._initializePerformanceBackend();
             const options = this._host.get('options') || {};
+            // Folding is an explicit action for each model, never a startup preference.
             for (const [name, value] of Object.entries(options)) {
-                this._options[name] = value;
+                if (name !== 'foldRepeatedBlocks') {
+                    this._options[name] = value;
+                }
             }
 
             // Update lazy render button state
@@ -380,7 +383,7 @@ view.View = class {
                 view.add({
                     label: () => this.options.foldRepeatedBlocks ? 'Expand Repeated &Blocks' : 'Fold Repeated &Blocks',
                     execute: () => this.toggle('foldRepeatedBlocks'),
-                    enabled: () => this.activeTarget
+                    enabled: () => this.activeTarget && this.target
                 });
                 view.add({
                     label: () => this.options.direction === 'vertical' ? 'Show &Horizontal' : 'Show &Vertical',
@@ -555,6 +558,7 @@ view.View = class {
             this._renderCache = [];
             this._repeatStates = new WeakMap();
             this._repeatRevision = 0;
+            this._options.foldRepeatedBlocks = false;
         }
         this._model = value;
     }
@@ -634,7 +638,7 @@ view.View = class {
         }
         const options = {};
         for (const [name, value] of Object.entries(this._options)) {
-            if (this._defaultOptions[name] !== value) {
+            if (name !== 'foldRepeatedBlocks' && this._defaultOptions[name] !== value) {
                 options[name] = value;
             }
         }
@@ -1463,18 +1467,43 @@ view.View = class {
         return status;
     }
 
-    async export(file) {
+    export(file) {
+        const target = this._target;
+        const pending = (this._exportPromise || Promise.resolve()).catch(() => {}).then(() => {
+            if (this._target === target) {
+                return this._export(file);
+            }
+            return undefined;
+        });
+        this._exportPromise = pending;
+        return pending.finally(() => {
+            if (this._exportPromise === pending) {
+                this._exportPromise = null;
+            }
+        });
+    }
+
+    async _export(file) {
         const lastIndex = file.lastIndexOf('.');
         const extension = lastIndex === -1 ? 'png' : file.substring(lastIndex + 1).toLowerCase();
         if (this.activeTarget && (extension === 'png' || extension === 'svg')) {
-            const canvas = this._element('canvas');
             const document = this._host.document;
             const viewGraph = this._target;
+            const canvas = viewGraph?._canvasElement;
+            if (!canvas || !canvas.parentElement) {
+                return;
+            }
+            const generation = this._renderGeneration;
             const culling = viewGraph && viewGraph.isViewportCullingEnabled();
             let clone = null;
             try {
                 if (culling) {
-                    await viewGraph.materializeAll(document);
+                    if (!await viewGraph.materializeAll(document)) {
+                        return;
+                    }
+                }
+                if (this._target !== viewGraph || generation !== this._renderGeneration) {
+                    return;
                 }
                 clone = canvas.cloneNode(true);
             } finally {
@@ -1482,8 +1511,10 @@ view.View = class {
                     viewGraph.hideAllNodes();
                     viewGraph.markAllNeedsUpdate();
                     viewGraph.resetViewportVisibility();
-                    const viewport = viewGraph._getViewportBounds();
-                    viewGraph._onViewportChange(viewport);
+                    if (this._target === viewGraph && generation === this._renderGeneration && viewGraph._events) {
+                        const viewport = viewGraph._getViewportBounds();
+                        viewGraph._onViewportChange(viewport);
+                    }
                 }
             }
             const applyStyleSheet = (element, name) => {
@@ -1555,24 +1586,31 @@ view.View = class {
                 try {
                     const blob = await new Promise((resolve, reject) => {
                         const image = new Image();
-                        image.onload = async () => {
-                            const max = Math.max(width, height);
-                            const scale = Math.min(24000.0 / max, 2.0);
-                            const canvas = this._host.document.createElement('canvas');
-                            canvas.width = Math.ceil(width * scale);
-                            canvas.height = Math.ceil(height * scale);
-                            const context = canvas.getContext('2d');
-                            context.scale(scale, scale);
-                            context.drawImage(image, 0, 0);
-                            canvas.toBlob((blob) => {
-                                if (blob) {
-                                    resolve(blob);
-                                } else {
-                                    const error = new Error('Image may be too large to render as PNG.');
-                                    error.name = 'Error exporting image.';
-                                    reject(error);
+                        image.onload = () => {
+                            try {
+                                const max = Math.max(width, height);
+                                const scale = Math.min(24000.0 / max, 2.0);
+                                const canvas = this._host.document.createElement('canvas');
+                                canvas.width = Math.ceil(width * scale);
+                                canvas.height = Math.ceil(height * scale);
+                                const context = canvas.getContext('2d');
+                                if (!context) {
+                                    throw new Error('Unable to allocate a canvas for PNG export.');
                                 }
-                            }, 'image/png');
+                                context.scale(scale, scale);
+                                context.drawImage(image, 0, 0);
+                                canvas.toBlob((blob) => {
+                                    if (blob) {
+                                        resolve(blob);
+                                    } else {
+                                        const error = new Error('Image may be too large to render as PNG.');
+                                        error.name = 'Error exporting image.';
+                                        reject(error);
+                                    }
+                                }, 'image/png');
+                            } catch (error) {
+                                reject(error);
+                            }
                         };
                         image.onerror = (error) => {
                             reject(error);

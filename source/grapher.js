@@ -777,11 +777,15 @@ grapher.Graph = class {
         // Export and accessibility consumers need a complete SVG even when the
         // interactive view only attaches elements intersecting the viewport.
         this._visibilityVersion += 1;
+        const version = this._visibilityVersion;
         this._materializing = (this._materializing || 0) + 1;
         let count = 0;
         try {
         /* eslint-disable no-await-in-loop */
             for (const nodeId of this.nodes.keys()) {
+                if (version !== this._visibilityVersion) {
+                    return false;
+                }
                 const entry = this.node(nodeId);
                 const node = this._ensureNodeElement(nodeId, document) || (entry && entry.label);
                 if (!node || !node.element) {
@@ -803,6 +807,9 @@ grapher.Graph = class {
                 }
             }
             for (const edge of this.edges.values()) {
+                if (version !== this._visibilityVersion) {
+                    return false;
+                }
                 const label = this._ensureEdgeElement(edge, document);
                 this._showEdge(label);
                 if (label.element) {
@@ -819,6 +826,7 @@ grapher.Graph = class {
         } finally {
             this._materializing--;
         }
+        return version === this._visibilityVersion;
     }
 
     populateTiles() {

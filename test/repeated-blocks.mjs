@@ -31,6 +31,47 @@ const fixture = (count = 24) => {
     return { nodes, inputs: [arg('input', first)], outputs: [arg('output', input)] };
 };
 
+test('opening a model skips repetition analysis until folding is requested and reuses the result', async () => {
+    const graph = fixture(3);
+    let scans = 0;
+    Object.defineProperty(graph.nodes[0], 'attributes', { get() {
+        scans++;
+        return [];
+    } });
+    const host = new Host({ serial: true });
+    let saved = null;
+    host.set = (name, options) => {
+        saved = options;
+    };
+    host.delete = () => {
+        saved = null;
+    };
+    const view = new View(host);
+    const model = { modules: [graph] };
+    view.model = model;
+    view._path = [{ target: graph }];
+    view._reload = () => {};
+    assert.equal(view.options.lazyRender, true);
+    assert.equal(view.options.foldRepeatedBlocks, false);
+    assert.equal(await view._repeatedPresentation(graph, () => true), graph);
+    assert.equal(scans, 0);
+    view.toggle('foldRepeatedBlocks');
+    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
+    const scanned = scans;
+    assert.ok(scanned > 0);
+    view.toggle('names');
+    assert.deepEqual(saved, { names: true }, 'Folding must not become a saved startup preference.');
+    view.toggle('foldRepeatedBlocks');
+    assert.equal(await view._repeatedPresentation(graph, () => true), graph);
+    view.toggle('foldRepeatedBlocks');
+    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
+    assert.equal(scans, scanned, 'Re-enabling folding must reuse verified metadata.');
+    view.model = model;
+    assert.equal(view.options.foldRepeatedBlocks, true, 'Redrawing the current model preserves the user choice.');
+    view.model = { modules: [fixture(2)] };
+    assert.equal(view.options.foldRepeatedBlocks, false, 'Every new model opens without a repetition scan.');
+});
+
 const dynamicFixture = (count = 3) => {
     const graph = fixture(count);
     const symbols = new Map();
@@ -245,6 +286,33 @@ test('shared initializers keep their identity and search descriptors allocate no
     assert.equal(catalog.cache.size, 0);
     const folded = (await repeatedBlocks(graph)).project(new Map([[0, 2]]));
     assert.equal(folded.nodes[0].inputs[1].value[0], shared);
+});
+
+test('folding preserves parameter sharing within each block without reading weights', async () => {
+    for (const named of [true, false]) {
+        const graph = fixture(2);
+        for (let i = 0; i < graph.nodes.length; i++) {
+            graph.nodes[i].type = { name: 'Add' };
+        }
+        const first = graph.nodes[0].inputs[1].value[0];
+        const second = graph.nodes[2].inputs[1].value[0];
+        if (!named) {
+            first.name = '';
+            second.name = '';
+        }
+        graph.nodes[1].inputs.push(arg('weight', { ...first }));
+        graph.nodes[3].inputs.push(arg('weight', { ...second, name: named ? 'separate_weight' : '', initializer: { type,
+            get values() {
+                throw new Error('Weights must remain unread.');
+            } } }));
+        // eslint-disable-next-line no-await-in-loop
+        assert.equal(await repeatedBlocks(graph), null, 'Shared and independent parameters are different structure.');
+        const matching = fixture(2);
+        matching.nodes[1].inputs.push(arg('weight', { ...matching.nodes[0].inputs[1].value[0] }));
+        matching.nodes[3].inputs.push(arg('weight', { ...matching.nodes[2].inputs[1].value[0] }));
+        // eslint-disable-next-line no-await-in-loop
+        assert.equal((await repeatedBlocks(matching)).groups[0].blocks.length, 2);
+    }
 });
 
 test('array mutations and freezing materialize a normal canonical array', () => {

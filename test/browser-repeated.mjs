@@ -66,7 +66,8 @@ let browser = null;
 try {
     browser = await chromium.launch({ headless: true });
     const check = async (format) => {
-        const context = await browser.newContext();
+        const context = await browser.newContext({ storageState: { cookies: [], origins: [{ origin,
+            localStorage: [{ name: 'options', value: JSON.stringify({ foldRepeatedBlocks: true }) }] }] } });
         await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
@@ -75,7 +76,14 @@ try {
         await page.goto(`${origin}/?url=/repeated.${format}&identifier=repeated.${format}`);
         const nodes = page.locator('#canvas .graph-node');
         try {
+            await expect(nodes).toHaveCount(48, { timeout: 30000 });
+            await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+            await expect(page.locator('body')).toHaveClass(/default/);
+            const initialBytes = transferred;
+            await page.locator('#menu-button').click();
+            await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
             await expect(nodes).toHaveCount(2, { timeout: 30000 });
+            assert.equal(transferred, initialBytes, 'Enabling folding cannot fetch weights.');
             await expect(page.locator('body')).toHaveClass(/default/);
             await expect(page.locator('.node-item-repeat text')).toHaveText('×24');
             await page.screenshot({ path: path.join(os.tmpdir(), `fastron-repeated-${format}.png`) });
@@ -150,6 +158,10 @@ try {
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(`${origin}/?url=/large.safetensors&identifier=large.safetensors`);
+    await expect(page.locator('body')).toHaveClass(/default/);
+    await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+    await page.locator('#menu-button').click();
+    await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
     await expect(page.locator('.node-item-repeat text')).toHaveText('×256');
     const metadataBytes = transferred;
     await page.locator('.node-item-repeat').click();
@@ -214,7 +226,13 @@ try {
         const before = transferred;
         await page.goto(`${origin}/?url=/efficientvit.onnx&identifier=efficientvit_b3.onnx`);
         await expect(page.locator('body')).toHaveClass(/default/);
+        await expect(page.locator('#canvas .graph-node').first()).toBeAttached();
+        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+        const initialBytes = transferred;
+        await page.locator('#menu-button').click();
+        await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
         await expect(page.locator('#canvas .graph-node')).toHaveCount(206);
+        assert.equal(transferred, initialBytes, 'Enabling real-model folding cannot fetch weights.');
         await expect(page.locator('.node-item-repeat text')).toHaveText(['×3', '×5', '×5', '×8']);
         assert.ok(transferred - before < 1048576, 'Opening the real model must remain metadata-only.');
         const metadataBytes = transferred;
