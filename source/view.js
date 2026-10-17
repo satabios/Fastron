@@ -1314,7 +1314,7 @@ view.View = class {
                 update().catch((error) => this.error(error, 'Error expanding repeated blocks.', null));
             });
         if (group.kind === 'module') {
-            sidebar.addProperty('module', group.title).action('Open module', 'View the selected module and its child modules', async () => {
+            sidebar.addProperty('module', group.title).action('Open module', 'View the selected instance and its original operators', async () => {
                 const block = group.blocks[Number(select.value)];
                 const module = state.analysis.subgraph(block.indices, group.title, block.scope);
                 await this.pushTarget(module);
@@ -3765,8 +3765,7 @@ view.Node = class extends grapher.Node {
         });
         if (node._repeatHeader) {
             const group = node._repeatGroup;
-            const count = group.kind === 'module' && group.blocks.length === 1 ? `${group.members.length} ops` : `×${group.blocks.length}`;
-            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], count, `${group.label}. Select a representative or expand this stack.`);
+            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `×${group.blocks.length}`, `${group.label}. Select a representative or expand this stack.`);
             badge.on('click', () => this.context.view.showRepeatedBlock(group));
         }
         if (node.type.type || (Array.isArray(node.type.nodes) && node.type.nodes.length > 0)) {

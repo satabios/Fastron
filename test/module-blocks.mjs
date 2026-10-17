@@ -43,13 +43,13 @@ test('module scopes preserve every external input and intermediate output withou
     } });
     const analysis = await moduleBlocks(graph);
     const display = analysis.project();
-    assert.equal(display.nodes.length, 3);
-    assert.equal(display.nodes[1], graph.nodes[2], 'The injection between layers remains explicit.');
-    assert.deepEqual(analysis.groups.map((group) => group.blocks.map((block) => block.index)), [[0], [1, 2]]);
-    assert.equal(analysis.groups[1].kind, 'module');
+    assert.equal(display.nodes.length, 4);
+    assert.deepEqual(Array.from(display.nodes).slice(0, 3), graph.nodes.slice(0, 3), 'The singleton layer and injection remain explicit.');
+    assert.deepEqual(analysis.groups.map((group) => group.blocks.map((block) => block.index)), [[1, 2]]);
+    assert.equal(analysis.groups[0].kind, 'module');
     assert.deepEqual(display.inputs.flatMap((arg) => arg.value), graph.inputs.flatMap((arg) => arg.value));
     assert.deepEqual(display.outputs.flatMap((arg) => arg.value), graph.outputs.flatMap((arg) => arg.value));
-    const summary = display.nodes[2];
+    const summary = display.nodes[3];
     assert.deepEqual(summary.outputs.map((arg) => arg.value[0].name), ['hidden_1', 'hidden_2', 'output_2']);
     assert.equal(summary.type.name, 'layers');
     assert.equal(summary.type.type, 'function');
@@ -58,7 +58,7 @@ test('module scopes preserve every external input and intermediate output withou
     view.model = { modules: [graph] };
     assert.equal(await view._repeatedPresentation(graph, () => true), graph);
     view.options.foldRepeatedBlocks = true;
-    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 3);
+    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 4);
     const expanded = analysis.project(new Map(), new Set(analysis.groups.map((group) => group.id)));
     assert.deepEqual(Array.from(expanded.nodes, (node) => node._originalNode || node), graph.nodes);
 });
@@ -72,24 +72,36 @@ test('module selection and nested graphs materialize only the requested real ins
     }, (node) => node);
     graph.nodes = catalog.nodes;
     const analysis = await moduleBlocks(graph);
-    const display = analysis.project(new Map([[1, 1]]));
+    const display = analysis.project(new Map([[0, 1]]));
     assert.equal(created, 0);
-    const selected = display.nodes[2].type;
+    const selected = display.nodes[3].type;
     assert.equal(selected._moduleScope, '/model/layers.2');
     assert.equal(selected.nodes[0].inputs[2].value[0].initializer.offset, 64);
     assert.equal(created, 1);
-    const nested = await moduleBlocks(selected);
-    assert.deepEqual(Array.from(nodeDescriptions(nested.project()), (node) => node.type.name), ['self_attn', 'mlp']);
-    assert.equal(await moduleBlocks(nested.project().nodes[0].type), null, 'Opening a leaf must reach real operators, not another identical wrapper.');
+    assert.equal(await moduleBlocks(selected), null, 'Opening an instance must reach real operators without wrapping non-repeated child scopes.');
+    assert.deepEqual(Array.from(nodeDescriptions(selected), (node) => node.type.name), ['MatMul', 'Relu']);
     assert.equal(created, 1);
     assert.equal(nodeCatalog(selected.nodes).cache.size, 1);
-    assert.deepEqual(analysis.locate({ name: 'model.layers.2.weight' }), { group: analysis.groups[1], index: 1 });
+    assert.deepEqual(analysis.locate({ name: 'model.layers.2.weight' }), { group: analysis.groups[0], index: 1 });
     const dotted = fixture();
     dotted.nodes.forEach((node) => {
         node.name = node.name.replace(/^\//, '').replaceAll('/', '.');
     });
     const dottedAnalysis = await moduleBlocks(dotted);
-    assert.equal(await moduleBlocks(dottedAnalysis.project().nodes[0].type), null, 'Dot-separated scopes must reach operators without recursive wrappers.');
+    assert.equal(await moduleBlocks(dottedAnalysis.project().nodes[3].type), null, 'Dot-separated scopes must reach operators without recursive wrappers.');
+});
+
+test('only repeated indexed blocks fold; standalone embedding scopes and isolated layers retain their operators', async () => {
+    const graph = fixture();
+    graph.nodes[0].name = '/visual/patch_embed/Conv';
+    graph.nodes[1].name = '/visual/patch_embed/Transpose';
+    graph.nodes[2].name = '/visual/pos_embed/Gather';
+    const analysis = await moduleBlocks(graph);
+    assert.deepEqual(analysis.groups.map((group) => group.blocks.map((block) => block.index)), [[1, 2]]);
+    assert.deepEqual(Array.from(analysis.project().nodes).slice(0, 3), graph.nodes.slice(0, 3));
+    graph.nodes[5].name = '/visual/blocks.0/MatMul';
+    graph.nodes[6].name = '/visual/blocks.0/Relu';
+    assert.equal(await moduleBlocks(graph), null, 'Different families with one instance each are not repetitions.');
 });
 
 test('module grouping rejects unsorted dependencies, duplicate producers, control dependencies and unnamed graphs', async () => {
@@ -134,6 +146,6 @@ test('finding an operator in a module summary expands its real group even for th
     };
     await view.revealRepeated(graph.nodes[3]);
     assert.equal(updates, 1);
-    assert.equal(state.expanded.has(1), true);
-    assert.equal(analysis.project(state.selected, state.expanded).nodes.length, 6);
+    assert.equal(state.expanded.has(0), true);
+    assert.equal(analysis.project(state.selected, state.expanded).nodes.length, graph.nodes.length);
 });

@@ -116,8 +116,7 @@ export const moduleBlocks = async (graph, current = () => true) => {
             const prefix = `${scope ? `${scope}/` : ''}${match[1]}`;
             return { key: prefix, index: Number(match[2]), scope: `${prefix}${match[2]}` };
         }
-        const parent = scope ? relative.split('/').slice(0, -1)[0] || '' : relative.slice(0, relative.lastIndexOf('/') + 1).replace(/\/$/, '');
-        return { key: parent ? `${scope ? `${scope}/` : ''}${parent}` : '', scope: parent ? `${scope ? `${scope}/` : ''}${parent}` : scope };
+        return { key: '' };
     });
     const families = new Map();
     for (const path of paths) {
@@ -184,8 +183,7 @@ export const moduleBlocks = async (graph, current = () => true) => {
         while (end < nodes.length && paths[end].key === paths[start].key) {
             end++;
         }
-        const container = paths[start].key && Array.from(families.keys()).some((key) => key.startsWith(`${paths[start].key}/`));
-        if ((end - start > 1 || (paths[start].key && !container)) && (paths[start].key || !scope)) {
+        if (paths[start].index !== undefined) {
             const blocks = new Map();
             for (let i = start; i < end; i++) {
                 const path = paths[i];
@@ -195,13 +193,14 @@ export const moduleBlocks = async (graph, current = () => true) => {
                 }
                 blocks.get(index).indices.push(i);
             }
+            if (blocks.size < 2) {
+                start = end;
+                continue;
+            }
             const path = paths[start];
             const label = scope ? path.key.slice(scope.length + 1) : path.key.replace(/^\/model\//, '');
             const parts = label.replace(/[./]+$/, '').split(/[./]/).filter(Boolean);
-            let title = parts.slice(-2).join(' ') || 'Graph operations';
-            if (path.index !== undefined && blocks.size === 1) {
-                title = `${parts.at(-1)} ${path.index}`;
-            }
+            const title = parts.slice(-2).join(' ');
             groups.push({ id: groups.length, kind: 'module', title, label: `${path.key || 'Graph operations'} (${blocks.size} modules)`,
                 scope: path.key.replace(/[./]+$/, ''), anchor: start, members: Uint32Array.from({ length: end - start }, (_, i) => start + i),
                 blocks: Array.from(blocks.values(), (block) => ({ ...block, indices: Uint32Array.from(block.indices) })) });

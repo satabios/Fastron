@@ -20,6 +20,9 @@ if (process.argv[2]) {
 if (process.argv[3]) {
     fixtures.set('/qwen.onnx', path.resolve(process.argv[3]));
 }
+if (process.argv[4]) {
+    fixtures.set('/qwen-vision.onnx', path.resolve(process.argv[4]));
+}
 let transferred = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
@@ -289,19 +292,40 @@ try {
         await expect(page.getByRole('button', { name: 'Graph Stacking', exact: true })).toHaveAttribute('aria-pressed', 'false');
         const metadataBytes = transferred;
         await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(12);
+        await expect(page.locator('body')).toHaveClass(/default/);
+        await page.locator('#lazy-render-button').click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(2625);
         const stack = page.locator('.node-item-repeat').filter({ hasText: '×25' });
         await expect(stack).toBeVisible();
         await stack.click();
         await expect(page.getByText('Exported module scopes;', { exact: false })).toBeVisible();
         await page.getByLabel('Representative layer').selectOption('7');
         await page.getByText('Open module', { exact: true }).click();
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^self_attn$/ })).toBeVisible();
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^mlp$/ })).toBeVisible();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(673);
+        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^MatMul$/ }).first()).toBeAttached();
         assert.equal(transferred, metadataBytes, 'Module folding, selection and navigation must not fetch weights.');
         assert.deepEqual(errors, []);
         await context.close();
-        process.stdout.write('Qwen: visible initial graph, 12 module nodes, per-instance navigation and zero weight reads passed.\n');
+        process.stdout.write('Qwen: repeated layers only, standalone operators preserved, per-instance navigation and zero weight reads passed.\n');
+    }
+    if (fixtures.has('/qwen-vision.onnx')) {
+        const context = await browser.newContext();
+        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+        const page = await context.newPage();
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.goto(`${origin}/?url=/qwen-vision.onnx&identifier=qwen-vision.onnx`);
+        await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
+        const metadataBytes = transferred;
+        await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(70);
+        await expect(page.locator('.node-item-repeat text')).toHaveText(['×6', '×6', '×6', '×6']);
+        await expect(page.locator('[id="node-name-/visual/pos_embed/Gather"] .node-item-type text')).toHaveText('Gather');
+        await expect(page.locator('[id="node-name-/visual/patch_embed/Conv"] .node-item-type text')).toHaveText('Conv');
+        assert.equal(transferred, metadataBytes, 'Folding vision blocks must not fetch weights.');
+        assert.deepEqual(errors, []);
+        await context.close();
+        process.stdout.write('Qwen vision: four ×6 stacks, standalone embedding operators preserved and zero weight reads passed.\n');
     }
 } finally {
     await browser?.close();
