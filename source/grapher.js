@@ -74,7 +74,11 @@ grapher.Graph = class {
         return this.children(nodeId).length === 0;
     }
 
-    _ensureNodeElement(nodeId, document) {
+    _useOverview(node) {
+        return this._overview && node._geometryLocked && typeof node._overviewLabel === 'string' && !this._isPinned(node);
+    }
+
+    _ensureNodeElement(nodeId, document, allowOverview = false) {
         const entry = this.node(nodeId);
         if (!entry) {
             return null;
@@ -83,18 +87,27 @@ grapher.Graph = class {
         if (!this._isLeafNode(nodeId) || !this._nodeGroupElement) {
             return node;
         }
-        if (node.element && !node._simplified) {
-            return node; // already fully built
+        const simplified = Boolean(allowOverview && this._useOverview(node));
+        if (node.element && Boolean(node._simplified) === simplified) {
+            return node;
         }
-        // Remove simplified placeholder shape if present
-        if (node._simplified && node.element) {
+        const focused = node.element && document.activeElement && node.element.contains(document.activeElement);
+        if (node.element) {
             if (node.element.parentNode) {
                 node.element.parentNode.removeChild(node.element);
             }
-            node.element = null;
+            node.release();
         }
-        node._simplified = false;
-        node.build(document, this._nodeGroupElement);
+        node._simplified = simplified;
+        if (simplified) {
+            node.buildOverview(document, this._nodeGroupElement);
+        } else {
+            node.build(document, this._nodeGroupElement);
+        }
+        if (focused) {
+            node.element.setAttribute('tabindex', '-1');
+            node.element.focus();
+        }
         this._renderedNodes.add(nodeId);
         return node;
     }
@@ -380,7 +393,11 @@ grapher.Graph = class {
 
     _buildVisibleNodes(nodeIds, document) {
         const CHUNK = 30;
+        const version = this._visibilityVersion;
         const process = (ids, start = 0) => {
+            if (version !== this._visibilityVersion) {
+                return;
+            }
             const batch = ids.slice(start, start + CHUNK);
             // Pass 1: Build/show DOM elements (writes only — no getBBox reads).
             const builtNodes = [];
@@ -388,7 +405,7 @@ grapher.Graph = class {
                 if (!this._visibleNodes || !this._visibleNodes.has(nodeId)) {
                     continue;
                 }
-                this._ensureNodeElement(nodeId, document);
+                this._ensureNodeElement(nodeId, document, true);
                 const entry = this.node(nodeId);
                 if (!entry || !entry.label) {
                     continue;
@@ -403,15 +420,19 @@ grapher.Graph = class {
             // Because no DOM writes occur between calls, the browser can batch
             // the layout calculation instead of reflowing per-node.
             for (const { node } of builtNodes) {
-                if (!node._geometryLocked) {
+                if (!node._simplified && !node._geometryLocked) {
                     node.measure();
                 }
             }
             // Pass 3: Layout and update (writes only).
             const builtNodeIds = new Set();
             for (const { nodeId, node } of builtNodes) {
-                node.layout();
-                node.update();
+                if (node._simplified) {
+                    node.updateOverview();
+                } else {
+                    node.layout();
+                    node.update();
+                }
                 node._needsUpdate = false;
                 builtNodeIds.add(nodeId);
             }
@@ -451,7 +472,11 @@ grapher.Graph = class {
 
     _buildVisibleEdges(edgeKeys, document) {
         const CHUNK = 60;
+        const version = this._visibilityVersion;
         const process = (keys, start = 0) => {
+            if (version !== this._visibilityVersion) {
+                return;
+            }
             const batch = keys.slice(start, start + CHUNK);
             // Pass 1: Build edge DOM elements (writes only — no getBBox reads).
             const builtEdges = [];
@@ -514,6 +539,10 @@ grapher.Graph = class {
             return { addedNodes: new Set(), removedNodes: new Set(), addedEdges: new Set(), removedEdges: new Set() };
         }
 
+        // At distant zoom, skip tiny node text while keeping geometry and hit targets.
+        const overview = this.useEstimatedNodeSizes() && Number.isFinite(viewportBounds.zoom) && viewportBounds.zoom < 0.4;
+        const detailChanged = overview !== this._overview;
+        this._overview = overview;
         const { nodes: visibleNodes, edges: visibleEdges } = this._tileManager.queryViewport(viewportBounds, 1);
 
         // Locked geometry routes crossing edges without constructing distant endpoint UI.
@@ -561,7 +590,7 @@ grapher.Graph = class {
         this._visibleNodes = visibleNodes;
         this._visibleEdges = visibleEdges;
 
-        return { addedNodes, removedNodes, addedEdges, removedEdges };
+        return { addedNodes, removedNodes, addedEdges, removedEdges, detailChanged };
     }
 
     updateVisibleElements(document, delta) {
@@ -574,7 +603,6 @@ grapher.Graph = class {
             return;
         }
 
-        this._visibilityVersion += 1;
         for (const [label, edge] of this._pinnedElements) {
             if (edge) {
                 this._hideEdge(label);
@@ -586,7 +614,8 @@ grapher.Graph = class {
         // Fast path: use delta sets to only process nodes/edges that changed visibility.
         // This reduces per-scroll work from O(N) to O(delta).
         if (delta) {
-            const { addedNodes, removedNodes, addedEdges, removedEdges } = delta;
+            const { removedNodes, addedEdges, removedEdges } = delta;
+            const addedNodes = delta.detailChanged ? this._visibleNodes : delta.addedNodes;
 
             // Hide nodes that left the viewport
             for (const nodeId of removedNodes) {
@@ -604,22 +633,18 @@ grapher.Graph = class {
                     continue;
                 }
                 const node = entry.label;
-                if (node.element && !node._simplified) {
+                if (node.element && Boolean(node._simplified) === Boolean(this._useOverview(node))) {
                     this._showNode(node);
                     if (this._isLeafNode(nodeId) && this._skipHiddenUpdate && node._needsUpdate !== false) {
-                        node.update();
+                        if (node._simplified) {
+                            node.updateOverview();
+                        } else {
+                            node.update();
+                        }
                         node._needsUpdate = false;
                     }
                     this._renderedNodes.add(nodeId);
                 } else if (this._isLeafNode(nodeId)) {
-                    // Show the simplified placeholder immediately so that any already-visible
-                    // edge connecting to this node has a DOM target while the full node is
-                    // being built asynchronously.  Without this, the edge connector points
-                    // into empty space until the async build completes.
-                    if (node._simplified && node.element) {
-                        this._showNode(node);
-                        node.element.style.removeProperty('opacity');
-                    }
                     newNodeIds.push(nodeId);
                 }
             }
@@ -650,11 +675,15 @@ grapher.Graph = class {
             const node = entry.label;
             const isVisible = this._visibleNodes.has(nodeId);
 
-            if (node.element && !node._simplified) {
+            if (node.element && Boolean(node._simplified) === Boolean(this._useOverview(node))) {
                 if (isVisible) {
                     this._showNode(node);
                     if (this._isLeafNode(nodeId) && this._skipHiddenUpdate && node._needsUpdate !== false) {
-                        node.update();
+                        if (node._simplified) {
+                            node.updateOverview();
+                        } else {
+                            node.update();
+                        }
                         node._needsUpdate = false;
                     }
                     this._renderedNodes.add(nodeId);
@@ -662,14 +691,8 @@ grapher.Graph = class {
                     this._hideNode(node);
                 }
             } else if (isVisible && this._isLeafNode(nodeId)) {
-                // Show the simplified placeholder immediately so that any already-visible
-                // edge connecting to this node has a DOM target while the full node is
-                // being built asynchronously.
-                if (node._simplified && node.element) {
-                    this._showNode(node);
-                }
                 newNodeIds.push(nodeId);
-            } else if (node._simplified) {
+            } else if (node.element) {
                 this._hideNode(node);
             }
         }
@@ -733,6 +756,19 @@ grapher.Graph = class {
     }
 
     resetViewportVisibility() {
+        this._visibilityVersion += 1;
+        for (const nodeId of this._visibleNodes || []) {
+            const entry = this.node(nodeId);
+            if (entry) {
+                this._hideNode(entry.label);
+            }
+        }
+        for (const edgeKey of this._visibleEdges || []) {
+            const entry = this._edges.get(edgeKey);
+            if (entry) {
+                this._hideEdge(entry.label);
+            }
+        }
         this._visibleNodes = new Set();
         this._visibleEdges = new Set();
     }
@@ -1714,14 +1750,7 @@ grapher.Graph = class {
                 const shouldUpdate = !restrictToVisible || this._visibleNodes.has(nodeId);
                 if (node.element && shouldUpdate) {
                     if (node._simplified) {
-                        const rect = node.element.firstChild;
-                        if (rect) {
-                            rect.setAttribute('x', node.x - (node.width || 0) / 2);
-                            rect.setAttribute('y', node.y - (node.height || 0) / 2);
-                            rect.setAttribute('width', node.width || 0);
-                            rect.setAttribute('height', node.height || 0);
-                        }
-                        node.element.style.removeProperty('opacity');
+                        node.updateOverview();
                         node._needsUpdate = false;
                     } else {
                         node.update();
@@ -1813,6 +1842,39 @@ grapher.Node = class {
         this.border = null;
         this._parentElement = null;
         this._needsUpdate = true;
+    }
+
+    buildOverview(document, parent) {
+        this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        if (this.id) {
+            this.element.setAttribute('id', this.id);
+        }
+        this.element.setAttribute('class', `node node-overview ${this.class || ''} ${this._overviewClass || 'node-item-type'} ${this._diffClass || ''}`.trim());
+        this.element.setAttribute('role', 'button');
+        this.element.setAttribute('tabindex', '0');
+        this.element.setAttribute('aria-label', this._overviewLabel);
+        this.element.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.activateOverview();
+        });
+        this.element.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.stopPropagation();
+                this.activateOverview();
+            }
+        });
+        this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        this.border.setAttribute('class', 'node node-border');
+        this.element.appendChild(this.border);
+        this._parentElement = parent;
+        parent.appendChild(this.element);
+    }
+
+    updateOverview() {
+        this.border.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, true, true, true, true));
+        this.element.setAttribute('transform', `translate(${grapher.Node.snap(this.x - this.width / 2)},${grapher.Node.snap(this.y - this.height / 2)})`);
+        this.element.style.removeProperty('opacity');
     }
 
     measure() {

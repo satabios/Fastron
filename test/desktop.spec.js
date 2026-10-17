@@ -7,7 +7,7 @@ import { writeRepeatedModel } from './repeated-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
 
-playwright.test('desktop', async () => {
+playwright.test('desktop', async ({ playwright: driver }, testInfo) => {
 
     const self = url.fileURLToPath(import.meta.url);
     const dir = path.dirname(self);
@@ -15,8 +15,10 @@ playwright.test('desktop', async () => {
     playwright.expect(fs.existsSync(file)).toBeTruthy();
 
     // Launch app
-    const electron = await playwright._electron;
-    const args = ['.', '--no-sandbox'];
+    const electron = driver._electron;
+    const profile = testInfo.outputPath('profile');
+    fs.mkdirSync(profile, { recursive: true });
+    const args = ['.', '--no-sandbox', `--user-data-dir=${profile}`];
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
     const app = await electron.launch({ args, env });
@@ -132,7 +134,7 @@ playwright.test('comparator detects rewiring in real model files', async ({ play
     fs.writeFileSync(b, JSON.stringify(model));
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    const app = await driver._electron.launch({ args: ['.', '--no-sandbox'], env });
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${testInfo.outputPath('profile')}`], env });
     try {
         await app.firstWindow();
         const pathname = path.resolve(dir, '../source/comparator.html');

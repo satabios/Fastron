@@ -3004,7 +3004,11 @@ view.Graph = class extends grapher.Graph {
         // Note: _viewportObserver may not exist yet (it is created in register()),
         // but _onViewportChange does not depend on it, so we call it directly.
         if (this.isViewportCullingEnabled()) {
+            const version = this._visibilityVersion;
             setTimeout(() => {
+                if (version !== this._visibilityVersion) {
+                    return;
+                }
                 const viewport = this._getViewportBounds();
                 this._onViewportChange(viewport);
             }, 100);
@@ -3014,6 +3018,7 @@ view.Graph = class extends grapher.Graph {
     register() {
         if (!this._events) {
             this._events = {};
+            const events = this._events;
             this._events.scroll = (e) => this._scrollHandler(e);
             this._events.wheel = (e) => this._wheelHandler(e);
             this._events.gesturestart = (e) => this._gestureStartHandler(e);
@@ -3040,6 +3045,9 @@ view.Graph = class extends grapher.Graph {
             // Setup IntersectionObserver to trigger viewport update when graph becomes visible
             if (this.isViewportCullingEnabled() && !this._intersectionObserver && typeof IntersectionObserver !== 'undefined') {
                 this._intersectionObserver = new IntersectionObserver((entries) => {
+                    if (this._events !== events) {
+                        return;
+                    }
                     for (const entry of entries) {
                         if (entry.isIntersecting) {
                             const viewport = this._getViewportBounds();
@@ -3053,6 +3061,9 @@ view.Graph = class extends grapher.Graph {
             // Force an initial visible-time pass after registration to avoid
             // a blank graph when early culling updates happened during loading.
             const refreshViewport = (attempt = 0) => {
+                if (this._events !== events) {
+                    return;
+                }
                 const viewport = this._getViewportBounds();
                 if ((viewport.width <= 0 || viewport.height <= 0) && attempt < 4) {
                     setTimeout(() => refreshViewport(attempt + 1), 50);
@@ -3069,6 +3080,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     unregister() {
+        this.resetViewportVisibility();
         if (this._events) {
             const element = this._containerElement;
             element.removeEventListener('scroll', this._events.scroll);
@@ -3341,7 +3353,8 @@ view.Graph = class extends grapher.Graph {
             x: viewport.x,
             y: viewport.y,
             width: viewport.width,
-            height: viewport.height
+            height: viewport.height,
+            zoom: viewport.zoom
         };
 
         // Compute visibility delta and apply only the changed nodes/edges (O(delta) not O(N)).
@@ -3533,6 +3546,10 @@ view.Node = class extends grapher.Node {
         this.value = value;
         this._loadValue = load;
         this._releaseValue = release;
+        this._overviewLabel = `${value.name || value.identifier || ''} [${value.type?.name || type || 'node'}]`;
+        const category = value.type?.category;
+        const dtype = view.Node._getDtypeKey(value);
+        this._overviewClass = ['node-item-type', category ? `node-item-type-${category.toLowerCase()}` : '', dtype ? `node-dtype-${dtype}` : ''].filter(Boolean).join(' ');
         this.id = `node-${value.name ? `name-${value.name}` : `id-${(context.counter++)}`}`;
         this._minlen = (value.inputs || []).every((arg) => (!arg.type || arg.type.endsWith('*')) && Array.isArray(arg.value) && arg.value.every((value) => value?.initializer)) ? 2 : 1;
         if (!load) {
@@ -3816,6 +3833,10 @@ view.Node = class extends grapher.Node {
 
     activate() {
         this.context.view.showNodeProperties(this.value);
+    }
+
+    activateOverview() {
+        this.context.activate(this.value);
     }
 
     edge(to) {
@@ -8806,8 +8827,13 @@ view.LayoutCache = class {
             };
             req.onsuccess = (e) => {
                 this._db = e.target.result;
+                this._db.onversionchange = () => {
+                    this._db.close();
+                    this._db = null;
+                };
                 resolve();
             };
+            req.onblocked = () => resolve();
             req.onerror = () => reject(req.error);
         });
     }

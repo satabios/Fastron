@@ -31,6 +31,80 @@ const fixture = (count = 24) => {
     return { nodes, inputs: [arg('input', first)], outputs: [arg('output', input)] };
 };
 
+const dynamicFixture = (count = 3) => {
+    const graph = fixture(count);
+    const symbols = new Map();
+    for (const node of graph.nodes) {
+        for (const argument of [...node.inputs, ...node.outputs]) {
+            for (const item of argument.value) {
+                if (!item.initializer) {
+                    if (!symbols.has(item.name)) {
+                        symbols.set(item.name, `unk__${symbols.size}`);
+                    }
+                    item.type = { ...type, shape: { dimensions: [symbols.get(item.name), 8] } };
+                }
+            }
+        }
+    }
+    return graph;
+};
+
+test('ONNX-generated dimension names can differ while repeated block shape relationships stay equal', async () => {
+    const graph = dynamicFixture();
+    const dimensions = graph.nodes.map((node) => node.outputs[0].value[0].type.shape.dimensions.slice());
+    const analysis = await repeatedBlocks(graph);
+    assert.equal(analysis.groups.length, 1);
+    assert.equal(analysis.groups[0].blocks.length, 3);
+    assert.equal(analysis.project().nodes.length, 2);
+    assert.equal(analysis.project(new Map([[0, 2]])).nodes[0]._originalNode, graph.nodes[4]);
+    for (const index of [0, 2]) {
+        const selected = analysis.project(new Map([[0, index]]));
+        for (let i = 0; i < selected.nodes.length; i++) {
+            const source = graph.nodes[index * 2 + i];
+            for (const direction of ['inputs', 'outputs']) {
+                assert.deepEqual(selected.nodes[i][direction].flatMap((arg) => arg.value.map((value) => value.type.shape.dimensions)),
+                    source[direction].flatMap((arg) => arg.value.map((value) => value.type.shape.dimensions)));
+            }
+        }
+    }
+    assert.deepEqual(graph.nodes.map((node) => node.outputs[0].value[0].type.shape.dimensions), dimensions);
+});
+
+test('symbol normalization preserves constraints, named and anonymous dimensions, and parameter bindings', async () => {
+    for (const change of [
+        (graph) => {
+            graph.nodes[2].outputs[0].value[0].type.shape.dimensions[0] = graph.nodes[2].inputs[0].value[0].type.shape.dimensions[0];
+        },
+        (graph) => {
+            graph.nodes[2].outputs[0].value[0].type.shape.dimensions[0] = 'batch';
+        },
+        (graph) => {
+            graph.nodes[0].inputs[0].value[0].type.shape.dimensions[0] = null;
+        },
+        (graph) => {
+            graph.nodes[2].outputs[0].value[0].type.shape.dimensions[0] = 16;
+        },
+        (graph) => {
+            const weight = graph.nodes[0].inputs[1].value[0];
+            weight.type = { ...type, shape: { dimensions: [graph.inputs[0].value[0].type.shape.dimensions[0], 8] } };
+            graph.nodes[2].inputs[1].value[0] = weight;
+        }
+    ]) {
+        const graph = dynamicFixture(2);
+        change(graph);
+        // eslint-disable-next-line no-await-in-loop
+        assert.equal(await repeatedBlocks(graph), null);
+    }
+});
+
+test('a leading anonymous batch dimension stays separate from a repeated inferred-shape tail', async () => {
+    const graph = dynamicFixture(4);
+    graph.inputs[0].value[0].type.shape.dimensions[0] = null;
+    const analysis = await repeatedBlocks(graph);
+    assert.deepEqual(analysis.groups[0].blocks.map((block) => block.index), [1, 2, 3]);
+    assert.equal(analysis.project().nodes.length, 4);
+});
+
 test('a folded stack retains its real boundary and per-instance parameters', async () => {
     const graph = fixture();
     const before = graph.nodes.slice();

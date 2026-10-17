@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { Edge, Graph, Node } from '../source/grapher.js';
 import { Host } from './mock.js';
+import { Graph as ViewGraph } from '../source/view.js';
 import { test } from 'node:test';
 
 const fixture = async (groups = 6, estimatedNodeSizeThreshold = 10000) => {
@@ -268,4 +269,82 @@ test('queued viewport builds cannot resurrect nodes that have left the viewport'
     assert.equal(nodes[0].element.parentNode, graph._nodeGroupElement);
     assert.ok(nodes.slice(1).every((node) => !node.element || !node.element.parentNode));
     assert.ok(graph._detachedElements.size <= graph._detachedElementLimit);
+});
+
+test('switching away from a graph cancels queued node and edge builds', async (context) => {
+    const { graph, document, nodes, edges } = await fixture(65, 0);
+    const idle = [];
+    globalThis.requestIdleCallback = (callback) => idle.push(callback);
+    context.after(() => {
+        delete globalThis.requestIdleCallback;
+    });
+    graph._visibleNodes = new Set(nodes.map((node) => node.name));
+    graph._visibleEdges = new Set(edges.map((edge) => `${edge.v}:${edge.w}`));
+    graph.updateVisibleElements(document);
+    assert.equal(nodes.filter((node) => node.element).length, 30);
+    assert.equal(edges.filter((edge) => edge.element).length, 60);
+    ViewGraph.prototype.unregister.call(graph);
+    const stopped = [nodes.filter((node) => node.element).length, edges.filter((edge) => edge.element).length];
+    while (idle.length) {
+        idle.shift()();
+    }
+    assert.deepEqual([nodes.filter((node) => node.element).length, edges.filter((edge) => edge.element).length], stopped);
+    const delta = graph.updateViewportVisibility({ x: nodes.at(-1).x - 100, y: -200, width: 500, height: 600 });
+    graph.updateVisibleElements(document, delta);
+    assert.ok(nodes.at(-1).element);
+});
+
+test('overview skips rich node builds, retains geometry and restores detail for zoom, selection and export', async () => {
+    const { graph, document, nodes, edges } = await fixture(4, 0);
+    const node = nodes[0];
+    node._overviewLabel = 'Layer zero [Add]';
+    node._overviewClass = 'node-item-type node-item-type-layer node-dtype-fp32';
+    node.activateOverview = () => {};
+    const geometry = nodes.map(({ x, y, width, height }) => [x, y, width, height]);
+    const paths = edges.map((edge) => new Edge.Curve(edge.pathPoints).path.data);
+    let builds = 0;
+    const build = node.build.bind(node);
+    node.build = (...args) => {
+        builds++;
+        return build(...args);
+    };
+    const zoom = (scale) => {
+        const delta = graph.updateViewportVisibility({ x: -100, y: -200, width: 500, height: 600, zoom: scale });
+        graph.updateVisibleElements(document, delta);
+    };
+    zoom(0.2);
+    assert.equal(builds, 0);
+    assert.equal(node._simplified, true);
+    assert.equal(node.element.childNodes.length, 1);
+    assert.equal(node.element.getAttribute('role'), 'button');
+    assert.equal(node.element.getAttribute('tabindex'), '0');
+    assert.equal(node.element.getAttribute('aria-label'), node._overviewLabel);
+    assert.equal(node.element.classList.contains('node-diff-modified'), true);
+    assert.equal(node.element.classList.contains('node-dtype-fp32'), true);
+    assert.ok(edges[0].element);
+    zoom(1);
+    assert.equal(builds, 1);
+    assert.equal(node._simplified, false);
+    assert.ok(node._blocks[0]._entries[0].text);
+    node.select();
+    const selected = node.element;
+    zoom(0.2);
+    assert.equal(node.element, selected);
+    assert.equal(node._simplified, false, 'Selected nodes retain full detail.');
+    node.deselect();
+    graph.updateVisibleElements(document);
+    assert.equal(node._simplified, true);
+    graph._ensureNodeElement(node.name, document);
+    assert.equal(node._simplified, false, 'Find and selection can force full detail at distant zoom.');
+    graph.updateVisibleElements(document);
+    assert.equal(node._simplified, true);
+    await graph.materializeAll(document);
+    assert.equal(node._simplified, false);
+    assert.ok(nodes.every((item) => item.element && !item._simplified));
+    assert.deepEqual(nodes.map(({ x, y, width, height }) => [x, y, width, height]), geometry);
+    assert.deepEqual(edges.map((edge) => new Edge.Curve(edge.pathPoints).path.data), paths);
+    graph.hideAllNodes();
+    graph.resetViewportVisibility();
+    zoom(0.2);
+    assert.equal(node._simplified, true, 'Export restores the lightweight overview.');
 });

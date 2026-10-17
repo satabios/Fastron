@@ -72,12 +72,16 @@ Culling uses conservative curve hulls and label bounds, preserving existing SVG 
 
 Deferred graphs allocate no offscreen leaf SVG placeholders, including graphs with 501–5,000 nodes. Visible nodes and edges are built on entry and evicted from a bounded detached cache after leaving; layout retains dimensions and connections for the displayed graph. Small graphs keep exact DOM measurement. Panning and zooming do not request tensor payloads.
 
+Below 40% zoom, large deferred graphs show lightweight node shapes with category/dtype colors instead of constructing unreadable labels and controls. Zooming in, selecting or finding a node restores its details; image export always includes complete content. Keyboard activation remains available. See [PERFORMANCE.md](PERFORMANCE.md) for the measured results, bug fixes, and remaining Model Explorer techniques worth adapting.
+
 For large indexed graphs, eviction also drops ordinary nodes' rich model wrappers, headers, argument controls and callbacks. Text dimensions are measured without SVG, then those temporary objects are released. Search reconstructs a distant node from its catalog entry; a bounded cache retains nearby nodes and selection keeps active objects pinned. Nested graph/object nodes keep the existing construction path because they contribute child layout nodes. Enabling full rendering and exporting images can materialize the whole graph explicitly.
 
 Edge routing is retained in one lossless `Float64Array`; visible edges reconstruct their point objects, and eviction returns them to packed storage. Edges crossing the viewport use locked geometry without constructing their distant endpoints' UI. Node dimensions, topology and the spatial index remain resident to preserve layout and navigation. This is bounded rich-object memory, not disk paging of all model metadata or geometry. Canonical metadata and ONNX initializer metadata are still retained, and initial exact repetition checks still scan later blocks.
 
 ```bash
 node test/benchmark-viewport.mjs
+node test/benchmark-viewport.mjs --overview
+node test/benchmark-index.mjs
 ```
 
 This compares retained and viewport-managed model/UI objects for 2,048 displayed nodes per format in fresh processes, using a mock DOM and a 64-entry nearby cache. It reports retained heap, array-buffer memory, node/header counts and preparation time, verifies identical node geometry, and asserts no source reads during rendering. It does not measure browser paint or SMB/NFS latency. The retained case uses a plain array to keep all rich nodes alive; the viewport case uses the indexed catalog and packed routes. Reconstructing evicted objects trades some CPU for lower retained memory.
@@ -94,7 +98,18 @@ Verified consecutive `layers.N`, `blocks.N`, `blk.N` and `h.N` paths fold into o
 
 Folding compares exact operator types, relative names, attributes, tensor types, quantization and connection roles. Different layers split runs. Unsupported nested/control-flow blocks, irregular connections and externally tapped intermediate outputs remain unfolded. Safetensors/GGUF show repeated weight structure, not inferred execution operators. All metadata still needs indexing; ONNX retains raw protobuf records and initializer metadata. This saves rich node objects, layout and SVG work, without merging weights or skipping metadata validation.
 
-The folded overview constructs block 0 on demand. After exact verification, the repeat index retains numeric layer/node indices and stack boundaries; per-instance boundary maps and signatures are discarded. Selected-instance details come from the canonical metadata only when needed. Expanded projections remain lazy catalogs, so expanding a stack does not retain every rich node outside the viewport. Opening, searching, expanding, panning and enabling weights do not bulk-load payloads; inspecting an enabled tensor (or explicitly requesting a per-tensor preview/export) reads its data on demand. Repetition cannot safely be inferred from block 0 alone: a later block may differ or expose a connection, so metadata validation remains necessary unless a format supplies a trustworthy repeat declaration.
+ONNX-generated dimension labels such as `unk__34` are matched by their equality relationships within a block. Named dimensions, concrete sizes, anonymous dimensions and symbols bound to parameters remain distinct. This recognizes repeated attention stacks without altering the original shape metadata or treating unknown dimensions as wildcards.
+
+For the EfficientViT B3 example, provide your local model (the 186 MiB file is not bundled):
+
+```bash
+node test/efficientvit-folding.mjs /path/to/efficientvit_b3.onnx
+node test/browser-repeated.mjs /path/to/efficientvit_b3.onnx
+```
+
+This export has 682 nodes. Four verified stacks (×3, ×5, ×5, ×8) reduce the displayed graph to 206 nodes; previously only two stacks were detected, leaving 646 nodes. The first attention block in each later stage remains separate because its anonymous batch dimension lacks the inferred equality relationships present in subsequent blocks. The checks cover every stack's representative selection, expansion, boundary connectivity, and zero additional source reads during folding; the optional browser example also verifies folded and expanded SVG export.
+
+The folded overview constructs the first verified block in each stack on demand. After exact verification, the repeat index retains numeric layer/node indices and stack boundaries; per-instance boundary maps and signatures are discarded. Selected-instance details come from the canonical metadata only when needed. Expanded projections remain lazy catalogs, so expanding a stack does not retain every rich node outside the viewport. Opening, searching, expanding, panning and enabling weights do not bulk-load payloads; inspecting an enabled tensor (or explicitly requesting a per-tensor preview/export) reads its data on demand. Repetition cannot safely be inferred from block 0 alone: a later block may differ or expose a connection, so metadata validation remains necessary unless a format supplies a trustworthy repeat declaration.
 
 The shared JavaScript analysis yields during large scans and does not read tensor bytes. The existing Rust/WASM index continues to perform bounded file indexing. Benchmark before moving structural detection across another language boundary:
 

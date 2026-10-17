@@ -121,9 +121,24 @@ const scalar = (value, depth = 0) => {
     throw new Error('Unsupported structural attribute.');
 };
 
-const tensorType = (value) => {
+const generatedDimension = (dimension) => typeof dimension === 'string' && /^unk__[0-9]+$/.test(dimension);
+
+const tensorType = (value, symbols) => {
     const type = value && value.type;
-    return type ? [type.dataType, type.layout, scalar(type.shape?.dimensions || []), scalar(value.quantization || value.initializer?.quantization)] : null;
+    if (!type) {
+        return null;
+    }
+    const dimensions = Array.from(type.shape?.dimensions || [], (dimension) => {
+        // ONNX inference numbers fresh unknowns per block; preserve their equality relationships.
+        if (!value.initializer && generatedDimension(dimension)) {
+            if (!symbols.has(dimension)) {
+                symbols.set(dimension, ['symbol', symbols.size]);
+            }
+            return symbols.get(dimension);
+        }
+        return ['dimension', scalar(dimension)];
+    });
+    return [type.dataType, type.layout, dimensions, scalar(value.quantization || value.initializer?.quantization)];
 };
 
 const values = (args) => (args || []).flatMap((arg) => Array.isArray(arg.value) ? arg.value : []);
@@ -215,7 +230,15 @@ class RepeatedBlocks {
                 replacements.set(detail.outputs.get(role).name, value);
             }
             const args = (list) => (list || []).map((arg) => {
-                const clone = { ...arg, value: arg.value.map((value) => replacements.get(value?.name) || value) };
+                const clone = { ...arg, value: arg.value.map((value) => {
+                    const replacement = replacements.get(value?.name);
+                    // Alias summary connections without changing the representative's shape bindings.
+                    if (replacement && Array.from(value?.type?.shape?.dimensions || []).some((dimension, i) =>
+                        generatedDimension(dimension) && dimension !== replacement.type?.shape?.dimensions[i])) {
+                        return overlay(value, { name: replacement.name });
+                    }
+                    return replacement || value;
+                }) };
                 arg.value.forEach((value, index) => {
                     if (value?.name && value.name !== clone.value[index]?.name) {
                         aliases.set(value.name, clone.value[index].name);
@@ -285,6 +308,20 @@ export const repeatedBlocks = async (graph, current = () => true) => {
         Object.assign(block, boundaries(nodes));
         const local = new Map(Array.from(block.outputs, ([role, value]) => [value.name, role]));
         const external = new Map(block.external.map((value, index) => [value.name, index]));
+        const symbols = new Map();
+        // Keep dimensions shared with parameters literal, including their activation bindings.
+        for (const node of nodes) {
+            for (const value of values(node.inputs)) {
+                if (value?.initializer) {
+                    for (const dimension of value.type?.shape?.dimensions || []) {
+                        if (typeof dimension === 'string') {
+                            symbols.set(dimension, ['dimension', scalar(dimension)]);
+                        }
+                    }
+                }
+            }
+        }
+        const typeOf = (value) => tensorType(value, symbols);
         const signature = nodes.map((node) => {
             if (!node.type || node.type.nodes || node.chain?.length || node.blocks?.length || node.controlDependencies?.length) {
                 throw new Error('Nested or stateful block.');
@@ -293,7 +330,7 @@ export const repeatedBlocks = async (graph, current = () => true) => {
                 if (!value) {
                     return null;
                 }
-                const type = tensorType(value);
+                const type = typeOf(value);
                 if (value.initializer) {
                     return ['parameter', type];
                 }
@@ -312,7 +349,7 @@ export const repeatedBlocks = async (graph, current = () => true) => {
                 return [arg.name, arg.type, scalar(arg.value)];
             }).sort((a, b) => a[0].localeCompare(b[0]));
             return [node.type.name, node.type.domain, node.type.module, node.type.identifier, node.type.version, pathOf(node.name)?.relative, inputs,
-                (node.outputs || []).map((arg) => [arg.name, (arg.value || []).map(tensorType)]), attrs];
+                (node.outputs || []).map((arg) => [arg.name, (arg.value || []).map(typeOf)]), attrs];
         });
         const key = JSON.stringify(signature);
         if (!signatures.has(key)) {

@@ -57,6 +57,15 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
     fn uint(&mut self, width: usize) -> Result<u64> {
+        let end = self.offset + self.window.len() as u64;
+        if self.position >= self.offset && self.position <= end && width as u64 <= end - self.position {
+            // Most scalars fit the metadata window; avoid an allocation for every varint byte.
+            let start = (self.position - self.offset) as usize;
+            let bytes = &self.window[start..start + width];
+            if let Some(capture) = &mut self.capture { capture.extend_from_slice(bytes); }
+            self.position += width as u64;
+            return Ok(bytes.iter().enumerate().fold(0, |v, (i, b)| v | ((*b as u64) << (8 * i))));
+        }
         let bytes = self.take(width as u64)?;
         Ok(bytes.iter().enumerate().fold(0, |v, (i, b)| v | ((*b as u64) << (8 * i))))
     }
@@ -287,6 +296,40 @@ mod tests {
     }
     fn field(id: u64, body: &[u8]) -> Vec<u8> {
         let mut out = Vec::new(); varint(id * 8 + 2, &mut out); varint(body.len() as u64, &mut out); out.extend(body); out
+    }
+    #[test]
+    fn scalar_reads_preserve_capture_across_window_boundaries_and_eof() {
+        let data: Vec<u8> = (0..65540).map(|i| (i % 251) as u8).collect();
+        let mut source = Bytes::new(data.clone());
+        let mut reference = Bytes::new(data.clone());
+        let mut cursor = Cursor::new(&mut source, data.len() as u64);
+        let mut slow = Cursor::new(&mut reference, data.len() as u64);
+        cursor.capture = Some(Vec::new());
+        slow.capture = Some(Vec::new());
+        for width in [1, 2, 4, 8] {
+            let bytes = slow.take(width).unwrap();
+            let expected = bytes.iter().enumerate().fold(0, |v, (i, b)| v | ((*b as u64) << (8 * i)));
+            assert_eq!(cursor.uint(width as usize).unwrap(), expected);
+        }
+        let skip = 65532 - cursor.position;
+        cursor.skip(skip).unwrap(); slow.skip(skip).unwrap();
+        assert_eq!(cursor.uint(8).unwrap(), u64::from_le_bytes(slow.take(8).unwrap().try_into().unwrap()));
+        assert_eq!(cursor.capture, slow.capture);
+        assert_eq!(cursor.capture.as_ref().unwrap(), &data);
+        assert!(cursor.uint(1).is_err());
+        assert_eq!(cursor.position, data.len() as u64);
+        assert_eq!(source.requests, reference.requests);
+    }
+    #[test]
+    fn scalar_reads_after_payload_skips_refill_the_metadata_window() {
+        let data: Vec<u8> = (0..200000).map(|i| (i % 251) as u8).collect();
+        let mut source = Bytes::new(data.clone());
+        let mut cursor = Cursor::new(&mut source, data.len() as u64);
+        assert_eq!(cursor.uint(4).unwrap(), u32::from_le_bytes(data[..4].try_into().unwrap()) as u64);
+        cursor.skip(99999).unwrap();
+        assert_eq!(cursor.uint(4).unwrap(), u32::from_le_bytes(data[100003..100007].try_into().unwrap()) as u64);
+        assert_eq!(cursor.position, 100007);
+        assert_eq!(source.requests, vec![(0, 65536), (100003, 256)]);
     }
     #[test]
     fn onnx_skips_payload_and_preserves_tensor_metadata() {

@@ -6,7 +6,10 @@ export const indexSource = async (source, kind) => {
             const url = new URL('./model-index.wasm', import.meta.url);
             const bytes = typeof process !== 'undefined' && process.versions?.node ? await (await import('node:fs/promises')).readFile(url) : await (await fetch(url)).arrayBuffer();
             return WebAssembly.compile(bytes);
-        })();
+        })().catch((error) => {
+            modulePromise = null;
+            throw error;
+        });
     }
     const module = await modulePromise;
     let wasm = null;

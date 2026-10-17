@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as view from '../source/view.js';
 import { openSource } from '../source/model-source.mjs';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 
 const varint = (value) => {
@@ -29,6 +30,25 @@ const model = (tensor) => Buffer.concat([
 ]);
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-source-'));
 process.on('exit', () => fs.rmSync(folder, { recursive: true, force: true }));
+
+test('a failed WASM load can retry without restarting the source worker', async () => {
+    const directory = fs.mkdtempSync(path.join(folder, 'index-retry-'));
+    const file = path.join(directory, 'model-index.mjs');
+    fs.copyFileSync(new URL('../source/model-index.mjs', import.meta.url), file);
+    const { indexSource } = await import(pathToFileURL(file));
+    const header = Buffer.from('{}');
+    const bytes = Buffer.alloc(8 + header.length);
+    bytes.writeBigUInt64LE(BigInt(header.length));
+    header.copy(bytes, 8);
+    const source = { length: bytes.length, readSync: (offset, target) => target.set(bytes.subarray(offset, offset + target.length)) };
+    const failed = await Promise.allSettled([indexSource(source, 3), indexSource(source, 3)]);
+    assert.ok(failed.every((result) => result.status === 'rejected' && result.reason.code === 'ENOENT'));
+    fs.writeFileSync(path.join(directory, 'model-index.wasm'), 'interrupted download');
+    await assert.rejects(indexSource(source, 3), WebAssembly.CompileError);
+    fs.copyFileSync(new URL('../source/model-index.wasm', import.meta.url), path.join(directory, 'model-index.wasm'));
+    const indexed = await Promise.all([indexSource(source, 3), indexSource(source, 3)]);
+    assert.ok(indexed.every((result) => result.kind === 3 && result.ranges.length === 0));
+});
 
 test('Rust indexing transfers topology and only a bounded ONNX preview', async () => {
     const weights = Buffer.alloc(8 * 1024 * 1024);

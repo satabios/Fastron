@@ -14,6 +14,9 @@ const fixtures = new Map(['safetensors', 'gguf', 'onnx'].map((format) => {
 }));
 await fs.mkdir(path.join(folder, 'large'));
 fixtures.set('/large.safetensors', writeRepeatedModel(path.join(folder, 'large'), 'safetensors', 256).file);
+if (process.argv[2]) {
+    fixtures.set('/efficientvit.onnx', path.resolve(process.argv[2]));
+}
 let transferred = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
@@ -153,6 +156,29 @@ try {
     await page.getByText('Expand stack', { exact: true }).click();
     await expect(page.getByText('Fold stack', { exact: true })).toBeVisible();
     assert.ok(await page.locator('#canvas .graph-node').count() < 512);
+    const overview = page.locator('#canvas .graph-node.node-overview');
+    for (let i = 0; i < 10; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await page.locator('#zoom-out-button').click();
+    }
+    await expect(overview.first()).toBeVisible();
+    await expect(overview.first()).toHaveAttribute('role', 'button');
+    await overview.first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#canvas .graph-node.select:not(.node-overview)')).toHaveCount(1);
+    await expect(page.locator('#sidebar-content')).toBeVisible();
+    for (let i = 0; i < 10; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await page.locator('#zoom-in-button').click();
+    }
+    await expect(overview).toHaveCount(0);
+    for (let i = 0; i < 10; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await page.locator('#zoom-out-button').click();
+    }
+    await expect(overview.first()).toBeVisible();
+    await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-overview.png') });
+    assert.equal(transferred, metadataBytes, 'Zoom and keyboard activation cannot fetch weights.');
     await page.locator('#menu-button').click();
     await page.locator('button:has-text("Find...")').first().click();
     await page.locator('#search').fill('encoder.layers.217.q_proj.weight');
@@ -169,6 +195,8 @@ try {
     await page.locator('button:has-text("Export as SVG")').first().click();
     const svg = await fs.readFile(await (await download).path(), 'utf-8');
     assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 512);
+    assert.doesNotMatch(svg, /node-overview/);
+    await expect(overview.first()).toBeVisible();
     await page.locator('#menu-button').click();
     await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
     await expect(page.locator('body')).toHaveClass(/default/);
@@ -177,7 +205,44 @@ try {
     await expect(page.locator('#canvas .graph-node')).toHaveCount(2);
     assert.deepEqual(errors, []);
     await context.close();
-    process.stdout.write('512-node expanded stack: viewport eviction, distant real weights, full SVG export and folding passed.\n');
+    process.stdout.write('512-node expanded stack: viewport eviction, overview zoom/keyboard access, distant real weights, full SVG export and folding passed.\n');
+    if (fixtures.has('/efficientvit.onnx')) {
+        const context = await browser.newContext();
+        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+        const page = await context.newPage();
+        page.on('pageerror', (error) => errors.push(error.message));
+        const before = transferred;
+        await page.goto(`${origin}/?url=/efficientvit.onnx&identifier=efficientvit_b3.onnx`);
+        await expect(page.locator('body')).toHaveClass(/default/);
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(206);
+        await expect(page.locator('.node-item-repeat text')).toHaveText(['×3', '×5', '×5', '×8']);
+        assert.ok(transferred - before < 1048576, 'Opening the real model must remain metadata-only.');
+        const metadataBytes = transferred;
+        await page.locator('#menu-button').click();
+        const download = page.waitForEvent('download');
+        await page.locator('button:has-text("Export as SVG")').first().click();
+        const svg = await fs.readFile(await (await download).path(), 'utf-8');
+        assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 206);
+        for (const label of ['×3', '×5', '×8']) {
+            assert.ok(svg.includes(label));
+        }
+        await page.locator('#menu-button').click();
+        await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
+        await expect(page.locator('#canvas .graph-node')).not.toHaveCount(206);
+        await expect(page.locator('body')).toHaveClass(/default/);
+        await page.locator('#menu-button').click();
+        const expandedDownload = page.waitForEvent('download');
+        await page.locator('button:has-text("Export as SVG")').first().click();
+        const expandedSVG = await fs.readFile(await (await expandedDownload).path(), 'utf-8');
+        assert.equal((expandedSVG.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 682);
+        await page.locator('#menu-button').click();
+        await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(206);
+        assert.equal(transferred, metadataBytes, 'Exporting and expanding the real model cannot fetch weights.');
+        assert.deepEqual(errors, []);
+        await context.close();
+        process.stdout.write('EfficientViT B3: four real stacks, 682 → 206 nodes, metadata-only folding and SVG export passed.\n');
+    }
 } finally {
     await browser?.close();
     await new Promise((resolve) => {

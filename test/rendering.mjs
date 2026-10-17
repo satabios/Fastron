@@ -343,3 +343,47 @@ test('a completed older render cannot install its graph over a newer render', as
         layout.mock.restore();
     }
 });
+
+test('unregistered graph refresh and retry callbacks cannot run after re-registration', (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const graph = new ViewGraph({ host: new mock.Host({ serial: true }) }, false);
+    graph.enableViewportCulling();
+    graph._containerElement = graph.host.document.createElement('div');
+    graph._containerElement.focus = () => {};
+    let bounds = { x: 0, y: 0, width: 0, height: 0 };
+    graph._getViewportBounds = () => bounds;
+    let updates = 0;
+    graph._onViewportChange = () => updates++;
+    graph.register();
+    context.mock.timers.tick(0);
+    graph.unregister();
+    graph.register();
+    bounds = { ...bounds, width: 800, height: 600 };
+    context.mock.timers.tick(50);
+    assert.equal(updates, 1);
+    graph.unregister();
+});
+
+test('a blocked optional layout cache does not hang model rendering', { timeout: 1000 }, async (context) => {
+    const original = globalThis.indexedDB;
+    const request = {};
+    globalThis.indexedDB = { open: () => request };
+    context.after(() => {
+        if (original === undefined) {
+            delete globalThis.indexedDB;
+        } else {
+            globalThis.indexedDB = original;
+        }
+    });
+    const { View } = await import('../source/view.js');
+    const cache = new View(new mock.Host({ serial: true }))._layoutCache;
+    request.onblocked();
+    assert.equal(await cache.get('model'), null);
+    let closed = 0;
+    const database = { close: () => closed++ };
+    request.onsuccess({ target: { result: database } });
+    assert.equal(cache._db, database, 'The cache can become available after the blocker closes.');
+    database.onversionchange();
+    assert.equal(closed, 1);
+    assert.equal(cache._db, null);
+});
