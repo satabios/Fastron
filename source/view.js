@@ -1216,7 +1216,11 @@ view.View = class {
         this._repeatStates = this._repeatStates || new WeakMap();
         let state = this._repeatStates.get(graph);
         if (!state) {
-            let analysis = await repeatedBlocks(graph, current);
+            const { structuralBlocks } = await import('./structural-blocks.js');
+            let analysis = current() ? await structuralBlocks(graph, current) : null;
+            if (!analysis && current()) {
+                analysis = await repeatedBlocks(graph, current);
+            }
             if (!analysis && current()) {
                 const { moduleBlocks } = await import('./module-blocks.js');
                 analysis = current() ? await moduleBlocks(graph, current) : null;
@@ -1245,9 +1249,9 @@ view.View = class {
             return;
         }
         const match = state.analysis.locate(value);
-        if (match && !state.expanded.has(match.group.id) && (match.group.kind === 'module' || (state.selected.get(match.group.id) || 0) !== match.index)) {
+        if (match && !state.expanded.has(match.group.id) && (match.group.kind || (state.selected.get(match.group.id) || 0) !== match.index)) {
             state.selected.set(match.group.id, match.index);
-            if (match.group.kind === 'module') {
+            if (match.group.kind) {
                 state.expanded.add(match.group.id);
             }
             this._discardRepeatedViews();
@@ -1268,6 +1272,39 @@ view.View = class {
         }
     }
 
+    async toggleRepeatedBlock(group) {
+        const graph = this.activeTarget;
+        const state = this._repeatStates?.get(graph);
+        if (!state || !state.analysis.groups.includes(group)) {
+            return;
+        }
+        if (state.expanded.has(group.id)) {
+            state.expanded.delete(group.id);
+        } else {
+            state.expanded.add(group.id);
+        }
+        this.show('welcome spinner');
+        this._discardRepeatedViews();
+        await this._updateTarget(this._model, this._path);
+        this._scrollToRepeatedBlock(graph, group);
+    }
+
+    _scrollToRepeatedBlock(graph, group) {
+        const target = this._target;
+        if (this.activeTarget === graph && target?._displayGraph) {
+            this._host.window.requestAnimationFrame(() => {
+                if (this._target === target && this.activeTarget === graph) {
+                    for (const node of nodeDescriptions(target._displayGraph)) {
+                        if (node._repeatHeader && node._repeatGroup === group) {
+                            target.scrollToValue(node, 'instant');
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     showRepeatedBlock(group) {
         const graph = this.activeTarget;
         const state = this._repeatStates?.get(graph);
@@ -1276,9 +1313,13 @@ view.View = class {
         }
         const sidebar = new view.ObjectSidebar(this);
         sidebar.addProperty('stack', group.label, 'nowrap');
-        sidebar.addProperty('structure', group.kind === 'module'
-            ? 'Exported module scopes; instances can differ. Open a module or expand to inspect its exact operations.'
-            : 'Matching structure; every instance retains its own parameters.');
+        let structure = 'Matching structure; every instance retains its own parameters.';
+        if (group.kind === 'structural') {
+            structure = 'Transformer pattern matched by operations, shapes and connections. Every instance retains its own parameters.';
+        } else if (group.kind === 'module') {
+            structure = 'Exported module scopes; instances can differ. Open a module or expand to inspect its exact operations.';
+        }
+        sidebar.addProperty('structure', structure);
         const select = sidebar.createElement('select', 'sidebar-item-selector sidebar-repeat-select');
         select.setAttribute('aria-label', 'Representative layer');
         group.blocks.forEach((block, index) => {
@@ -1290,11 +1331,12 @@ view.View = class {
         select.value = String(state.selected.get(group.id) || 0);
         const update = async () => {
             if (this.activeTarget === graph) {
-                this._sidebar.close();
+                this.show('welcome spinner');
                 this._discardRepeatedViews();
                 await this._updateTarget(this._model, this._path);
                 if (this.activeTarget === graph) {
                     this.showRepeatedBlock(group);
+                    this._scrollToRepeatedBlock(graph, group);
                 }
             }
         };
@@ -1305,15 +1347,17 @@ view.View = class {
         sidebar.element.appendChild(select);
         const expanded = state.expanded.has(group.id);
         sidebar.addProperty('view', expanded ? 'All instances' : `Representative layer ${group.blocks[Number(select.value)].index}`)
-            .action(expanded ? 'Fold stack' : 'Expand stack', 'Show or hide every instance in this stack', () => {
-                if (expanded) {
-                    state.expanded.delete(group.id);
-                } else {
-                    state.expanded.add(group.id);
+            .action(expanded ? 'Fold stack' : 'Expand stack', 'Show or hide every instance in this stack', async () => {
+                try {
+                    await this.toggleRepeatedBlock(group);
+                    if (this.activeTarget === graph) {
+                        this.showRepeatedBlock(group);
+                    }
+                } catch (error) {
+                    this.error(error, 'Error expanding repeated blocks.', null);
                 }
-                update().catch((error) => this.error(error, 'Error expanding repeated blocks.', null));
             });
-        if (group.kind === 'module') {
+        if (group.kind) {
             sidebar.addProperty('module', group.title).action('Open module', 'View the selected instance and its original operators', async () => {
                 const block = group.blocks[Number(select.value)];
                 const module = state.analysis.subgraph(block.indices, group.title, block.scope);
@@ -3637,6 +3681,11 @@ view.Node = class extends grapher.Node {
         this._releaseValue = release;
         this._overviewLabel = `${value.name || value.identifier || ''} [${value.type?.name || type || 'node'}]`;
         this._overviewType = (value.type?.name || type || 'node').split('.').pop();
+        this._stackDepth = value._repeatHeader && !context.view._repeatStates?.get(context.view.activeTarget)?.expanded.has(value._repeatGroup.id)
+            ? Math.min(2, value._repeatGroup.blocks.length - 1) : 0;
+        if (this._stackDepth) {
+            this._overviewType = `×${value._repeatGroup.blocks.length} ${this._overviewType}`;
+        }
         const category = value.type?.category;
         const dtype = view.Node._getDtypeKey(value);
         this._overviewClass = ['node-item-type', category ? `node-item-type-${category.toLowerCase()}` : '', dtype ? `node-dtype-${dtype}` : ''].filter(Boolean).join(' ');
@@ -3767,6 +3816,12 @@ view.Node = class extends grapher.Node {
             const group = node._repeatGroup;
             const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `×${group.blocks.length}`, `${group.label}. Select a representative or expand this stack.`);
             badge.on('click', () => this.context.view.showRepeatedBlock(group));
+            const expanded = this.context.view._repeatStates?.get(this.context.view.activeTarget)?.expanded.has(group.id) || false;
+            const action = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], expanded ? 'Fold stack' : 'Expand stack',
+                `${expanded ? 'Fold' : 'Expand'} these ${group.blocks.length} instances. Other stacks stay unchanged.`);
+            action.expanded = expanded;
+            action.on('click', () => this.context.view.toggleRepeatedBlock(group)
+                .catch((error) => this.context.view.error(error, 'Error changing repeated stack.', null)));
         }
         if (node.type.type || (Array.isArray(node.type.nodes) && node.type.nodes.length > 0)) {
             let icon = '\u0192';
@@ -3795,6 +3850,45 @@ view.Node = class extends grapher.Node {
             }
             return current;
         };
+        if (node._repeatHeader && this._stackDepth) {
+            const group = node._repeatGroup;
+            const state = this.context.view._repeatStates?.get(this.context.view.activeTarget);
+            const block = group.blocks[state?.selected.get(group.id) || 0];
+            const indices = group.blocks.map((item) => item.index);
+            const consecutive = indices.every((index, i) => i === 0 || index === indices[i - 1] + 1);
+            const range = consecutive ? `${indices[0]}–${indices.at(-1)}` : `${indices.slice(0, 6).join(', ')}${indices.length > 6 ? ', …' : ''}`;
+            const preview = this.list();
+            preview.on('click', () => this.context.view.showRepeatedBlock(group));
+            const rows = [['Blocks', range], ['Preview', `${block.index} · ${block.indices.length} ops`]];
+            if (state) {
+                const graph = state.analysis.graph;
+                const catalog = nodeCatalog(graph.nodes);
+                const scope = block.scope || `${group.prefix}${block.index}`;
+                const components = new Set();
+                const operators = new Set();
+                for (const index of block.indices) {
+                    const child = catalog ? catalog.describe(catalog.records[index]) : graph.nodes[index];
+                    const relative = child.name?.startsWith(scope) ? child.name.slice(scope.length).replace(/^[./]/, '') : '';
+                    const parts = relative.split(/[./]/);
+                    if (parts.length > 1) {
+                        components.add(parts[0]);
+                    } else if (operators.size < 5) {
+                        operators.add(child.type.name.split('.').pop());
+                    }
+                    if (components.size > 4) {
+                        break;
+                    }
+                }
+                const names = block.components || [...(components.size ? components : operators)];
+                const inside = names.slice(0, 4).map((name) => name.length > 18 ? `${name.slice(0, 17)}…` : name).join(' · ');
+                rows.push(['Inside', `${inside}${names.length > 4 ? ' · …' : ''}`]);
+            }
+            for (const [name, content] of rows) {
+                const item = preview.argument(name, content);
+                item.separator = ': ';
+                preview.add(item);
+            }
+        }
         let hiddenTensors = false;
         const objects = [];
         const attribute = (argument) => {

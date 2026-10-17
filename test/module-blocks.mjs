@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
+import { Graph, View } from '../source/view.js';
 import { NodeCatalog, nodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
 import { Host } from './mock.js';
-import { View } from '../source/view.js';
+import { Node } from '../source/grapher.js';
 import { moduleBlocks } from '../source/module-blocks.js';
 import { test } from 'node:test';
 
@@ -103,6 +104,191 @@ test('only repeated indexed blocks fold; standalone embedding scopes and isolate
     graph.nodes[6].name = '/visual/blocks.0/Relu';
     assert.equal(await moduleBlocks(graph), null, 'Different families with one instance each are not repetitions.');
 });
+
+for (const dotted of [false, true]) {
+    test(`opened blocks group exported attention/MLP scopes without repetition badges (${dotted ? 'dot' : 'slash'} paths)`, async () => {
+        const scope = dotted ? 'visual.blocks.0' : '/visual/blocks.0';
+        const name = (relative) => `${scope}${dotted ? '.' : '/'}${dotted ? relative.replaceAll('/', '.') : relative}`;
+        const value = (name) => ({ name });
+        const input = value('input');
+        let previous = input;
+        const nodes = [];
+        const add = (relative, type) => {
+            const output = value(relative);
+            nodes.push({ name: name(relative), type: { name: type }, inputs: [{ name: 'x', value: [previous] }], outputs: [{ name: 'y', value: [output] }] });
+            previous = output;
+        };
+        add('norm1/LayerNormalization', 'LayerNormalization');
+        add('attn/qkv/MatMul', 'MatMul');
+        const tap = previous;
+        add('attn/Softmax', 'Softmax');
+        add('attn/proj/MatMul', 'MatMul');
+        add('Add', 'Add');
+        nodes.at(-1).inputs[0].value.push(input);
+        add('norm2/LayerNormalization', 'LayerNormalization');
+        add('mlp/linear_fc1/MatMul', 'MatMul');
+        add('mlp/act_fn/Gelu', 'Gelu');
+        add('mlp/linear_fc2/MatMul', 'MatMul');
+        add('Add_1', 'Add');
+        nodes.at(-1).inputs[0].value.push(nodes[4].outputs[0].value[0]);
+        const graph = { name: 'block 0', nodes, inputs: [{ name: 'input', value: [input] }],
+            outputs: [{ name: 'output', value: [previous] }, { name: 'tap', value: [tap] }], _moduleScope: scope };
+        Object.defineProperty(nodes[1], 'attributes', { get() {
+            throw new Error('Module grouping must not read attributes or weights.');
+        } });
+        const analysis = await moduleBlocks(graph);
+        const display = analysis.project();
+        assert.deepEqual(analysis.groups.map((group) => group.title), ['attn', 'mlp']);
+        assert.equal(display.nodes.length, 6);
+        assert.equal(display.nodes[0], nodes[0], 'Single-operator normalization modules remain real operators.');
+        assert.equal(display.nodes[2], nodes[4], 'Residual additions remain explicit.');
+        assert.equal(display.nodes[5], nodes[9]);
+        assert.equal(display.nodes.some((node) => node._repeatHeader), false, 'Semantic groups must never acquire ×1 stack badges.');
+        const attention = display.nodes[1];
+        assert.equal(attention.type.nodes.length, 3);
+        assert.deepEqual(attention.outputs.map((arg) => arg.value[0].name), ['attn/qkv/MatMul', 'attn/proj/MatMul']);
+        assert.equal(await moduleBlocks(attention.type), null, 'Single-operation projections remain visible without recursive wrappers.');
+        const expanded = analysis.project(new Map(), new Set([0]));
+        assert.equal(expanded.nodes.length, 8);
+        assert.equal(expanded.nodes.some((node) => node._repeatHeader), false);
+        assert.equal(await moduleBlocks({ ...graph, _moduleScope: '' }), null, 'Standalone scopes in the main graph remain unfolded.');
+    });
+}
+
+test('individual stack controls expand and fold one group while preserving other stacks and focusing its header', async () => {
+    const value = (name) => ({ name, type: { dataType: 'float32', shape: { dimensions: [8] } } });
+    const first = value('input');
+    let previous = first;
+    const graph = { nodes: [], inputs: [{ name: 'input', value: [first] }], outputs: [] };
+    for (const family of ['encoder', 'decoder']) {
+        for (let i = 0; i < 2; i++) {
+            const output = value(`${family}_${i}`);
+            graph.nodes.push({ name: `/${family}/layers.${i}/Relu`, type: { name: 'Relu' }, attributes: [],
+                inputs: [{ name: 'x', value: [previous] }], outputs: [{ name: 'y', value: [output] }] });
+            previous = output;
+        }
+    }
+    graph.outputs.push({ name: 'output', value: [previous] });
+    const analysis = await moduleBlocks(graph);
+    assert.equal(analysis.groups.length, 2);
+    const view = new View(new Host({ serial: true }));
+    view.model = { modules: [graph] };
+    view._path = [{ target: graph }];
+    view.options.foldRepeatedBlocks = true;
+    const state = { analysis, selected: new Map(), expanded: new Set() };
+    view._repeatStates.set(graph, state);
+    view.show = () => {};
+    let focused = null;
+    view._updateTarget = async () => {
+        view._target = { _displayGraph: analysis.project(state.selected, state.expanded), scrollToValue(node) {
+            focused = node;
+        } };
+    };
+    await view.toggleRepeatedBlock(analysis.groups[0]);
+    assert.deepEqual([...state.expanded], [0]);
+    assert.equal(view._target._displayGraph.nodes.length, 3);
+    assert.equal(focused._repeatGroup, analysis.groups[0]);
+    await view.toggleRepeatedBlock(analysis.groups[1]);
+    await view.toggleRepeatedBlock(analysis.groups[0]);
+    assert.deepEqual([...state.expanded], [1]);
+    assert.equal(view._target._displayGraph.nodes.length, 3);
+    assert.equal(focused._repeatGroup, analysis.groups[0]);
+    assert.equal(view.options.foldRepeatedBlocks, true);
+    await view.toggleRepeatedBlock({ id: 1 });
+    assert.deepEqual([...state.expanded], [1], 'Stale or unrelated group controls cannot change the current graph.');
+});
+
+test('stack header buttons expose their state and support keyboard activation', () => {
+    const host = new Host({ serial: true });
+    const entry = new Node.Header.Entry(null, ['node-item-repeat-toggle'], 'Expand stack', 'Expand these instances.');
+    entry.expanded = false;
+    let clicks = 0;
+    entry.on('click', () => clicks++);
+    const create = host.document.createElementNS.bind(host.document);
+    const events = new Map();
+    host.document.createElementNS = (...args) => {
+        const element = create(...args);
+        element.addEventListener = (name, callback) => events.set(name, callback);
+        return element;
+    };
+    try {
+        entry.build(host.document, host.document.body);
+        assert.equal(entry.element.getAttribute('role'), 'button');
+        assert.equal(entry.element.getAttribute('tabindex'), '0');
+        assert.equal(entry.element.getAttribute('aria-label'), 'Expand stack');
+        assert.equal(entry.element.getAttribute('aria-expanded'), 'false');
+        for (const key of ['Enter', ' ', 'Escape']) {
+            let prevented = false;
+            events.get('keydown')({ key, preventDefault() {
+                prevented = true;
+            }, stopPropagation() {} });
+            assert.equal(prevented, key !== 'Escape');
+        }
+        assert.equal(clicks, 2);
+    } finally {
+        host.document.createElementNS = create;
+    }
+});
+
+for (const gap of [false, true]) {
+    test(`folded stack cards preview ${gap ? 'gapped' : 'consecutive'} indices from descriptors and preserve geometry through overview and release`, async () => {
+        const graph = fixture();
+        if (gap) {
+            graph.nodes[5].name = graph.nodes[5].name.replace('layers.2', 'layers.4');
+            graph.nodes[6].name = graph.nodes[6].name.replace('layers.2', 'layers.4');
+            const hidden = graph.nodes[5].outputs[0].value[0];
+            const residual = { ...hidden, name: 'residual' };
+            graph.nodes[6].inputs[0].value = [residual];
+            graph.nodes.splice(6, 0, { name: '/model/layers.4/Add', type: { name: 'Add' }, attributes: [],
+                inputs: [{ name: 'x', value: [hidden] }], outputs: [{ name: 'y', value: [residual] }] });
+        }
+        Object.defineProperty(graph.nodes[5], 'attributes', { get() {
+            throw new Error('Preview must not read hidden attributes.');
+        } });
+        const created = [];
+        const catalog = new NodeCatalog(graph.nodes, (node) => {
+            created.push(node.name);
+            return node;
+        }, (node) => node);
+        graph.nodes = catalog.nodes;
+        const analysis = await moduleBlocks(graph);
+        const host = new Host({ serial: true });
+        const view = new View(host);
+        view.model = { modules: [graph] };
+        view._path = [{ target: graph }];
+        const state = { analysis, selected: new Map([[0, 1]]), expanded: new Set() };
+        view._repeatStates.set(graph, state);
+        const display = analysis.project(state.selected);
+        const ui = new Graph(view, false);
+        ui.add(display);
+        ui.build(host.document);
+        await ui.measure();
+        const card = [...ui.nodes.values()].map((entry) => entry.label).find((node) => node._stackDepth);
+        const preview = card._blocks.find((block) => block._items?.some((item) => item.name === 'Blocks'));
+        assert.deepEqual(preview._items.map((item) => [item.name, item.content]), [
+            ['Blocks', gap ? '1, 4' : '1–2'], ['Preview', `${gap ? '4 · 3' : '2 · 2'} ops`], ['Inside', 'self_attn · mlp']
+        ]);
+        assert.ok(preview._items.every((item) => item.separator === ': '));
+        assert.equal(created.some((name) => /layers\.[124]\//.test(name)), false, 'Preview must not materialize hidden rich nodes.');
+        card.x = 0;
+        card.y = 0;
+        card.layout();
+        card.update();
+        assert.equal(card._stackPaths.length, 1);
+        assert.equal(card._blocks[0].y, 4);
+        const size = [card.width, card.height];
+        card.measure();
+        assert.deepEqual([card.width, card.height], size, 'Repeated measurement must not accumulate stack padding.');
+        card.release();
+        assert.equal(card._stackPaths, null);
+        card.buildOverview(host.document, host.document.body);
+        card.updateOverview();
+        assert.equal(card._stackPaths.length, 1);
+        assert.equal(card._overviewText.textContent, '×2 layers');
+        assert.deepEqual([card.width, card.height], size);
+        card.release();
+    });
+}
 
 test('module grouping rejects unsorted dependencies, duplicate producers, control dependencies and unnamed graphs', async () => {
     const unsorted = fixture();

@@ -19,8 +19,11 @@ This review covered Rust indexing, source reads, repeated-block folding, worker/
 | Orthogonal routes used broad curve hulls for tile indexing | Long exterior routes indexed large empty areas and inflated memory | Index each straight segment and its rounded corners; preserve stroke coverage, cached routing style and full route/label bounds |
 | Electron discarded initial scroll offsets while the graph was hidden | A completed layout could still open on a blank canvas | Restore graph position after the target becomes visible, preserve saved selection/zoom, and reject stale callbacks |
 | Tensor attributes and per-layer cache outputs prevented exact repetition proof in Qwen | Folding left thousands of operators visible despite preserved layer/module scopes | Fall back to explicitly labeled indexed module runs with at least two instances, preserve every boundary tensor, split at intervening operations and open individual instances lazily |
+| Standalone module scopes acquired misleading stack badges and expansion was hidden in the sidebar | Embeddings looked repetitive and individual stacks were difficult to unpack | Leave standalone operators unfolded; add keyboard-accessible Expand stack/Fold stack header controls that preserve other stacks and center the changed stack |
+| A multiplier alone gave little indication of a folded block's contents | Users had to open the sidebar to understand a stack | Add two lightweight card outlines within layout bounds, the actual index range and a selected-instance component preview from metadata; distant labels retain the multiplier and expansion removes the folded-card decoration |
+| Scope-based grouping depended on exporter naming | Renamed ONNX operators lost useful Transformer/Attention/MLP boundaries | Recognize pre-norm residual Transformer patterns from ops, concrete shapes and wiring; test MHA, MQA, GQA, renamed graphs, invalid broadcasts, preserved boundary taps and zero payload reads |
 
-Overview shapes have accessible names, keyboard activation and compact type labels. Labels stay approximately 12 screen pixels high, with a small spatial grid suppressing neighboring labels to avoid overlap; node data and controls remain deferred. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks** or the toolbar; results are reused when folding again, and the option resets to off for each newly opened model. Module-scope grouping code is imported only when requested folding cannot prove exact repetition. The shipped WASM was rebuilt alongside its Rust source in the previous optimization.
+Overview shapes have accessible names, keyboard activation and compact type labels. Labels stay approximately 12 screen pixels high, with a small spatial grid suppressing neighboring labels to avoid overlap; node data and controls remain deferred. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks** or the toolbar; results are reused when folding again, and the option resets to off for each newly opened model. Name-independent Transformer recognition runs first; existing exact repetition and module-scope grouping remain fallbacks. The shipped WASM was rebuilt alongside its Rust source in the previous optimization.
 
 Desktop smoke tests also now use independent Electron profiles, avoiding shared-profile launch failures and changes to a normal application's profile.
 
@@ -71,6 +74,33 @@ The fixture has 32,768 displayed nodes with tiny weights, five warm-up iteration
 | GGUF | 7.45 → 4.78 ms | 54 in both revisions |
 
 Metadata and range hashes matched between revisions. These measurements suggest about 25% and 36% less CPU time for these metadata-heavy fixtures. They exclude network latency and do not predict the same improvement in end-to-end loading. Safetensors primarily reads a JSON header, so this scalar optimization is not expected to materially change its indexing time.
+
+## PyTorch module hierarchy assessment — 2026-10-17
+
+The supplied text and vision exports identify their producer as PyTorch 2.10.0. Both retain useful node scope names, but neither contains node, graph or model origin metadata. Rust's metadata index preserves non-payload protobuf fields, so this absence is not caused by the indexer. The reference PyTorch listing describes module ownership; the exported ONNX dependencies determine execution order and every boundary tensor. Reused modules can have multiple exported call sites: text layer 0 contains 16 `q_norm` scopes and eight `k_norm` scopes, despite a single registered module of each name in the supplied listing.
+
+PyTorch's [`ModuleList.__repr__`](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/container.py) produces `(0–27): 28 x` by comparing adjacent modules' printed representations. This is a useful architecture summary, but does not prove weight equality, identical exported graphs or identical execution connections. Fastron therefore uses the module hierarchy for ownership and the ONNX graph for connections.
+
+| Exported block | Normalization before attention | Attention | Normalization before MLP | MLP | Explicit residual Adds | Total operators |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Vision block 0 | 1 | 37 | 1 | 5 | 2 | 46 |
+| Text layer 0 | 7 | 647 | 7 | 11 | 2 | 674 |
+
+The vision matcher now identifies all 24 complete Transformer blocks using operations, concrete shapes and residual wiring, without consulting module names. The example `/visual/Add` → `/visual/blocks.0/Add` spans the attention half; a whole block also includes the following normalization, MLP and residual Add. Four ×6 stacks preserve the intervening deepstack merger branches and leave 70 nodes visible. Renaming every node and tensor preserves the same detected member indices. A local metadata-only scan took about 33 ms; this excludes model loading, layout and paint.
+
+Opening a vision block shows LayerNormalization → Attention → Add → LayerNormalization → MLP → Add, with 37 attention and five MLP operators available through their **ƒ** icons. Function groups have no ×1 badge. The unsupported text RMSNorm/gated-MLP pattern retains the existing module-scope fallback, which also shows six nodes for text layer 3. All grouping and assessment used descriptors with zero additional source reads and no canonical rich-node construction.
+
+Attention recognition validates both dynamic MatMuls, last-axis Softmax, projections and residual shapes. It permits shared KV heads rather than requiring equal Q/K/V head counts: tests cover MHA, MQA broadcasting (including lower-rank KV tensors), GQA KV repetition through Expand/Tile, and GQA with a separate broadcast group axis. Different head configurations can have the same Attention category but cannot share a stack unless their metadata/connectivity fingerprints match. Invalid head broadcasts remain unfolded. Current limits are static positive dimensions, explicit pre-norm LayerNormalization, Softmax/MatMul attention and two-projection GELU/Relu MLPs; fused attention, decomposed RMSNorm and gated MLP recognition need separate fixtures before support. Weight equality is never inferred.
+
+Reproduce the actual-export check (the local model is not bundled):
+
+```bash
+node test/qwen-vision-folding.mjs /path/to/qwen3_vl_p2b_instruct_vision_slim.onnx
+```
+
+Projection provenance is incomplete: vision attention contains four `Conv` operators; its last projection retains a `visual.blocks.0.attn.proj.bias` parameter name, while the other weights use generated `onnx::Conv_*` names. The original QKV/projection submodule scopes are absent; compared with the supplied PyTorch listing's Linear definitions, the ONNX uses Conv operations. The matcher can recognize the surrounding attention computation from wiring and shapes, but cannot recover every original PyTorch submodule/class name. It does not invent missing projection names or combine separate module calls.
+
+For a stronger reference, preserve the actual source model's `named_modules(remove_duplicate=False)` hierarchy, module types, parameter shapes and shared-module identities alongside export provenance. The [PyTorch exporter documentation](https://docs.pytorch.org/docs/main/onnx_export.html#metadata) describes namespace, class hierarchy and name-scope metadata that can map exported operators back to the source modules. A printed tree or stock model config alone does not establish the exact computation of a transformed/pruned export. The original PyTorch object was not available for this assessment.
 
 ## What to adapt from Model Explorer next
 

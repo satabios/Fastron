@@ -24,7 +24,7 @@
         "version": "node package.js version",
         "version:date": "node package.js sync-version",
         "test": "node package.js test",
-        "test:unit": "node --test test/loading.mjs test/rendering.mjs test/model-source.mjs test/metadata.mjs test/model-source-electron.mjs test/comparator.mjs test/force-layout.mjs test/metadata-assets.mjs test/viewport-cache.mjs test/packaged-metadata.mjs test/open-order.mjs test/resource-cache.mjs test/publishing.mjs test/repeated-blocks.mjs test/module-blocks.mjs",
+        "test:unit": "node --test test/loading.mjs test/rendering.mjs test/model-source.mjs test/metadata.mjs test/model-source-electron.mjs test/comparator.mjs test/force-layout.mjs test/metadata-assets.mjs test/viewport-cache.mjs test/packaged-metadata.mjs test/open-order.mjs test/resource-cache.mjs test/publishing.mjs test/repeated-blocks.mjs test/module-blocks.mjs test/structural-blocks.mjs",
         "build:index": "node tools/build-index.mjs",
         "validate": "node package.js validate",
         "coverage": "node package.js coverage",

@@ -1896,6 +1896,7 @@ grapher.Node = class {
         this.element.style.opacity = 0;
         this._parentElement = parent;
         parent.appendChild(this.element);
+        this._buildStack(document);
         this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         this.border.setAttribute('class', 'node node-border');
         for (let i = 0; i < this._blocks.length; i++) {
@@ -1913,6 +1914,7 @@ grapher.Node = class {
         }
         this.element = null;
         this.border = null;
+        this._stackPaths = null;
         if (this._overviewText?.parentNode) {
             this._overviewText.parentNode.removeChild(this._overviewText);
         }
@@ -1942,6 +1944,7 @@ grapher.Node = class {
                 this.activateOverview();
             }
         });
+        this._buildStack(document);
         this.border = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         this.border.setAttribute('class', 'node node-border');
         this.element.appendChild(this.border);
@@ -1960,7 +1963,7 @@ grapher.Node = class {
     }
 
     updateOverview() {
-        this.border.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, true, true, true, true));
+        this._updateBorder();
         this.element.setAttribute('transform', `translate(${grapher.Node.snap(this.x - this.width / 2)},${grapher.Node.snap(this.y - this.height / 2)})`);
         this.element.style.removeProperty('opacity');
         this._overviewText.setAttribute('x', this._overviewLabelParent ? this.x : this.width / 2);
@@ -1977,10 +1980,11 @@ grapher.Node = class {
         for (const block of this._blocks) {
             block.width = this.width;
         }
+        this.height += (this._stackDepth || 0) * 4;
     }
 
     layout() {
-        let y = 0;
+        let y = (this._stackDepth || 0) * 4;
         for (const block of this._blocks) {
             block.x = 0;
             block.y = y;
@@ -1994,11 +1998,32 @@ grapher.Node = class {
         for (const block of this._blocks) {
             block.update();
         }
-        this.border.setAttribute('d', grapher.Node.roundedRect(0, 0, this.width, this.height, true, true, true, true));
+        this._updateBorder();
         const x = grapher.Node.snap(this.x - (this.width / 2));
         const y = grapher.Node.snap(this.y - (this.height / 2));
         this.element.setAttribute('transform', `translate(${x},${y})`);
         this.element.style.removeProperty('opacity');
+    }
+
+    _buildStack(document) {
+        if (this._stackDepth) {
+            this._stackPaths = Array.from({ length: this._stackDepth }, () => {
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('class', 'node-stack-layer');
+                path.setAttribute('aria-hidden', 'true');
+                this.element.appendChild(path);
+                return path;
+            });
+        }
+    }
+
+    _updateBorder() {
+        const inset = (this._stackDepth || 0) * 4;
+        this._stackPaths?.forEach((path, i) => {
+            const offset = i * 4;
+            path.setAttribute('d', grapher.Node.roundedRect(inset - offset, offset, this.width - 2 * (inset - offset), this.height - inset, true, true, true, true));
+        });
+        this.border.setAttribute('d', grapher.Node.roundedRect(0, inset, this.width, this.height - inset, true, true, true, true));
     }
 
     select() {
@@ -2162,9 +2187,22 @@ grapher.Node.Header.Entry = class {
             this.element.setAttribute('id', this.id);
         }
         if (this._events.click) {
+            this.element.setAttribute('role', 'button');
+            this.element.setAttribute('tabindex', '0');
+            this.element.setAttribute('aria-label', this.content);
+            if (typeof this.expanded === 'boolean') {
+                this.element.setAttribute('aria-expanded', String(this.expanded));
+            }
             this.element.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.emit('click');
+            });
+            this.element.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.emit('click');
+                }
             });
         }
         if (this.tooltip) {

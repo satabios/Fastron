@@ -3,7 +3,7 @@ import { NodeCatalog, nodeCatalog, nodeDescriptions, overlay } from './repeated-
 const values = (args) => (args || []).flatMap((arg) => arg?.value || []);
 const pathOf = (name) => name.match(/^(.*?(?:^|[./])(?:layers?|blocks?|blk|h)[./])(0|[1-9][0-9]*)(?:[./]|$)/);
 
-class ModuleBlocks {
+export class ModuleBlocks {
     constructor(graph, groups, producers, consumers) {
         this.graph = graph;
         this.groups = groups;
@@ -73,14 +73,14 @@ class ModuleBlocks {
                 records.push({ summary: { name: `${group.scope || 'Graph operations'}#${group.anchor}`,
                     type: { ...detail, name: group.title, type: 'function' }, inputs: boundary.inputs, outputs: boundary.outputs,
                     attributes: [{ name: 'operators', type: 'int64', value: group.members.length }],
-                    _repeatHeader: true, _repeatGroup: group } });
+                    _repeatHeader: group.blocks.length > 1, _repeatGroup: group } });
             }
             cursor = group.members.at(-1) + 1;
         }
         while (cursor < this.graph.nodes.length) {
             records.push({ index: cursor++ });
         }
-        const decorate = (node, group) => group ? overlay(node, { _originalNode: node, _repeatHeader: true, _repeatGroup: group }) : node;
+        const decorate = (node, group) => group ? overlay(node, { _originalNode: node, _repeatHeader: group.blocks.length > 1, _repeatGroup: group }) : node;
         const catalog = nodeCatalog(this.graph.nodes);
         const nodes = new NodeCatalog(records, (record) => record.summary || decorate(this.graph.nodes[record.index], record.group),
             (record) => record.summary || decorate(this.describe(record.index), record.group), () => catalog?.release(),
@@ -115,6 +115,11 @@ export const moduleBlocks = async (graph, current = () => true) => {
         if (match && Number.isSafeInteger(Number(match[2]))) {
             const prefix = `${scope ? `${scope}/` : ''}${match[1]}`;
             return { key: prefix, index: Number(match[2]), scope: `${prefix}${match[2]}` };
+        }
+        const separator = scope ? relative.search(/[./]/) : -1;
+        if (separator > 0) {
+            const child = name.slice(0, name.length - relative.length + separator);
+            return { key: child, scope: child };
         }
         return { key: '' };
     });
@@ -183,7 +188,7 @@ export const moduleBlocks = async (graph, current = () => true) => {
         while (end < nodes.length && paths[end].key === paths[start].key) {
             end++;
         }
-        if (paths[start].index !== undefined) {
+        if (paths[start].index !== undefined || (scope && paths[start].key && end - start > 1)) {
             const blocks = new Map();
             for (let i = start; i < end; i++) {
                 const path = paths[i];
@@ -193,15 +198,16 @@ export const moduleBlocks = async (graph, current = () => true) => {
                 }
                 blocks.get(index).indices.push(i);
             }
-            if (blocks.size < 2) {
+            if (paths[start].index !== undefined && blocks.size < 2) {
                 start = end;
                 continue;
             }
             const path = paths[start];
             const label = scope ? path.key.slice(scope.length + 1) : path.key.replace(/^\/model\//, '');
             const parts = label.replace(/[./]+$/, '').split(/[./]/).filter(Boolean);
-            const title = parts.slice(-2).join(' ');
-            groups.push({ id: groups.length, kind: 'module', title, label: `${path.key || 'Graph operations'} (${blocks.size} modules)`,
+            const title = scope ? parts.at(-1) : parts.slice(-2).join(' ');
+            const description = path.index === undefined ? path.key : `${path.key} (${blocks.size} modules)`;
+            groups.push({ id: groups.length, kind: 'module', title, label: description,
                 scope: path.key.replace(/[./]+$/, ''), anchor: start, members: Uint32Array.from({ length: end - start }, (_, i) => start + i),
                 blocks: Array.from(blocks.values(), (block) => ({ ...block, indices: Uint32Array.from(block.indices) })) });
         }

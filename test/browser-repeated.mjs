@@ -106,12 +106,17 @@ try {
             await page.getByLabel('Representative layer').selectOption('17');
             await expect(page.getByLabel('Representative layer')).toHaveValue('17');
             await expect(nodes).toHaveCount(2);
-            await page.getByText('Expand stack', { exact: true }).click();
+            await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).click();
             await expect(nodes).toHaveCount(48);
-            await expect(page.getByText('Fold stack', { exact: true })).toBeVisible();
-            await page.getByText('Fold stack', { exact: true }).click();
+            const fold = page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true });
+            await expect(fold).toBeVisible();
+            await expect(fold).toHaveAttribute('aria-expanded', 'true');
+            await fold.focus();
+            await fold.press('Enter');
             await expect(nodes).toHaveCount(2);
-            await expect(page.getByText('Expand stack', { exact: true })).toBeVisible();
+            const expand = page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true });
+            await expect(expand).toBeVisible();
+            await expect(expand).toHaveAttribute('aria-expanded', 'false');
             assert.equal(transferred, metadataBytes, 'Selecting, expanding and folding must not fetch weights.');
             await page.locator('#menu-button').click();
             await page.locator('button:has-text("Find...")').first().click();
@@ -184,8 +189,8 @@ try {
     await expect(page.locator('.node-item-repeat text')).toHaveText('×256');
     const metadataBytes = transferred;
     await page.locator('.node-item-repeat').click();
-    await page.getByText('Expand stack', { exact: true }).click();
-    await expect(page.getByText('Fold stack', { exact: true })).toBeVisible();
+    await page.locator('#sidebar-content').getByText('Expand stack', { exact: true }).click();
+    await expect(page.locator('#sidebar-content').getByText('Fold stack', { exact: true })).toBeVisible();
     assert.ok(await page.locator('#canvas .graph-node').count() < 512);
     const overview = page.locator('#canvas .graph-node.node-overview');
     for (let i = 0; i < 10; i++) {
@@ -292,18 +297,32 @@ try {
         await expect(page.getByRole('button', { name: 'Graph Stacking', exact: true })).toHaveAttribute('aria-pressed', 'false');
         const metadataBytes = transferred;
         await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
-        await expect(page.locator('body')).toHaveClass(/default/);
-        await page.locator('#lazy-render-button').click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(2625);
+        const cdp = await context.newCDPSession(page);
+        const displayCount = async () => (await cdp.send('Runtime.evaluate', {
+            expression: 'window.__view__?._target?._displayGraph?.nodes.length', returnByValue: true
+        })).result.value;
+        await expect.poll(displayCount, { timeout: 30000 }).toBe(2625);
+        await cdp.send('Runtime.evaluate', { expression: `(() => {
+            const view = window.__view__;
+            for (const { label: node } of view._target.nodes.values()) {
+                if (node._overviewType === '×25 language_model layers') {
+                    view._target.scrollToValue(node.value, 'instant');
+                    return;
+                }
+            }
+        })()` });
         const stack = page.locator('.node-item-repeat').filter({ hasText: '×25' });
         await expect(stack).toBeVisible();
         await stack.click();
         await expect(page.getByText('Exported module scopes;', { exact: false })).toBeVisible();
         await page.getByLabel('Representative layer').selectOption('7');
+        await expect.poll(displayCount, { timeout: 30000 }).toBe(2625);
+        await expect(page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-repeat') })).toContainText('10 · 673 ops');
         await page.getByText('Open module', { exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(673);
+        await expect.poll(displayCount).toBe(6);
         await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^MatMul$/ }).first()).toBeAttached();
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^self_attn$/ })).toBeVisible();
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^mlp$/ })).toBeVisible();
         assert.equal(transferred, metadataBytes, 'Module folding, selection and navigation must not fetch weights.');
         assert.deepEqual(errors, []);
         await context.close();
@@ -320,8 +339,32 @@ try {
         await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
         await expect(page.locator('#canvas .graph-node')).toHaveCount(70);
         await expect(page.locator('.node-item-repeat text')).toHaveText(['×6', '×6', '×6', '×6']);
+        await expect(page.locator('#canvas .node-stack-layer')).toHaveCount(8);
+        const cards = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-repeat') });
+        for (const [index, range] of ['0–5', '6–11', '12–17', '18–23'].entries()) {
+            // eslint-disable-next-line no-await-in-loop
+            await expect(cards.nth(index)).toContainText(range);
+        }
+        await expect(cards.first()).toContainText('Attention · MLP');
+        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-vision-stacks.png') });
         await expect(page.locator('[id="node-name-/visual/pos_embed/Gather"] .node-item-type text')).toHaveText('Gather');
         await expect(page.locator('[id="node-name-/visual/patch_embed/Conv"] .node-item-type text')).toHaveText('Conv');
+        await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).first().click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(345);
+        await expect(page.locator('#canvas .node-stack-layer')).toHaveCount(6);
+        await expect(page.locator('.node-item-repeat text')).toHaveText(['×6', '×6', '×6', '×6']);
+        await expect(page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true })).toHaveCount(3);
+        await page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true }).click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(70);
+        await page.locator('.node-item-repeat').first().click();
+        await expect(page.getByText('Transformer pattern matched by operations, shapes and connections.', { exact: false })).toBeVisible();
+        await page.getByText('Open module', { exact: true }).click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(6);
+        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+        const attention = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-type text').filter({ hasText: /^Attention$/ }) });
+        await attention.getByRole('button', { name: 'ƒ', exact: true }).click();
+        await expect(page.locator('#canvas .graph-node')).toHaveCount(37);
+        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
         assert.equal(transferred, metadataBytes, 'Folding vision blocks must not fetch weights.');
         assert.deepEqual(errors, []);
         await context.close();
