@@ -9,6 +9,11 @@ const dimensions = (value) => {
         (Number.isSafeInteger(dim) && dim > 0) || (typeof dim === 'string' && dim.length > 0 && dim !== '?' && dim.length <= 256)) ? dims : null;
 };
 const same = (a, b) => a?.length === b?.length && a?.every((dim, i) => dim === b[i]);
+const generated = (dim) => typeof dim === 'string' && /^unk__[0-9]+$/.test(dim);
+// Pattern recognition preserves unresolved generated dimensions; it does not assert their equality.
+const compatible = (a, b) => a === b || (generated(a) && (generated(b) || Number.isSafeInteger(b) || typeof b === 'string')) ||
+    (generated(b) && (Number.isSafeInteger(a) || typeof a === 'string'));
+const compatibleShape = (a, b) => a?.length === b?.length && a?.every((dim, i) => compatible(dim, b[i]));
 const sameType = (a, b) => a?.type?.dataType === b?.type?.dataType && same(dimensions(a), dimensions(b));
 const domain = (node) => node.type?.domain || node.type?.module || '';
 const standard = (node) => ['', 'ai.onnx'].includes(domain(node));
@@ -38,15 +43,23 @@ const metadata = (value) => JSON.stringify(value, (key, item) => {
 class StructuralBlocks extends ModuleBlocks {
     constructor(graph, groups, producers, consumers, blocks) {
         super(graph, groups, producers, consumers);
-        this.blocks = new Map(blocks.map(({ start, end, parts }) => [start, { start, end, parts }]));
+        this.blocks = new Map();
+        const add = (block) => {
+            if (block.parts) {
+                this.blocks.set(`${block.start}:${block.end}`, block.parts);
+                block.parts.forEach(add);
+            }
+        };
+        blocks.forEach(add);
     }
 
     subgraph(indices, name, scope) {
         const graph = super.subgraph(indices, name, scope);
-        const block = this.blocks.get(indices[0]);
-        if (block && indices.length === block.end - block.start + 1) {
-            graph._structuralParts = block.parts.map((part) => ({ title: part.title,
-                start: part.start - block.start, end: part.end - block.start }));
+        const parts = this.blocks.get(`${indices[0]}:${indices.at(-1)}`);
+        if (parts && indices.length === indices.at(-1) - indices[0] + 1) {
+            const relative = (part) => ({ ...part, start: part.start - indices[0], end: part.end - indices[0],
+                ...(part.instances ? { instances: part.instances.map(relative) } : {}), ...(part.parts ? { parts: part.parts.map(relative) } : {}) });
+            graph._structuralParts = parts.map(relative);
         }
         return graph;
     }
@@ -117,20 +130,23 @@ export const structuralBlocks = async (graph, current = () => true) => {
             members: Uint32Array.from({ length: end - start + 1 }, (_, i) => start + i), blocks };
     };
     if (graph._structuralParts) {
-        const groups = graph._structuralParts.map((part, id) => group(id, part.title, [{ index: 0, scope: '',
-            indices: Uint32Array.from({ length: part.end - part.start + 1 }, (_, i) => part.start + i) }]));
-        return groups.length && current() ? new ModuleBlocks(graph, groups, producers, consumers) : null;
+        const groups = graph._structuralParts.map((part, id) => ({ ...group(id, part.title,
+            (part.instances || [part]).map((instance, index) => ({ index: instance.index ?? index, scope: '', components: instance.components,
+                indices: Uint32Array.from({ length: instance.end - instance.start + 1 }, (_, i) => instance.start + i) })), part.kind), attributes: part.attributes, unit: part.unit }));
+        return groups.length && current() ? new StructuralBlocks(graph, groups, producers, consumers, graph._structuralParts) : null;
     }
     const attributeCache = new Map();
-    const attributes = (index) => {
-        if (!attributeCache.has(index)) {
+    const attributes = (index, pattern = false) => {
+        const key = `${index}:${pattern}`;
+        if (!attributeCache.has(key)) {
             const attrs = nodes[index].attributes || [];
-            if (attrs.some((attr) => ['graph', 'graph[]', 'tensor', 'tensor[]', 'function', 'function[]', 'object', 'object[]'].includes(attr.type))) {
+            const opaque = (attr) => pattern && nodes[index].type.name === 'ConstantOfShape' && attr.name === 'value' && ['graph', 'tensor'].includes(attr.type);
+            if (attrs.some((attr) => !opaque(attr) && ['graph', 'graph[]', 'tensor', 'tensor[]', 'function', 'function[]', 'object', 'object[]'].includes(attr.type))) {
                 throw new Error('Unsupported structural attribute.');
             }
-            attributeCache.set(index, new Map(attrs.map((attr) => [attr.name, attr.value])));
+            attributeCache.set(key, new Map(attrs.map((attr) => [attr.name, opaque(attr) ? { opaque: 'tensor constant' } : attr.value])));
         }
-        return attributeCache.get(index);
+        return attributeCache.get(key);
     };
     const output = (index) => values(nodes[index]?.outputs)[0];
     const source = (value, type) => {
@@ -189,16 +205,20 @@ export const structuralBlocks = async (graph, current = () => true) => {
                         }
                         const terms = values(nodes[add].inputs);
                         const mean = source(terms.find((value) => !value.initializer), 'ReduceMean');
-                        // Pow requires an exponent payload; Mul(X, X) proves squaring from wiring alone.
-                        const square = mean === undefined ? undefined : source(values(nodes[mean].inputs)[0], 'Mul');
+                        const square = mean === undefined ? undefined : source(values(nodes[mean].inputs)[0]);
+                        const power = square !== undefined && nodes[square].type.name === 'Pow';
                         const x = uncast(data);
                         const dims = dimensions(x);
+                        const normWidth = power ? dimensions(output(i))?.at(-1) : dims?.at(-1);
                         const axes = mean === undefined ? null : attributes(mean).get('axes');
-                        if (square === undefined || !dims || !Number.isSafeInteger(dims.at(-1)) || dims.at(-1) <= 1 ||
-                            !terms.some(scalarParameter) || !same(dimensions(weight), [dims.at(-1)]) ||
-                            values(nodes[square].inputs).length !== 2 || !values(nodes[square].inputs).every((value) => value.name === data.name) ||
+                        if (square === undefined || !dims || !Number.isSafeInteger(normWidth) || normWidth <= 1 ||
+                            !terms.some(scalarParameter) || !same(dimensions(weight), [normWidth]) ||
+                            !['Mul', 'Pow'].includes(nodes[square].type.name) || values(nodes[square].inputs).length !== 2 ||
+                            (power ? values(nodes[square].inputs)[0].name !== data.name || !scalarParameter(values(nodes[square].inputs)[1])
+                                : !values(nodes[square].inputs).every((value) => value.name === data.name)) ||
                             !same(dimensions(output(mean)), [...dims.slice(0, -1), 1]) || Number(attributes(mean).get('keepdims') ?? 1) !== 1 ||
-                            (axes && (axes.length !== 1 || ![-1, dims.length - 1].includes(Number(axes[0])))) || !sameType(x, output(i))) {
+                            (axes && (axes.length !== 1 || ![-1, dims.length - 1].includes(Number(axes[0])))) ||
+                            !(power ? x.type?.dataType === output(i)?.type?.dataType && compatibleShape(dims, dimensions(output(i))) : sameType(x, output(i)))) {
                             continue;
                         }
                         // shortcut: cap normalizers at 16 contiguous operators; extend with fixtures for longer lowerings.
@@ -211,7 +231,7 @@ export const structuralBlocks = async (graph, current = () => true) => {
                                 continue;
                             }
                             const index = source(value);
-                            if (index === undefined || !['Cast', 'Mul', 'ReduceMean', 'Add', 'Sqrt', 'Div', 'Reciprocal'].includes(nodes[index].type.name)) {
+                            if (index === undefined || !['Cast', 'Pow', 'Mul', 'ReduceMean', 'Add', 'Sqrt', 'Div', 'Reciprocal'].includes(nodes[index].type.name)) {
                                 valid = false;
                                 break;
                             }
@@ -222,7 +242,7 @@ export const structuralBlocks = async (graph, current = () => true) => {
                         }
                         const start = Math.min(...members);
                         if (valid && !pending.length && members.size === i - start + 1) {
-                            registerNorm({ start, end: i, input: x, output: output(i), title: 'RMSNorm' });
+                            registerNorm({ start, end: i, input: x, output: output(i), title: power ? 'Normalization' : 'RMSNorm', pattern: power });
                         }
                     }
                 }
@@ -235,7 +255,7 @@ export const structuralBlocks = async (graph, current = () => true) => {
             return null;
         }
     }
-    const projection = (index) => {
+    const projection = (index, pattern = false) => {
         const node = nodes[index];
         const inputs = values(node.inputs);
         const weight = inputs[1];
@@ -252,7 +272,9 @@ export const structuralBlocks = async (graph, current = () => true) => {
             const output = dimensions(values(node.outputs)[0]);
             if (Number(attrs.get('group') ?? 1) !== 1 || (attrs.get('strides') || []).some((dim) => Number(dim) !== 1) ||
                 (attrs.get('pads') || []).some((dim) => Number(dim) !== 0) || !data || !output || data.length !== dims.length ||
-                output.length !== data.length || data[1] !== dims[1] || output[1] !== dims[0] || data[0] !== output[0] || !same(data.slice(2), output.slice(2))) {
+                output.length !== data.length || data[1] !== dims[1] || output[1] !== dims[0] ||
+                !(pattern ? compatibleShape([data[0], ...data.slice(2)], [output[0], ...output.slice(2)])
+                    : same([data[0], ...data.slice(2)], [output[0], ...output.slice(2)]))) {
                 return null;
             }
             return { input: dims[1], output: dims[0] };
@@ -264,7 +286,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
             const transpose = gemm && Number(attributes(index).get('transB') || 0) !== 0;
             const inputWidth = dims[transpose ? 1 : 0];
             const outputWidth = dims[transpose ? 0 : 1];
-            if (!data || !output || data.at(-1) !== inputWidth || output.at(-1) !== outputWidth || !same(data.slice(0, -1), output.slice(0, -1)) ||
+            if (!data || !output || data.at(-1) !== inputWidth || output.at(-1) !== outputWidth ||
+                !(pattern ? compatibleShape(data.slice(0, -1), output.slice(0, -1)) : same(data.slice(0, -1), output.slice(0, -1))) ||
                 (gemm && (data.length !== 2 || Number(attributes(index).get('transA') || 0) !== 0))) {
                 return null;
             }
@@ -272,22 +295,25 @@ export const structuralBlocks = async (graph, current = () => true) => {
         }
         return null;
     };
-    const matmul = (index) => {
+    const matmul = (index, pattern = false) => {
         const inputs = values(nodes[index].inputs);
         const output = values(nodes[index].outputs)[0];
         const a = dimensions(inputs[0]);
         const b = dimensions(inputs[1]);
         const out = dimensions(output);
         if (!a || !b || !out || a.length < 3 || b.length < 3 || out.length !== Math.max(a.length, b.length) ||
-            inputs[0].initializer || inputs[1].initializer || a.at(-1) !== b.at(-2) ||
-            out.at(-2) !== a.at(-2) || out.at(-1) !== b.at(-1) || inputs.some((value) => value.type?.dataType !== output.type?.dataType)) {
+            inputs[0].initializer || inputs[1].initializer || a.at(-1) !== b.at(-2) && !(pattern && compatible(a.at(-1), b.at(-2))) ||
+            !(pattern ? compatibleShape(out.slice(-2), [a.at(-2), b.at(-1)]) : same(out.slice(-2), [a.at(-2), b.at(-1)])) ||
+            inputs.some((value) => value.type?.dataType !== output.type?.dataType)) {
             return false;
         }
         // MQA broadcasts KV heads; GQA exports may introduce a separate group dimension.
         return out.slice(0, -2).every((dim, i) => {
             const left = a[i - (out.length - a.length)] ?? 1;
             const right = b[i - (out.length - b.length)] ?? 1;
-            return (left === right && dim === left) || (left === 1 && dim === right) || (right === 1 && dim === left);
+            return (left === right && (pattern ? compatible(dim, left) : dim === left)) ||
+                (left === 1 && (pattern ? compatible(dim, right) : dim === right)) ||
+                (right === 1 && (pattern ? compatible(dim, left) : dim === left));
         });
     };
     const follows = (value, target, start, allowed) => {
@@ -306,6 +332,195 @@ export const structuralBlocks = async (graph, current = () => true) => {
             pending.push(...values(nodes[index].inputs).filter((input) => !input.initializer));
         }
         return false;
+    };
+    const fingerprint = (start, end, pattern = false) => {
+        const local = new Map();
+        const external = new Map();
+        const parameters = new Map();
+        const parameterSymbols = new Set();
+        for (let i = start; i <= end; i++) {
+            values(nodes[i].outputs).forEach((value, slot) => local.set(value.name, [i - start, slot]));
+            for (const value of values(nodes[i].inputs).filter((item) => item.initializer)) {
+                for (const dim of shape(value) || []) {
+                    if (typeof dim === 'string') {
+                        parameterSymbols.add(dim);
+                    }
+                }
+            }
+        }
+        const symbols = new Map();
+        const type = (value) => {
+            const dims = dimensions(value);
+            if (!value.type?.dataType || (!dims && shape(value)?.length !== 0)) {
+                throw new Error('Unconstrained structural shape.');
+            }
+            return [value.type?.dataType, value.type?.layout, (dims || []).map((dim) => {
+                if (!value.initializer && !parameterSymbols.has(dim) && typeof dim === 'string' && /^unk__[0-9]+$/.test(dim)) {
+                    if (!symbols.has(dim)) {
+                        symbols.set(dim, symbols.size);
+                    }
+                    return ['symbol', symbols.get(dim)];
+                }
+                return dim;
+            }), value.quantization || value.initializer?.quantization];
+        };
+        return metadata(nodes.slice(start, end + 1).map((node, offset) => [node.type.name, node.type.domain || node.type.module || '', node.type.version,
+            [...attributes(start + offset, pattern)].sort(([a], [b]) => a.localeCompare(b)), values(node.inputs).map((value) => {
+                if (!value.initializer && local.has(value.name)) {
+                    return ['local', local.get(value.name), type(value)];
+                }
+                const map = value.initializer ? parameters : external;
+                const key = value.name || value.initializer;
+                if (!map.has(key)) {
+                    map.set(key, map.size);
+                }
+                return [value.initializer ? 'parameter' : 'external', map.get(key), type(value)];
+            }), values(node.outputs).map(type)]));
+    };
+    const unrolledOps = new Set([...attentionOps, 'Pow', 'ReduceMean', 'Sqrt', 'Reciprocal', 'Range', 'ConstantOfShape', 'ScatterElements', 'ReduceMin', 'Where', 'Equal']);
+    const dataInputs = (node) => {
+        const args = values(node.inputs);
+        if (['Shape', 'Range', 'ConstantOfShape', 'Equal'].includes(node.type.name)) {
+            return [];
+        }
+        if (node.type.name === 'ScatterElements') {
+            return [args[0], args[2]];
+        }
+        if (node.type.name === 'Where') {
+            return args.slice(1);
+        }
+        return transforms.has(node.type.name) || ['Split', 'Slice', 'Gather', 'ReduceMean', 'ReduceMin'].includes(node.type.name) ? args.slice(0, 1) : args;
+    };
+    const unrolled = (norm, end, indices, projections, softmax, products) => {
+        if (softmax.length < 2 || softmax.length > 128 || products.length !== softmax.length * 2 || projections.length !== 4 ||
+            !indices.every((i) => standard(nodes[i]) && unrolledOps.has(nodes[i].type.name)) || !products.every((i) => matmul(i, true))) {
+            return null;
+        }
+        const start = norm.end + 1;
+        const trace = (stops) => {
+            const result = new Map();
+            for (const i of indices) {
+                const mask = stops.get(i) ?? dataInputs(nodes[i]).reduce((bits, value) => bits | (result.get(value?.name) || 0n), 0n);
+                for (const value of values(nodes[i].outputs)) {
+                    result.set(value.name, mask);
+                }
+            }
+            return result;
+        };
+        const origins = trace(new Map(projections.slice(0, 3).map((item, i) => [item.index, 1n << BigInt(i)])));
+        const used = new Set();
+        const kv = new Map();
+        let roles = null;
+        let width = null;
+        for (const sm of softmax) {
+            const scores = new Set();
+            const pending = [values(nodes[sm].inputs)[0]];
+            const visited = new Set();
+            while (pending.length) {
+                const value = pending.pop();
+                const i = producers.get(value?.name);
+                if (i === undefined || i < start || i >= sm || visited.has(i)) {
+                    continue;
+                }
+                visited.add(i);
+                if (products.includes(i)) {
+                    scores.add(i);
+                } else if (['Mul', 'Div', 'Add', 'Sub', 'Cast', 'Identity', 'Where', 'ReduceMin'].includes(nodes[i].type.name)) {
+                    pending.push(...dataInputs(nodes[i]));
+                }
+            }
+            const av = products.filter((i) => follows(values(nodes[i].inputs)[0], output(sm), start, new Set(['Cast', 'Identity'])));
+            const axis = Number(attributes(sm).get('axis') ?? (nodes[sm].type.version >= 13 ? -1 : 1));
+            if (scores.size !== 1 || av.length !== 1 || ![-1, dimensions(values(nodes[sm].inputs)[0])?.length - 1].includes(axis) ||
+                !sameType(values(nodes[sm].inputs)[0], output(sm))) {
+                return null;
+            }
+            const score = [...scores][0];
+            if (used.has(score) || used.has(av[0])) {
+                return null;
+            }
+            used.add(score);
+            used.add(av[0]);
+            const [q, k] = values(nodes[score].inputs);
+            const v = values(nodes[av[0]].inputs)[1];
+            const currentRoles = [q, k, v].map((value) => origins.get(value.name));
+            const d = dimensions(q)?.at(-1);
+            if (!Number.isSafeInteger(d) || d <= 0 || dimensions(v)?.at(-1) !== d || !currentRoles.every((mask) => [1n, 2n, 4n].includes(mask)) ||
+                new Set(currentRoles).size !== 3 || roles && !same(roles, currentRoles) || width !== null && width !== d) {
+                return null;
+            }
+            roles = currentRoles;
+            width = d;
+            const key = `${k.name}\n${v.name}`;
+            if (!kv.has(key)) {
+                for (const [value, sequenceAxis] of [[k, -1], [v, -2]]) {
+                    const i = producers.get(value.name);
+                    const args = values(nodes[i]?.inputs);
+                    const dims = dimensions(value);
+                    const axis = Number(i === undefined ? NaN : attributes(i).get('axis') ?? 0);
+                    if (i === undefined || nodes[i].type.name !== 'ScatterElements' || !dims || dims.length !== 4 ||
+                        (axis < 0 ? axis + dims.length : axis) !== dims.length + sequenceAxis || args.length !== 3 ||
+                        !['int32', 'int64'].includes(args[1].type?.dataType) || !compatibleShape(dimensions(args[0]), dims)) {
+                        return null;
+                    }
+                }
+                kv.set(key, { products: [] });
+            }
+            kv.get(key).products.push(av[0]);
+        }
+        const root = (role) => projections[[1n, 2n, 4n].indexOf(role)];
+        if (used.size !== products.length || root(roles[0]).dims.output !== softmax.length * width ||
+            root(roles[1]).dims.output !== kv.size * width || root(roles[2]).dims.output !== kv.size * width ||
+            projections.at(-1).dims.input !== softmax.length * width ||
+            [...kv.values()].some((item) => item.products.length !== softmax.length / kv.size)) {
+            return null;
+        }
+        const merged = trace(new Map([...kv.values()].flatMap((item) => item.products).map((i, bit) => [i, 1n << BigInt(bit)])));
+        if (merged.get(values(nodes[projections.at(-1).index].inputs)[0].name) !== (1n << BigInt(softmax.length)) - 1n) {
+            return null;
+        }
+        const splits = indices.filter((i) => nodes[i].type.name === 'Split' && values(nodes[i].outputs).length >= 2 &&
+            projections.slice(0, 3).some((item) => follows(values(nodes[i].inputs)[0], output(item.index), start, transforms)));
+        const groups = [];
+        let cursor = Math.max(start - 1, ...splits) + 1;
+        for (const item of kv.values()) {
+            const members = new Set();
+            const pending = item.products.map(output);
+            while (pending.length) {
+                const value = pending.pop();
+                const i = producers.get(value?.name);
+                if (value?.initializer || i === undefined || i < cursor || members.has(i)) {
+                    continue;
+                }
+                members.add(i);
+                pending.push(...values(nodes[i].inputs));
+            }
+            const first = Math.min(...members);
+            const last = Math.max(...members);
+            if (first !== cursor || members.size !== last - first + 1 || last >= projections.at(-1).index) {
+                return null;
+            }
+            groups.push({ index: groups.length, start: first, end: last, signature: fingerprint(first, last, true), components: [`${item.products.length} query heads`, 'KV cache updates'] });
+            cursor = last + 1;
+        }
+        const parts = [];
+        for (let first = 0; first < groups.length;) {
+            let last = first + 1;
+            while (last < groups.length && groups[last].signature === groups[first].signature) {
+                last++;
+            }
+            parts.push({ title: 'KV groups', kind: 'pattern', unit: 'KV group', start: groups[first].start, end: groups[last - 1].end,
+                instances: groups.slice(first, last).map(({ index, start, end, components }) => ({ index, start, end, components })) });
+            first = last;
+        }
+        let variant = 'GQA';
+        if (kv.size === 1) {
+            variant = 'MQA';
+        } else if (kv.size === softmax.length) {
+            variant = 'MHA';
+        }
+        return { title: 'Attention', displayTitle: `Attention (${variant})`, parts,
+            attributes: [{ name: 'query heads', type: 'int64', value: softmax.length }, { name: 'KV heads', type: 'int64', value: kv.size }] };
     };
     const fused = (index, norm, projections) => {
         const node = nodes[index];
@@ -352,26 +567,30 @@ export const structuralBlocks = async (graph, current = () => true) => {
     };
     const classify = (norm, end, input) => {
         const start = norm.end;
-        const c = dimensions(input)?.at(-1);
+        const c = dimensions(norm.pattern ? norm.output : input)?.at(-1);
         if (!Number.isSafeInteger(c) || !['float16', 'float32', 'float64', 'bfloat16'].includes(input.type?.dataType)) {
             return null;
         }
         const indices = Array.from({ length: end - start - 1 }, (_, i) => start + i + 1);
-        const projections = indices.map((i) => ({ index: i, dims: projection(i) })).filter((item) => item.dims);
-        if (indices.some((i) => ['Conv', 'Gemm'].includes(nodes[i].type.name) && !projection(i))) {
+        const projections = indices.map((i) => ({ index: i, dims: projection(i, norm.pattern) })).filter((item) => item.dims);
+        if (indices.some((i) => ['Conv', 'Gemm'].includes(nodes[i].type.name) && !projection(i, norm.pattern))) {
             return null;
         }
         const softmax = indices.filter((i) => nodes[i].type.name === 'Softmax');
-        const products = indices.filter((i) => nodes[i].type.name === 'MatMul' && !projection(i));
+        const products = indices.filter((i) => nodes[i].type.name === 'MatMul' && !projection(i, norm.pattern));
+        if (norm.pattern && softmax.length > 1 && projections.slice(0, -1).every((item) => item.dims.input === c &&
+            follows(values(nodes[item.index].inputs)[0], norm.output, start, pointwise)) && projections.at(-1)?.dims.output === c) {
+            return unrolled(norm, end, indices, projections, softmax, products);
+        }
         const cores = indices.filter((i) => fusedAttention(nodes[i]));
-        if (cores.length === 1 && !softmax.length && !products.length && projections.length >= 1 && projections.length <= 4 &&
+        if (!norm.pattern && cores.length === 1 && !softmax.length && !products.length && projections.length >= 1 && projections.length <= 4 &&
             indices.every((i) => attentionOps.has(nodes[i].type.name) || fusedAttention(nodes[i])) &&
             projections.slice(0, -1).every((item) => item.dims.input === c && follows(values(nodes[item.index].inputs)[0], norm.output, start, pointwise)) &&
             projections.at(-1).dims.output === c && fused(cores[0], norm, projections) &&
             follows(values(nodes[projections.at(-1).index].inputs)[0], output(cores[0]), start, attentionOps)) {
             return 'Attention';
         }
-        if (softmax.length === 1 && products.length === 2 && projections.length >= 2 && projections.length <= 4 &&
+        if (!norm.pattern && softmax.length === 1 && products.length === 2 && projections.length >= 2 && projections.length <= 4 &&
             indices.every((i) => attentionOps.has(nodes[i].type.name)) && products.every(matmul)) {
             const sm = softmax[0];
             const smInput = values(nodes[sm].inputs)[0];
@@ -397,7 +616,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
                 for (const i of consumers.get(activation.output.name) || []) {
                     const args = values(nodes[i]?.inputs);
                     if (i > start && i < end && nodes[i].type.name === 'Mul' && args.length === 2 &&
-                        args.some((value) => value.name === activation.input.name) && args.every((value) => sameType(value, output(i)))) {
+                        args.some((value) => value.name === activation.input.name) && args.every((value) => value.type?.dataType === output(i)?.type?.dataType &&
+                            (norm.pattern ? compatibleShape(dimensions(value), dimensions(output(i))) : sameType(value, output(i))))) {
                         activations.push({ index: i, input: activation.input, output: output(i) });
                     }
                 }
@@ -424,7 +644,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
                         }
                         for (const i of indices.filter((index) => nodes[index].type.name === 'Mul')) {
                             const args = values(nodes[i].inputs);
-                            if (args.length === 2 && args.every((value) => sameType(value, output(i))) &&
+                            if (args.length === 2 && args.every((value) => value.type?.dataType === output(i)?.type?.dataType &&
+                                (norm.pattern ? compatibleShape(dimensions(value), dimensions(output(i))) : sameType(value, output(i)))) &&
                                 args.some((value) => follows(value, activation.output, start, transforms)) &&
                                 args.some((value) => follows(value, output(up.index), start, transforms)) &&
                                 follows(values(nodes[last.index].inputs)[0], output(i), start, transforms)) {
@@ -437,50 +658,6 @@ export const structuralBlocks = async (graph, current = () => true) => {
         }
         return null;
     };
-    const fingerprint = (start, end) => {
-        const local = new Map();
-        const external = new Map();
-        const parameters = new Map();
-        const parameterSymbols = new Set();
-        for (let i = start; i <= end; i++) {
-            values(nodes[i].outputs).forEach((value, slot) => local.set(value.name, [i - start, slot]));
-            for (const value of values(nodes[i].inputs).filter((item) => item.initializer)) {
-                for (const dim of shape(value) || []) {
-                    if (typeof dim === 'string') {
-                        parameterSymbols.add(dim);
-                    }
-                }
-            }
-        }
-        const symbols = new Map();
-        const type = (value) => {
-            const dims = dimensions(value);
-            if (!value.type?.dataType || (!dims && shape(value)?.length !== 0)) {
-                throw new Error('Unconstrained structural shape.');
-            }
-            return [value.type?.dataType, value.type?.layout, (dims || []).map((dim) => {
-                if (!value.initializer && !parameterSymbols.has(dim) && typeof dim === 'string' && /^unk__[0-9]+$/.test(dim)) {
-                    if (!symbols.has(dim)) {
-                        symbols.set(dim, symbols.size);
-                    }
-                    return ['symbol', symbols.get(dim)];
-                }
-                return dim;
-            }), value.quantization || value.initializer?.quantization];
-        };
-        return metadata(nodes.slice(start, end + 1).map((node, offset) => [node.type.name, node.type.domain || node.type.module || '', node.type.version,
-            [...attributes(start + offset)].sort(([a], [b]) => a.localeCompare(b)), values(node.inputs).map((value) => {
-                if (!value.initializer && local.has(value.name)) {
-                    return ['local', local.get(value.name), type(value)];
-                }
-                const map = value.initializer ? parameters : external;
-                const key = value.name || value.initializer;
-                if (!map.has(key)) {
-                    map.set(key, map.size);
-                }
-                return [value.initializer ? 'parameter' : 'external', map.get(key), type(value)];
-            }), values(node.outputs).map(type)]));
-    };
     const residuals = [];
     for (let end = 0; end < nodes.length; end++) {
         // eslint-disable-next-line no-await-in-loop
@@ -490,12 +667,16 @@ export const structuralBlocks = async (graph, current = () => true) => {
         const node = nodes[end];
         const inputs = values(node.inputs);
         const output = values(node.outputs)[0];
-        if (node.type?.name !== 'Add' || inputs.length !== 2 || inputs.some((value) => value.initializer || !sameType(value, output))) {
+        if (node.type?.name !== 'Add' || inputs.length !== 2 || inputs.some((value) => value.initializer)) {
             continue;
         }
         for (let slot = 0; slot < 2; slot++) {
             const input = inputs[slot];
             for (const norm of norms.get(input.name) || []) {
+                if (!inputs.every((value) => value.type?.dataType === output?.type?.dataType &&
+                    (norm.pattern ? compatibleShape(dimensions(value), dimensions(output)) : sameType(value, output)))) {
+                    continue;
+                }
                 const start = norm.start;
                 // shortcut: bound individual residual searches; extend after fixtures for larger or fused variants.
                 if (start >= end || end - start > 2048) {
@@ -516,9 +697,10 @@ export const structuralBlocks = async (graph, current = () => true) => {
                     continue;
                 }
                 try {
-                    const title = classify(norm, end, input);
-                    if (title && nodes.slice(start, end + 1).every((item) => standard(item) || fusedAttention(item))) {
-                        residuals.push({ start, end, title, norm, input: input.name, output: output.name });
+                    const match = classify(norm, end, input);
+                    if (match && nodes.slice(start, end + 1).every((item) => standard(item) || fusedAttention(item))) {
+                        const detail = typeof match === 'string' ? { title: match } : match;
+                        residuals.push({ start, end, ...detail, norm, input: input.name, output: output.name });
                     }
                 } catch {
                     // Unsupported metadata leaves this region unfolded.
@@ -537,14 +719,16 @@ export const structuralBlocks = async (graph, current = () => true) => {
         const mlp = mlps.get(attention.end + 1);
         if (mlp?.input === attention.output && (!blocks.length || blocks.at(-1).end < attention.start)) {
             try {
-                const signature = fingerprint(attention.start, mlp.end);
+                const pattern = attention.norm.pattern || mlp.norm.pattern;
+                const signature = fingerprint(attention.start, mlp.end, pattern);
                 if (!signatures.has(signature)) {
                     signatures.set(signature, signature);
                 }
-                blocks.push({ start: attention.start, end: mlp.end, signature: signatures.get(signature),
+                blocks.push({ start: attention.start, end: mlp.end, pattern, signature: signatures.get(signature),
                     parts: [attention, mlp].flatMap((part) => [
-                        ...(part.norm.end > part.norm.start ? [{ title: part.norm.title, start: part.norm.start, end: part.norm.end }] : []),
-                        { title: part.title, start: part.norm.end + 1, end: part.end - 1 }
+                        ...(part.norm.end > part.norm.start ? [{ title: part.norm.title, start: part.norm.start, end: part.norm.end, kind: pattern ? 'pattern' : 'structural' }] : []),
+                        { title: part.displayTitle || part.title, start: part.norm.end + 1, end: part.end - 1,
+                            parts: part.parts, attributes: part.attributes, kind: pattern ? 'pattern' : 'structural' }
                     ]) });
             } catch {
                 // A pattern match alone cannot establish equivalent stack metadata.
@@ -563,7 +747,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
         }
         const instances = blocks.slice(start, end).map((block, i) => ({ index: start + i, scope: '', components: ['Attention', 'MLP'],
             indices: Uint32Array.from({ length: block.end - block.start + 1 }, (_, j) => block.start + j) }));
-        groups.push(group(groups.length, 'Transformer blocks', instances));
+        groups.push(group(groups.length, blocks[start].pattern ? 'Decoder blocks' : 'Transformer blocks', instances,
+            blocks[start].pattern ? 'pattern' : 'structural'));
         start = end;
     }
     return groups.length && current() ? new StructuralBlocks(graph, groups, producers, consumers, blocks) : null;

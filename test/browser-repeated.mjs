@@ -301,11 +301,11 @@ try {
         const displayCount = async () => (await cdp.send('Runtime.evaluate', {
             expression: 'window.__view__?._target?._displayGraph?.nodes.length', returnByValue: true
         })).result.value;
-        await expect.poll(displayCount, { timeout: 30000 }).toBe(2625);
+        await expect.poll(displayCount, { timeout: 30000 }).toBe(608);
         await cdp.send('Runtime.evaluate', { expression: `(() => {
             const view = window.__view__;
             for (const { label: node } of view._target.nodes.values()) {
-                if (node._overviewType === '×25 language_model layers') {
+                if (node._overviewType === '×25 Decoder blocks') {
                     view._target.scrollToValue(node.value, 'instant');
                     return;
                 }
@@ -314,19 +314,32 @@ try {
         const stack = page.locator('.node-item-repeat').filter({ hasText: '×25' });
         await expect(stack).toBeVisible();
         await stack.click();
-        await expect(page.getByText('Exported module scopes;', { exact: false })).toBeVisible();
+        await expect(page.getByText('Computation pattern matched by operations and connections.', { exact: false })).toBeVisible();
         await page.getByLabel('Representative layer').selectOption('7');
-        await expect.poll(displayCount, { timeout: 30000 }).toBe(2625);
+        await expect.poll(displayCount, { timeout: 30000 }).toBe(608);
         await expect(page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-repeat') })).toContainText('10 · 673 ops');
         await page.getByText('Open module', { exact: true }).click();
         await expect.poll(displayCount).toBe(6);
         await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^self_attn$/ })).toBeVisible();
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^mlp$/ })).toBeVisible();
+        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-text-decoder.png') });
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^Attention \(GQA\)$/ })).toBeVisible();
+        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^MLP$/ })).toBeVisible();
+        const attention = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-type text').filter({ hasText: /^Attention \(GQA\)$/ }) });
+        await expect(attention).toContainText('query heads: 16');
+        await expect(attention).toContainText('KV heads: 8');
+        await attention.getByRole('button', { name: 'ƒ', exact: true }).click();
+        await expect.poll(displayCount).toBe(15);
+        await expect(page.locator('.node-item-repeat text')).toHaveText(['×8']);
+        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-text-attention.png') });
+        await page.locator('.node-item-repeat').click();
+        await page.getByLabel('Representative KV group').selectOption('7');
+        await expect.poll(displayCount).toBe(15);
+        await page.getByText('Open module', { exact: true }).click();
+        await expect.poll(displayCount).toBe(79);
         assert.equal(transferred, metadataBytes, 'Module folding, selection and navigation must not fetch weights.');
         assert.deepEqual(errors, []);
         await context.close();
-        process.stdout.write('Qwen: repeated layers only, standalone operators preserved, per-instance navigation and zero weight reads passed.\n');
+        process.stdout.write('Qwen: 28 decoder patterns, 608 displayed nodes, 15-node attention with eight KV groups, per-instance navigation and zero weight reads passed.\n');
     }
     if (fixtures.has('/qwen-vision.onnx')) {
         const context = await browser.newContext();

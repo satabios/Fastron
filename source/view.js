@@ -1316,16 +1316,19 @@ view.View = class {
         let structure = 'Matching structure; every instance retains its own parameters.';
         if (group.kind === 'structural') {
             structure = 'Transformer pattern matched by operations, shapes and connections. Every instance retains its own parameters.';
+        } else if (group.kind === 'pattern') {
+            structure = 'Computation pattern matched by operations and connections. Dynamic shapes and opaque constants are preserved; instances are not asserted identical.';
         } else if (group.kind === 'module') {
             structure = 'Exported module scopes; instances can differ. Open a module or expand to inspect its exact operations.';
         }
         sidebar.addProperty('structure', structure);
         const select = sidebar.createElement('select', 'sidebar-item-selector sidebar-repeat-select');
-        select.setAttribute('aria-label', 'Representative layer');
+        const representative = `Representative ${group.unit || 'layer'}`;
+        select.setAttribute('aria-label', representative);
         group.blocks.forEach((block, index) => {
             const option = sidebar.createElement('option');
             option.value = String(index);
-            option.textContent = `Layer ${block.index}`;
+            option.textContent = `${group.unit || 'Layer'} ${block.index}`;
             select.appendChild(option);
         });
         select.value = String(state.selected.get(group.id) || 0);
@@ -1346,7 +1349,7 @@ view.View = class {
         });
         sidebar.element.appendChild(select);
         const expanded = state.expanded.has(group.id);
-        sidebar.addProperty('view', expanded ? 'All instances' : `Representative layer ${group.blocks[Number(select.value)].index}`)
+        sidebar.addProperty('view', expanded ? 'All instances' : `${representative} ${group.blocks[Number(select.value)].index}`)
             .action(expanded ? 'Fold stack' : 'Expand stack', 'Show or hide every instance in this stack', async () => {
                 try {
                     await this.toggleRepeatedBlock(group);
@@ -3887,6 +3890,14 @@ view.Node = class extends grapher.Node {
                 const item = preview.argument(name, content);
                 item.separator = ': ';
                 preview.add(item);
+            }
+        }
+        if (!options.attributes && node._repeatGroup?.attributes?.length) {
+            const summary = this.list();
+            for (const argument of node._repeatGroup.attributes) {
+                const item = summary.argument(argument.name, String(argument.value));
+                item.separator = ': ';
+                summary.add(item);
             }
         }
         let hiddenTensors = false;

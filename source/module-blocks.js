@@ -72,7 +72,7 @@ export class ModuleBlocks {
                 const boundary = this.subgraph(group.members, group.label, group.scope);
                 records.push({ summary: { name: `${group.scope || 'Graph operations'}#${group.anchor}`,
                     type: { ...detail, name: group.title, type: 'function' }, inputs: boundary.inputs, outputs: boundary.outputs,
-                    attributes: [{ name: 'operators', type: 'int64', value: group.members.length }],
+                    attributes: [{ name: 'operators', type: 'int64', value: group.members.length }, ...(group.attributes || [])],
                     _repeatHeader: group.blocks.length > 1, _repeatGroup: group } });
             }
             cursor = group.members.at(-1) + 1;

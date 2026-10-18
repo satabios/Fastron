@@ -4,7 +4,7 @@ import { structuralBlocks } from '../source/structural-blocks.js';
 import { test } from 'node:test';
 
 const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = '', compact = false, grouped = false,
-    normalization = 'LayerNormalization', gated = '', fused = '' } = {}) => {
+    normalization = 'LayerNormalization', gated = '', fused = '', unrolled = false } = {}) => {
     let sequence = 0;
     const value = (dims, initializer = false) => ({ name: `v${sequence++}`, type: { dataType: normalization === 'rms-cast' ? 'float16' : 'float32', shape: { dimensions: dims } },
         ...(initializer ? { initializer: { get values() {
@@ -13,6 +13,7 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
     const nodes = [];
     const activation = [1, 3, 8];
     const input = value(activation);
+    const graphInputs = [{ name: 'input', value: [input] }];
     let previous = input;
     const blocks = [];
     const add = (type, inputs, dims, attributes = []) => {
@@ -58,6 +59,64 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
         const keyValueHeads = Array.isArray(kvHeads) ? kvHeads[i] : kvHeads;
         const batches = grouped ? [1, keyValueHeads, heads / keyValueHeads] : [1, heads];
         const attention = () => {
+            if (unrolled) {
+                const split = (input, count) => {
+                    const first = add('Split', [input], [1, 1, 3, width], [{ name: 'axis', type: 'int64', value: -1 }]);
+                    const outputs = [first, ...Array.from({ length: count - 1 }, () => value([1, 1, 3, width]))];
+                    nodes.at(-1).outputs[0].value = outputs;
+                    return outputs;
+                };
+                const qs = split(add('Reshape', [project(normalized, 8, 8)], [1, 1, 3, 8]), heads);
+                const ks = split(add('Reshape', [project(normalized, 8, keyValueHeads * width)], [1, 1, 3, keyValueHeads * width]), keyValueHeads);
+                const vs = split(add('Reshape', [project(normalized, 8, keyValueHeads * width)], [1, 1, 3, keyValueHeads * width]), keyValueHeads);
+                const normalizeHead = (x) => {
+                    const dims = [1, 1, 3, width];
+                    const square = add('Pow', [x, value([], true)], dims);
+                    const mean = add('ReduceMean', [square], [1, 1, 3, 1], [{ name: 'axes', type: 'int64[]', value: [-1] }]);
+                    const epsilon = add('Add', [mean, value([], true)], [1, 1, 3, 1]);
+                    const root = add('Sqrt', [epsilon], [1, 1, 3, 1]);
+                    return add('Mul', [add('Div', [x, root], dims), value([width], true)], dims);
+                };
+                const results = [];
+                let softmax = -1;
+                let product = -1;
+                let tap = null;
+                for (let group = 0; group < keyValueHeads; group++) {
+                    let k = null;
+                    let v = null;
+                    for (let head = 0; head < heads / keyValueHeads; head++) {
+                        const q = normalizeHead(qs[group * heads / keyValueHeads + head]);
+                        if (head === 0) {
+                            const key = add('Transpose', [normalizeHead(ks[group])], [1, 1, width, 3], [{ name: 'perm', type: 'int64[]', value: [0, 1, 3, 2] }]);
+                            const shape = value([4], true);
+                            shape.type.dataType = 'int64';
+                            const indices = add('ConstantOfShape', [shape], [1, 1, width, 3], [{ name: 'value', type: 'graph',
+                                get value() {
+                                    throw new Error('Opaque constant payloads must remain unread.');
+                                } }]);
+                            indices.type.dataType = 'int64';
+                            const transposed = add('Transpose', [indices], [1, 1, 3, width], [{ name: 'perm', type: 'int64[]', value: [0, 1, 3, 2] }]);
+                            transposed.type.dataType = 'int64';
+                            const keyCache = value([1, 1, width, 9]);
+                            const valueCache = value([1, 1, 9, width]);
+                            graphInputs.push({ name: keyCache.name, value: [keyCache] }, { name: valueCache.name, value: [valueCache] });
+                            k = add('ScatterElements', [keyCache, indices, key], [1, 1, width, 9], [{ name: 'axis', type: 'int64', value: -1 }]);
+                            v = add('ScatterElements', [valueCache, transposed, vs[group]], [1, 1, 9, width], [{ name: 'axis', type: 'int64', value: 2 }]);
+                        }
+                        const score = add('MatMul', [q, k], [1, 1, 3, 9]);
+                        const sm = nodes.length;
+                        const probabilities = add('Softmax', [score], [1, 1, 3, 9], [{ name: 'axis', type: 'int64', value: -1 }]);
+                        const av = nodes.length;
+                        results.push(add('MatMul', [probabilities, v], [1, 1, 3, width]));
+                        if (softmax === -1) {
+                            softmax = sm;
+                            product = av;
+                            tap = probabilities;
+                        }
+                    }
+                }
+                return { attended: add('Concat', results, [1, 1, 3, 8], [{ name: 'axis', type: 'int64', value: -1 }]), softmax, product, tap };
+            }
             if (fused === 'packed') {
                 const result = add('Attention', [normalized, value([8, 24], true)], activation, [{ name: 'num_heads', type: 'int64', value: heads }]);
                 nodes.at(-1).type = { name: 'Attention', domain: 'com.microsoft', version: 1 };
@@ -124,7 +183,7 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
         previous = add('Add', [residual, output], activation);
         blocks.push({ start, end, softmax, product, attentionAdd, secondNorm, tap });
     }
-    return { nodes, inputs: [{ name: 'input', value: [input] }], outputs: [{ name: 'output', value: [previous] }], blocks };
+    return { nodes, inputs: graphInputs, outputs: [{ name: 'output', value: [previous] }], blocks };
 };
 
 test('transformer detection uses operations, shapes and residual wiring with arbitrary names and no rich nodes or payload reads', async () => {
@@ -226,6 +285,68 @@ for (const normalization of ['RMSNormalization', 'SimplifiedLayerNormalization',
 test('a Pow exponent that would require a payload read cannot establish RMSNorm', async () => {
     assert.equal(await structuralBlocks(fixture(1, false, { normalization: 'rms-pow' })), null);
 });
+
+const unrolledOptions = { normalization: 'rms-pow', gated: 'SwiGLU', unrolled: true, heads: 4, kvHeads: 2 };
+
+test('a verified attention half does not upgrade an unresolved MLP normalizer to a verified stack', async () => {
+    const graph = fixture(1, false, { normalization: 'rms-pow' });
+    const end = graph.nodes.findIndex((node) => node.type.name === 'MatMul') - 1;
+    const norm = graph.nodes[end];
+    graph.nodes.splice(0, end + 1, { name: 'norm', type: { name: 'LayerNormalization', version: 17 },
+        attributes: [{ name: 'axis', type: 'int64', value: -1 }],
+        inputs: [graph.inputs[0], norm.inputs[1]], outputs: norm.outputs });
+    const analysis = await structuralBlocks(graph);
+    assert.equal(analysis?.groups[0].kind, 'pattern');
+});
+
+test('unrolled decoder patterns expose normalization, GQA and gated MLP without reading constants', async () => {
+    const graph = fixture(3, false, unrolledOptions);
+    let created = 0;
+    graph.nodes = new NodeCatalog(graph.nodes, () => {
+        created++;
+    }, (node) => node).nodes;
+    const analysis = await structuralBlocks(graph);
+    assert.deepEqual(analysis?.groups.map((group) => [group.kind, group.blocks.length]), [['pattern', 3]]);
+    const opened = await structuralBlocks([...nodeDescriptions(analysis.project())][0].type);
+    const parts = [...nodeDescriptions(opened.project())];
+    assert.deepEqual(parts.map((node) => node.type.name), ['Normalization', 'Attention (GQA)', 'Add', 'Normalization', 'MLP', 'Add']);
+    assert.deepEqual(parts[1].attributes.filter((attr) => attr.name !== 'operators').map((attr) => [attr.name, attr.value]), [['query heads', 4], ['KV heads', 2]]);
+    const attention = await structuralBlocks(parts[1].type);
+    assert.deepEqual(attention.groups.map((group) => group.blocks.length), [2]);
+    const kv = [...nodeDescriptions(attention.project())].find((node) => node._repeatHeader);
+    assert.equal([...nodeDescriptions(kv.type)].filter((node) => node.type.name === 'Softmax').length, 2);
+    assert.equal([...nodeDescriptions(kv.type)].filter((node) => node.type.name === 'ScatterElements').length, 2);
+    const expanded = attention.project(new Map(), new Set([0]));
+    assert.deepEqual([...nodeDescriptions(expanded)].map((node) => node.name), [...nodeDescriptions(parts[1].type)].map((node) => node.name));
+    assert.equal(created, 0);
+});
+
+for (const [name, mutate] of [
+    ['cache updates use the wrong projection', (graph) => {
+        const caches = graph.nodes.filter((node) => node.type.name === 'ScatterElements');
+        caches[0].inputs[2] = caches[1].inputs[2];
+    }],
+    ['a head is omitted from the output merge', (graph) => {
+        const concat = graph.nodes.find((node) => node.type.name === 'Concat');
+        concat.inputs[1] = concat.inputs[0];
+    }],
+    ['two heads use the same softmax result', (graph) => {
+        const products = graph.nodes.filter((node) => node.type.name === 'MatMul' && !node.inputs[1].value[0].initializer);
+        products[3].inputs[0] = products[1].inputs[0];
+    }],
+    ['cache update along the wrong axis', (graph) => {
+        graph.nodes.find((node) => node.type.name === 'ScatterElements').attributes[0].value = 0;
+    }],
+    ['missing head shape metadata', (graph) => {
+        graph.nodes.find((node) => node.type.name === 'Softmax').outputs[0].value[0].type.shape.dimensions = null;
+    }]
+]) {
+    test(`unrolled decoder rejects inconsistent wiring: ${name}`, async () => {
+        const graph = fixture(1, false, unrolledOptions);
+        mutate(graph);
+        assert.equal(await structuralBlocks(graph), null);
+    });
+}
 
 for (const gated of ['SwiGLU', 'GEGLU', 'GLU', 'Swish']) {
     test(`gated MLP pattern: ${gated}`, async () => {

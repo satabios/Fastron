@@ -43,6 +43,11 @@ try {
         assert.deepEqual(parts.map((node) => node.type.name), ['LayerNormalization', 'Attention', 'Add', 'LayerNormalization', 'MLP', 'Add']);
         assert.equal(parts[1].type.nodes.length, 37);
         assert.equal(parts[4].type.nodes.length, 5);
+        // The printed packed 1024→3072 QKV projection is exported as three 1024→1024 Conv projections.
+        const weights = (part) => Array.from(nodeDescriptions(part.type)).filter((node) => node.type.name === 'Conv')
+            .map((node) => node.inputs.flatMap((arg) => arg.value)[1].type.shape.dimensions);
+        assert.deepEqual(weights(parts[1]), Array(4).fill([1024, 1024, 1, 1]));
+        assert.deepEqual(weights(parts[4]), [[4096, 1024, 1, 1], [1024, 4096, 1, 1]]);
         checkConnections(display);
     }
     const expanded = analysis.project(new Map(), new Set(analysis.groups.map((group) => group.id)));
