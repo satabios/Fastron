@@ -15,8 +15,16 @@ const anatomy = (nodes) => {
         const attention = ops.some((op) => /^(Softmax|.*Attention)$/i.test(op));
         const mlp = !attention && members.filter((node) => /^(MatMul|Gemm|FullyConnected)$/i.test(operator(node))).length >= 2 &&
             ops.some((op) => /^(Silu|Swish|Gelu|Relu|Sigmoid|ElementWiseNeuron)$/i.test(op));
-        zones.push({ title: attention ? 'Attention' : mlp ? 'Feed-forward / MLP' : 'Operations',
-            kind: attention ? 'attention' : mlp ? 'mlp' : 'operations', ops, residual, count: members.length });
+        let title = 'Operations';
+        let kind = 'operations';
+        if (attention) {
+            title = 'Attention';
+            kind = 'attention';
+        } else if (mlp) {
+            title = 'Feed-forward / MLP';
+            kind = 'mlp';
+        }
+        zones.push({ title, kind, ops, residual, count: members.length });
         start = end + 1;
     };
     nodes.forEach((node, i) => {
@@ -25,9 +33,9 @@ const anatomy = (nodes) => {
             const bypass = inputs.find((value) => (producers.get(value.name) ?? -1) < start && consumers.get(value.name) >= start);
             const branch = inputs.find((value) => producers.get(value.name) >= start && producers.get(value.name) < i);
             // Verify a directed path from the bypass tensor through the branch.
-            const pending = branch ? [branch.name] : [];
+            const pending = bypass && branch ? [branch.name] : [];
             const visited = new Set();
-            while (bypass && pending.length) {
+            while (pending.length) {
                 const name = pending.pop();
                 if (name === bypass.name) {
                     append(i, true);
@@ -111,7 +119,8 @@ export const renderStackSchematic = (document, schematic, inspect) => {
             element('rect', { x: 72, y: top, width: 208, height: 56, rx: 7, class: `stack-schematic-zone stack-schematic-${zone.kind}` });
             element('text', { x: 82, y: top + 20, class: 'stack-schematic-heading' }, more ? `${region.zones.length - 5} more zones` : zone.title);
             const summary = zone.ops.join(' · ');
-            const label = element('text', { x: 82, y: top + 39 }, more ? 'Inspect for full anatomy' : summary.length > 27 ? `${summary.slice(0, 26)}…` : summary);
+            const preview = summary.length > 27 ? `${summary.slice(0, 26)}…` : summary;
+            const label = element('text', { x: 82, y: top + 39 }, more ? 'Inspect for full anatomy' : preview);
             element('title', {}, summary, label);
             if (zone.residual && !more) {
                 element('path', { d: `M44 ${top} V${top + 64} M44 ${top + 8} H72 M176 ${top + 56} V${top + 64} H44`, class: 'stack-schematic-wire' });

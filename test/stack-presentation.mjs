@@ -2,9 +2,9 @@ import * as assert from 'node:assert/strict';
 import { Graph, View } from '../source/view.js';
 import { NodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
 import { indexRange, stackPresentation } from '../source/stack-presentation.js';
+import { renderStackSchematic, stackSchematic } from '../source/stack-schematic.js';
 import { Host } from './mock.js';
 import { patternBlocks } from '../source/pattern-blocks.js';
-import { renderStackSchematic, stackSchematic } from '../source/stack-schematic.js';
 import { test } from 'node:test';
 
 const fixture = (renamed = false, gap = false) => {
@@ -42,7 +42,9 @@ const fixture = (renamed = false, gap = false) => {
 test('block schematics infer anatomy from connectivity without reading weights', () => {
     const type = { dataType: 'float16', shape: { dimensions: [1, 8, 896] } };
     const arg = (name) => ({ name, value: [{ name, type }] });
-    const weight = { name: 'w', type, initializer: { get values() { throw new Error('Weight read'); } } };
+    const weight = { name: 'w', type, initializer: { get values() {
+        throw new Error('Weight read');
+    } } };
     const nodes = [];
     const add = (op, inputs, output) => nodes.push({ type: { name: op }, inputs: inputs.map(arg).concat([{ name: 'weight', value: [weight] }]), outputs: [arg(output)] });
     add('RmsNorm', ['input'], 'norm');
@@ -132,12 +134,16 @@ test('compound cards reuse nested node rendering and inspect the selected real i
     assert.ok(card.class.includes('node-compound'));
     let clicked = null;
     const showRepeatedBlock = view.showRepeatedBlock;
-    view.showRepeatedBlock = (group) => { clicked = group; };
+    view.showRepeatedBlock = (group) => {
+        clicked = group;
+    };
     card._blocks[0]._entries[0].emit('click');
     assert.equal(clicked, analysis.groups[0], 'Clicking a stack title opens its anatomy.');
     view.showRepeatedBlock = showRepeatedBlock;
     let sidebar = null;
-    view._sidebar.open = (content) => { sidebar = content; };
+    view._sidebar.open = (content) => {
+        sidebar = content;
+    };
     view.showRepeatedBlock(analysis.groups[0]);
     assert.equal(sidebar.element.getElementsByClassName('stack-schematic').length, 1);
     assert.equal(card._stackDepth, 0, 'Outer stages use frames, not leaf decks.');

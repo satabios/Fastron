@@ -2,8 +2,8 @@
 import * as base from './base.js';
 import * as grapher from './grapher.js';
 import { nodeCatalog, nodeDescriptions, repeatedBlocks } from './repeated-blocks.js';
-import { indexRange } from './stack-presentation.js';
 import { renderStackSchematic, stackSchematic } from './stack-schematic.js';
+import { indexRange } from './stack-presentation.js';
 
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
