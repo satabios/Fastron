@@ -1734,15 +1734,21 @@ onnx.Context.Graph = class {
             const domain = node.domain || '';
             const schema = this.type(domain, node.op_type, node.overload || '');
             const attributes = () => node.attribute.map((attr) => {
-                if (attr.g || attr.graphs?.length || attr.t || attr.tensors?.length || attr.sparse_tensor || attr.sparse_tensors?.length) {
+                if (attr.g || attr.graphs?.length) {
                     return { name: attr.name, type: 'graph' };
+                }
+                if (attr.t || attr.tensors?.length || attr.sparse_tensor || attr.sparse_tensors?.length) {
+                    const tensors = [attr.t, attr.sparse_tensor, ...(attr.tensors || []), ...(attr.sparse_tensors || [])].filter(Boolean);
+                    return { name: attr.name, type: attr.tensors?.length || attr.sparse_tensors?.length ? 'tensor[]' : 'tensor',
+                        tensorTypes: tensors.map((tensor) => this.createTensorType(tensor.values?.data_type || tensor.data_type,
+                            tensor.dims, tensor.values ? 'sparse' : null)) };
                 }
                 return this.createAttribute(attr, this.attribute(domain, node.op_type, node.overload || '', attr.name));
             });
-            const args = (list) => list.map((value, index) => ({ name: String(index), value: [{
+            const args = (list) => list.map((value, index) => ({ name: String(index), value: value.name ? [{
                 name: value.name, initializer: value.initializer, type: value.initializer?.type || value.type,
                 quantization: value.annotation ? { type: 'annotation', value: value.annotation } : null
-            }] }));
+            }] : [] }));
             return {
                 name: node.name || '', type: { name: node.op_type, domain, identifier: node.overload || '', version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
                 inputs: args(node.input), outputs: args(node.output),

@@ -90,7 +90,7 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
                             const key = add('Transpose', [normalizeHead(ks[group])], [1, 1, width, 3], [{ name: 'perm', type: 'int64[]', value: [0, 1, 3, 2] }]);
                             const shape = value([4], true);
                             shape.type.dataType = 'int64';
-                            const indices = add('ConstantOfShape', [shape], [1, 1, width, 3], [{ name: 'value', type: 'graph',
+                            const indices = add('ConstantOfShape', [shape], [1, 1, width, 3], [{ name: 'value', type: 'tensor',
                                 get value() {
                                     throw new Error('Opaque constant payloads must remain unread.');
                                 } }]);

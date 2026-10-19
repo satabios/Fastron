@@ -66,7 +66,7 @@ test('opening a model skips repetition analysis until folding is requested and r
     assert.equal(button.classList.contains('active'), true);
     assert.equal(button.getAttribute('aria-pressed'), 'true');
     assert.equal(button.title, 'Expand Repeated Blocks');
-    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
+    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 1);
     const scanned = scans;
     assert.ok(scanned > 0);
     view.toggle('names');
@@ -77,7 +77,7 @@ test('opening a model skips repetition analysis until folding is requested and r
     assert.equal(button.title, 'Fold Repeated Blocks');
     assert.equal(await view._repeatedPresentation(graph, () => true), graph);
     view.toggle('foldRepeatedBlocks');
-    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 2);
+    assert.equal((await view._repeatedPresentation(graph, () => true)).nodes.length, 1);
     assert.equal(scans, scanned, 'Re-enabling folding must reuse verified metadata.');
     view.model = model;
     assert.equal(view.options.foldRepeatedBlocks, true, 'Redrawing the current model preserves the user choice.');

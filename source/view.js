@@ -1216,14 +1216,11 @@ view.View = class {
         this._repeatStates = this._repeatStates || new WeakMap();
         let state = this._repeatStates.get(graph);
         if (!state) {
-            const { structuralBlocks } = await import('./structural-blocks.js');
-            let analysis = current() ? await structuralBlocks(graph, current) : null;
-            if (!analysis && current()) {
+            const { patternBlocks } = await import('./pattern-blocks.js');
+            let analysis = current() ? await patternBlocks(graph, current) : null;
+            // Weight-only formats have module inventories rather than execution connections.
+            if (!analysis && !graph.inputs?.length && !graph.outputs?.length && current()) {
                 analysis = await repeatedBlocks(graph, current);
-            }
-            if (!analysis && current()) {
-                const { moduleBlocks } = await import('./module-blocks.js');
-                analysis = current() ? await moduleBlocks(graph, current) : null;
             }
             if (!analysis || !current()) {
                 return graph;
@@ -3862,7 +3859,7 @@ view.Node = class extends grapher.Node {
             const range = consecutive ? `${indices[0]}–${indices.at(-1)}` : `${indices.slice(0, 6).join(', ')}${indices.length > 6 ? ', …' : ''}`;
             const preview = this.list();
             preview.on('click', () => this.context.view.showRepeatedBlock(group));
-            const rows = [['Blocks', range], ['Preview', `${block.index} · ${block.indices.length} ops`]];
+            const rows = [[group.unit === 'instance' ? 'Instances' : 'Blocks', range], ['Preview', `${block.index} · ${block.indices.length} ops`]];
             if (state) {
                 const graph = state.analysis.graph;
                 const catalog = nodeCatalog(graph.nodes);

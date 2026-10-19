@@ -5,8 +5,10 @@ import * as mock from './mock.js';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as view from '../source/view.js';
+import { nodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
 import { openSource } from '../source/model-source.mjs';
 import { pathToFileURL } from 'node:url';
+import { patternBlocks } from '../source/pattern-blocks.js';
 import { test } from 'node:test';
 
 const varint = (value) => {
@@ -30,6 +32,35 @@ const model = (tensor) => Buffer.concat([
 ]);
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-source-'));
 process.on('exit', () => fs.rmSync(folder, { recursive: true, force: true }));
+
+test('ONNX descriptors distinguish tensor headers from subgraphs and retain empty optional input slots', async () => {
+    const type = field(1, Buffer.concat([Buffer.from([8, 1]), field(2, field(1, Buffer.from([8, 8])))]));
+    const info = (name) => Buffer.concat([field(1, name), field(2, type)]);
+    const tensor = Buffer.concat([field(1, varint(8)), Buffer.from([16, 1]), field(9, Buffer.alloc(32))]);
+    const attribute = field(5, Buffer.concat([field(1, 'configuration'), field(5, tensor), varint(160), varint(4)]));
+    const node = (input, output) => field(1, Buffer.concat([field(1, input), field(1, ''), field(2, output), field(4, 'Custom'), attribute]));
+    const bytes = Buffer.concat([Buffer.from([8, 8]), field(8, Buffer.from([16, 13])), field(7, Buffer.concat([
+        node('input', 'hidden'), node('hidden', 'output'), field(11, info('input')), field(12, info('output')), field(13, info('hidden'))
+    ]))]);
+    const file = path.join(folder, 'optional-attribute.onnx');
+    fs.writeFileSync(file, bytes);
+    const host = new mock.Host({ serial: true });
+    const context = await openSource(host, { path: file });
+    try {
+        const graph = (await new view.ModelFactoryService(host).open(context)).modules[0];
+        const nodes = [...nodeDescriptions(graph)];
+        assert.deepEqual(nodes.map((n) => n.inputs.map((arg) => arg.value.length)), [[1, 0], [1, 0]]);
+        assert.equal(nodes[0].attributes[0].type, 'tensor');
+        assert.deepEqual(nodes[0].attributes[0].tensorTypes[0].shape.dimensions, [8]);
+        assert.equal(Object.hasOwn(nodes[0].attributes[0], 'value'), false);
+        const before = await context.source.request('stats');
+        assert.deepEqual((await patternBlocks(graph)).groups.map((g) => g.blocks.length), [2]);
+        assert.equal(nodeCatalog(graph.nodes).cache.size, 0);
+        assert.equal((await context.source.request('stats')).readBytes, before.readBytes);
+    } finally {
+        context.source.dispose();
+    }
+});
 
 test('a failed WASM load can retry without restarting the source worker', async () => {
     const directory = fs.mkdtempSync(path.join(folder, 'index-retry-'));

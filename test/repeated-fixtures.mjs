@@ -41,8 +41,11 @@ export const writeRepeatedModel = (folder, format, count = 24, tensorBytes = 4 *
             nodes.push(field(1, Buffer.concat([field(1, `hidden_${i}`), field(2, `output_${i}`), field(3, `encoder.layers.${i}.relu`), field(4, 'Relu')])));
             tensors.push({ name: `encoder.layers.${i}.weight`, bytes: tensorBytes, marker: i * 10 });
         }
-        const info = (name) => field(1, name);
-        const ports = Buffer.concat([field(11, info('input')), field(12, info(`output_${count - 1}`))]);
+        const type = field(1, Buffer.concat([Buffer.from([8, 1]), field(2, field(1, Buffer.concat([Buffer.from([8]), varint(tensorBytes / 4)])))]));
+        const info = (name) => Buffer.concat([field(1, name), field(2, type)]);
+        const ports = Buffer.concat([field(11, info('input')), field(12, info(`output_${count - 1}`)),
+            ...Array.from({ length: count }, (_, i) => field(13, info(`hidden_${i}`))),
+            ...Array.from({ length: count - 1 }, (_, i) => field(13, info(`output_${i}`)))]);
         for (const tensor of tensors) {
             tensor.header = Buffer.concat([field(1, varint(tensorBytes / 4)), Buffer.from([16, 1]), field(8, tensor.name), prefix(9, tensorBytes)]);
         }

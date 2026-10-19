@@ -23,6 +23,9 @@ if (process.argv[3]) {
 if (process.argv[4]) {
     fixtures.set('/qwen-vision.onnx', path.resolve(process.argv[4]));
 }
+if (process.argv[5]) {
+    fixtures.set('/resnet.onnx', path.resolve(process.argv[5]));
+}
 let transferred = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
@@ -80,6 +83,7 @@ try {
         page.on('pageerror', (error) => errors.push(error.message));
         const before = transferred;
         await page.goto(`${origin}/?url=/repeated.${format}&identifier=repeated.${format}`);
+        const foldedNodes = format === 'onnx' ? 1 : 2;
         const nodes = page.locator('#canvas .graph-node');
         try {
             await expect(nodes).toHaveCount(48, { timeout: 30000 });
@@ -92,7 +96,7 @@ try {
             await expect(stacking).toHaveAttribute('aria-pressed', 'false');
             await stacking.focus();
             await stacking.press('Enter');
-            await expect(nodes).toHaveCount(2, { timeout: 30000 });
+            await expect(nodes).toHaveCount(foldedNodes, { timeout: 30000 });
             await expect(stacking).toHaveAttribute('aria-pressed', 'true');
             await expect(stacking).toHaveClass(/active/);
             await expect(stacking).toHaveAttribute('title', 'Expand Repeated Blocks');
@@ -103,9 +107,9 @@ try {
             assert.ok(transferred - before < 131072, `Unexpected model transfer: ${transferred - before}`);
             const metadataBytes = transferred;
             await page.locator('.node-item-repeat').click();
-            await page.getByLabel('Representative layer').selectOption('17');
-            await expect(page.getByLabel('Representative layer')).toHaveValue('17');
-            await expect(nodes).toHaveCount(2);
+            await page.getByLabel(format === 'onnx' ? 'Representative instance' : 'Representative layer').selectOption('17');
+            await expect(page.getByLabel(format === 'onnx' ? 'Representative instance' : 'Representative layer')).toHaveValue('17');
+            await expect(nodes).toHaveCount(foldedNodes);
             await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).click();
             await expect(nodes).toHaveCount(48);
             const fold = page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true });
@@ -113,7 +117,7 @@ try {
             await expect(fold).toHaveAttribute('aria-expanded', 'true');
             await fold.focus();
             await fold.press('Enter');
-            await expect(nodes).toHaveCount(2);
+            await expect(nodes).toHaveCount(foldedNodes);
             const expand = page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true });
             await expect(expand).toBeVisible();
             await expect(expand).toHaveAttribute('aria-expanded', 'false');
@@ -131,7 +135,7 @@ try {
             await page.locator('#weights-toggle-button').click();
             await expect(page.locator('#weights-toggle-button')).toHaveClass(/weights-enabled/);
             await expect(page.locator('body')).toHaveClass(/default/);
-            await expect(nodes).toHaveCount(2);
+            await expect(nodes).toHaveCount(format === 'onnx' ? 48 : foldedNodes);
             assert.equal(transferred, metadataBytes, 'Enabling weights must not bulk-load the model.');
             await page.locator('#menu-button').click();
             await page.locator('button:has-text("Find...")').first().click();
@@ -141,6 +145,12 @@ try {
             await entry.locator('.sidebar-item-value-button').first().click();
             await expect(entry.locator('pre').last()).toContainText('70');
             assert.equal(transferred - previewBytes, 4000);
+            if (format === 'onnx') {
+                await stacking.click();
+                await expect(stacking).toHaveAttribute('aria-pressed', 'false');
+                await stacking.click();
+                await expect(nodes).toHaveCount(foldedNodes);
+            }
             await page.locator('#menu-button').click();
             const download = page.waitForEvent('download');
             await page.locator('button:has-text("Export as SVG")').first().click();
@@ -148,14 +158,14 @@ try {
             const svg = await fs.readFile(await exported.path(), 'utf-8');
             assert.match(svg, /×24/);
             const exportedNodes = (svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node'));
-            assert.equal(exportedNodes.length, 2);
+            assert.equal(exportedNodes.length, foldedNodes);
             await page.locator('#menu-button').click();
             await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
             await expect(nodes).toHaveCount(48);
             await expect(stacking).toHaveAttribute('aria-pressed', 'false');
             await expect(stacking).not.toHaveClass(/active/);
             await stacking.click();
-            await expect(nodes).toHaveCount(2);
+            await expect(nodes).toHaveCount(foldedNodes);
             await stacking.click();
             await expect(nodes).toHaveCount(48);
             await expect(page.locator('body')).toHaveClass(/default/);
@@ -243,146 +253,112 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
     process.stdout.write('512-node expanded stack: viewport eviction, overview zoom/keyboard access, distant real weights, full SVG export and folding passed.\n');
-    if (fixtures.has('/efficientvit.onnx')) {
-        const context = await browser.newContext();
-        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
-        const page = await context.newPage();
-        page.on('pageerror', (error) => errors.push(error.message));
-        const before = transferred;
-        await page.goto(`${origin}/?url=/efficientvit.onnx&identifier=efficientvit_b3.onnx`);
-        await expect(page.locator('body')).toHaveClass(/default/);
-        await expect(page.locator('#canvas .graph-node').first()).toBeAttached();
-        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        const initialBytes = transferred;
-        await page.locator('#menu-button').click();
-        await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(206);
-        assert.equal(transferred, initialBytes, 'Enabling real-model folding cannot fetch weights.');
-        await expect(page.locator('.node-item-repeat text')).toHaveText(['×3', '×5', '×5', '×8']);
-        assert.ok(transferred - before < 1048576, 'Opening the real model must remain metadata-only.');
-        const metadataBytes = transferred;
-        await page.locator('#menu-button').click();
-        const download = page.waitForEvent('download');
-        await page.locator('button:has-text("Export as SVG")').first().click();
-        const svg = await fs.readFile(await (await download).path(), 'utf-8');
-        assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 206);
-        for (const label of ['×3', '×5', '×8']) {
-            assert.ok(svg.includes(label));
+    for (const [file, expected, repeats] of [
+        ['/efficientvit.onnx', 39, [3, 5, 5, 8]],
+        ['/qwen.onnx', 521, [3, 24]],
+        ['/qwen-vision.onnx', 25, [3, 6]],
+        ['/resnet.onnx', 14, [2, 3, 5, 2]]
+    ]) {
+        if (!fixtures.has(file)) {
+            continue;
         }
-        await page.locator('#menu-button').click();
-        await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
-        await expect(page.locator('#canvas .graph-node')).not.toHaveCount(206);
-        await expect(page.locator('body')).toHaveClass(/default/);
-        await page.locator('#menu-button').click();
-        const expandedDownload = page.waitForEvent('download');
-        await page.locator('button:has-text("Export as SVG")').first().click();
-        const expandedSVG = await fs.readFile(await (await expandedDownload).path(), 'utf-8');
-        assert.equal((expandedSVG.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, 682);
-        await page.locator('#menu-button').click();
-        await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(206);
-        assert.equal(transferred, metadataBytes, 'Exporting and expanding the real model cannot fetch weights.');
-        assert.deepEqual(errors, []);
-        await context.close();
-        process.stdout.write('EfficientViT B3: four real stacks, 682 → 206 nodes, metadata-only folding and SVG export passed.\n');
-    }
-    if (fixtures.has('/qwen.onnx')) {
+        // eslint-disable-next-line no-await-in-loop
         const context = await browser.newContext();
+        // eslint-disable-next-line no-await-in-loop
         await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+        // eslint-disable-next-line no-await-in-loop
         const page = await context.newPage();
         page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto(`${origin}/?url=/qwen.onnx&identifier=qwen.onnx`);
+        // eslint-disable-next-line no-await-in-loop
+        await page.goto(`${origin}/?url=${file}&identifier=${file.slice(1)}`);
+        // eslint-disable-next-line no-await-in-loop
         await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
-        await expect(page.locator('#canvas .graph-node').first()).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Graph Stacking', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        const stacking = page.getByRole('button', { name: 'Graph Stacking', exact: true });
+        // eslint-disable-next-line no-await-in-loop
+        await expect(stacking).toHaveAttribute('aria-pressed', 'false');
         const metadataBytes = transferred;
-        await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
+        // eslint-disable-next-line no-await-in-loop
         const cdp = await context.newCDPSession(page);
-        const displayCount = async () => (await cdp.send('Runtime.evaluate', {
-            expression: 'window.__view__?._target?._displayGraph?.nodes.length', returnByValue: true
-        })).result.value;
-        await expect.poll(displayCount, { timeout: 30000 }).toBe(608);
-        await cdp.send('Runtime.evaluate', { expression: `(() => {
+        const evaluate = async (expression) => (await cdp.send('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+        const count = () => evaluate('window.__view__?._target?._displayGraph?.nodes.length');
+        // eslint-disable-next-line no-await-in-loop
+        const original = await count();
+        // eslint-disable-next-line no-await-in-loop
+        await stacking.click();
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count, { timeout: 30000 }).toBe(expected);
+        // eslint-disable-next-line no-await-in-loop
+        const groups = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.map(g => ({ id: g.id, n: g.blocks.length, operators: g.members.length, detail: g.blocks[0].indices.length }))');
+        assert.deepEqual(groups.filter((g) => g.n > 1).map((g) => g.n), repeats);
+        const largest = groups.reduce((a, b) => a.n > b.n ? a : b);
+        // eslint-disable-next-line no-await-in-loop
+        await evaluate(`(() => {
             const view = window.__view__;
             for (const { label: node } of view._target.nodes.values()) {
-                if (node._overviewType === '×25 Decoder blocks') {
+                if (node._overviewType === '×${largest.n} Repeated pattern') {
                     view._target.scrollToValue(node.value, 'instant');
                     return;
                 }
             }
-        })()` });
-        const stack = page.locator('.node-item-repeat').filter({ hasText: '×25' });
-        await expect(stack).toBeVisible();
-        await stack.click();
-        await expect(page.getByText('Computation pattern matched by operations and connections.', { exact: false })).toBeVisible();
-        await page.getByLabel('Representative layer').selectOption('7');
-        await expect.poll(displayCount, { timeout: 30000 }).toBe(608);
-        await expect(page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-repeat') })).toContainText('10 · 673 ops');
-        await page.getByText('Open module', { exact: true }).click();
-        await expect.poll(displayCount).toBe(6);
-        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-text-decoder.png') });
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^Attention \(GQA\)$/ })).toBeVisible();
-        await expect(page.locator('#canvas .node-item-type text').filter({ hasText: /^MLP$/ })).toBeVisible();
-        const attention = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-type text').filter({ hasText: /^Attention \(GQA\)$/ }) });
-        await expect(attention).toContainText('query heads: 16');
-        await expect(attention).toContainText('KV heads: 8');
-        await attention.getByRole('button', { name: 'ƒ', exact: true }).click();
-        await expect.poll(displayCount).toBe(15);
-        await expect(page.locator('.node-item-repeat text')).toHaveText(['×8']);
-        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-text-attention.png') });
-        await page.locator('.node-item-repeat').click();
-        await page.getByLabel('Representative KV group').selectOption('7');
-        await expect.poll(displayCount).toBe(15);
-        await page.getByText('Open module', { exact: true }).click();
-        await expect.poll(displayCount).toBe(79);
-        assert.equal(transferred, metadataBytes, 'Module folding, selection and navigation must not fetch weights.');
-        assert.deepEqual(errors, []);
-        await context.close();
-        process.stdout.write('Qwen: 28 decoder patterns, 608 displayed nodes, 15-node attention with eight KV groups, per-instance navigation and zero weight reads passed.\n');
-    }
-    if (fixtures.has('/qwen-vision.onnx')) {
-        const context = await browser.newContext();
-        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
-        const page = await context.newPage();
-        page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto(`${origin}/?url=/qwen-vision.onnx&identifier=qwen-vision.onnx`);
-        await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
-        const metadataBytes = transferred;
-        await page.getByRole('button', { name: 'Graph Stacking', exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(70);
-        await expect(page.locator('.node-item-repeat text')).toHaveText(['×6', '×6', '×6', '×6']);
-        await expect(page.locator('#canvas .node-stack-layer')).toHaveCount(8);
-        const cards = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-repeat') });
-        for (const [index, range] of ['0–5', '6–11', '12–17', '18–23'].entries()) {
-            // eslint-disable-next-line no-await-in-loop
-            await expect(cards.nth(index)).toContainText(range);
-        }
-        await expect(cards.first()).toContainText('Attention · MLP');
-        await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-vision-stacks.png') });
-        await expect(page.locator('[id="node-name-/visual/pos_embed/Gather"] .node-item-type text')).toHaveText('Gather');
-        await expect(page.locator('[id="node-name-/visual/patch_embed/Conv"] .node-item-type text')).toHaveText('Conv');
-        await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).first().click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(345);
-        await expect(page.locator('#canvas .node-stack-layer')).toHaveCount(6);
-        await expect(page.locator('.node-item-repeat text')).toHaveText(['×6', '×6', '×6', '×6']);
-        await expect(page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true })).toHaveCount(3);
+        })()`);
+        const badge = page.locator('.node-item-repeat').filter({ hasText: `×${largest.n}` });
+        // eslint-disable-next-line no-await-in-loop
+        await badge.click();
+        const select = page.getByLabel('Representative instance');
+        // eslint-disable-next-line no-await-in-loop
+        await select.selectOption(String(largest.n - 1));
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBe(expected);
+        // eslint-disable-next-line no-await-in-loop
+        await expect(page.locator('body')).toHaveClass(/default/);
+        // eslint-disable-next-line no-await-in-loop
+        await expect(badge).toBeVisible();
+        // eslint-disable-next-line no-await-in-loop
+        await page.screenshot({ path: path.join(os.tmpdir(), `fastron-generic-${file.slice(1)}.png`) });
+        const card = page.locator('#canvas .graph-node').filter({ has: badge });
+        // eslint-disable-next-line no-await-in-loop
+        await card.getByRole('button', { name: 'Expand stack', exact: true }).click();
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBe(expected + largest.operators - 1);
+        // eslint-disable-next-line no-await-in-loop
         await page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(70);
-        await page.locator('.node-item-repeat').first().click();
-        await expect(page.getByText('Transformer pattern matched by operations, shapes and connections.', { exact: false })).toBeVisible();
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBe(expected);
+        if (file === '/efficientvit.onnx') {
+            // eslint-disable-next-line no-await-in-loop
+            await page.locator('#menu-button').click();
+            const download = page.waitForEvent('download');
+            // eslint-disable-next-line no-await-in-loop
+            await page.locator('button:has-text("Export as SVG")').first().click();
+            // eslint-disable-next-line no-await-in-loop
+            const svg = await fs.readFile(await (await download).path(), 'utf-8');
+            assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, expected);
+            // eslint-disable-next-line no-await-in-loop
+            await stacking.click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(original);
+            // eslint-disable-next-line no-await-in-loop
+            await stacking.click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await badge.click();
+        // eslint-disable-next-line no-await-in-loop
         await page.getByText('Open module', { exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(6);
-        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        const attention = page.locator('#canvas .graph-node').filter({ has: page.locator('.node-item-type text').filter({ hasText: /^Attention$/ }) });
-        await attention.getByRole('button', { name: 'ƒ', exact: true }).click();
-        await expect(page.locator('#canvas .graph-node')).toHaveCount(37);
-        await expect(page.locator('.node-item-repeat')).toHaveCount(0);
-        assert.equal(transferred, metadataBytes, 'Folding vision blocks must not fetch weights.');
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(() => evaluate('Boolean(window.__view__.activeTarget?._patternRegion && window.__view__._target?._renderTarget === window.__view__.activeTarget)')).toBe(true);
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBeGreaterThan(0);
+        // eslint-disable-next-line no-await-in-loop
+        assert.ok(await count() <= largest.detail);
+        assert.equal(transferred, metadataBytes, 'Generic matching, selection, expansion and navigation cannot fetch weights.');
         assert.deepEqual(errors, []);
+        // eslint-disable-next-line no-await-in-loop
         await context.close();
-        process.stdout.write('Qwen vision: four ×6 stacks, standalone embedding operators preserved and zero weight reads passed.\n');
+        process.stdout.write(`${file}: generic topology folding ${original} → ${expected}, per-instance navigation and zero weight reads passed.\n`);
     }
+
 } finally {
     await browser?.close();
     await new Promise((resolve) => {
