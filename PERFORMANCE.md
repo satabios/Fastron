@@ -156,6 +156,90 @@ The supplied five-pass proposal is a design reference, not a replacement correct
 
 The supplied Python prototype also leaves serial-fold edges pointing at removed nodes and deduplicates distinct tensor edges. It is not executed or shipped. No 24-layer equivalence claim is inferred for the QNN export while its quantization metadata differs.
 
+## Local machine benchmarks — 2026-10-19
+
+Measured on an AMD Ryzen 9 9950X3D (16 cores / 32 threads), approximately 29 GiB RAM, Linux x86_64 and Node v24.13.0. The checkout was based on `658dba33ea0bca5d3e5e503ed9c1c68f16681c2f`, including the uncommitted stack schematic changes. Benchmarks ran sequentially. All ten existing benchmark commands and the additional stack-click harness completed successfully. The folding and viewport commands required a retry outside the execution sandbox because their Node child processes were initially blocked with `EPERM`.
+
+These measurements use synthetic fixtures and the mock DOM. No real ONNX/QNN models, comparison against the previous Git revision, browser paint/FPS, GPU rendering, remote mounts or end-to-end UI latency were measured in this run. Earlier real-model measurements above are separate runs on other hardware.
+
+### Stack-click interaction
+
+The synthetic graph contains eight operators per attention/MLP layer. Each case uses 20 warmups and 100 measured samples for schematic extraction and stack-click construction. Initial folding analysis is a single measurement per size. Click timing includes the fact sheet, instance selector and SVG construction in the mock DOM; browser event dispatch, layout, paint and compositing are excluded. JIT and garbage collection can affect comparisons across sizes.
+
+| Layers | Original operators | Initial folding analysis (ms) | Click median (ms) | Click p95 (ms) | Click max (ms) |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 24 | 192 | 11.11 | 0.042 | 0.066 | 0.192 |
+| 96 | 768 | 27.76 | 0.057 | 0.075 | 0.260 |
+| 256 | 2,048 | 51.27 | 0.054 | 0.099 | 0.475 |
+| 1,024 | 8,192 | 158.95 | 0.125 | 0.148 | 0.433 |
+
+All cases folded to one displayed node and used 25 SVG elements for the representative anatomy. Assertions verified attention/MLP zones and residual connections; throwing getters guarded against weight reads and canonical rich-node construction. Both remained zero. Schematic extraction alone had medians of 0.010–0.019 ms. The full click still constructs one selector option per instance, so its work grows with the instance count even though extraction examines one representative.
+
+### Rust/WASM and metadata indexing
+
+The 20,000-token candidate kernel took **29.03 ms in JavaScript** and **2.29 ms in Rust/WASM**, approximately **12.7× faster** for this kernel, with identical candidate outputs. This is one timing per implementation and excludes metadata signatures, whole-model parsing, layout and paint; it does not establish an application-wide speedup.
+
+Warm metadata indexing used five warmups and ten measured iterations, with source reads copied from an in-memory file:
+
+| Format | Fixture operators/modules | Median indexing (ms) | Source requests |
+| --- | ---: | ---: | ---: |
+| ONNX | 32,768 | 23.65 | 244 |
+| GGUF | 32,768 | 3.71 | 54 |
+
+### Folding and viewport
+
+For 256 layers (512 original nodes), folding reduced the displayed graph to two nodes:
+
+| Format | Expanded layout (ms) | Folded layout (ms) | Expanded heap (MiB) | Folded heap (MiB) |
+| --- | ---: | ---: | ---: | ---: |
+| Safetensors | 10.44 | 3.09 | 8.36 | 7.37 |
+| GGUF | 10.46 | 2.93 | 8.15 | 7.08 |
+| ONNX | 30.49 | 3.33 | 11.87 | 10.89 |
+
+These cases use fresh processes, fixed 150×65 layout nodes and sparse 4 MiB tensors. Every tensor preview read exactly four bytes. This existing folding benchmark exercises `repeatedBlocks`, separately from the new schematic pipeline; layout times exclude model opening and folding preparation.
+
+For 2,048 displayed nodes, viewport eviction retained 47 model objects for Safetensors/GGUF and 32 for ONNX, versus 2,048 without eviction. All viewport and overview cases preserved geometry and performed zero source reads during rendering. Full-detail versus overview results were:
+
+| Format | Detail → overview mock-DOM render (ms) | Detail → overview heap (MiB) |
+| --- | --- | --- |
+| Safetensors | 35.74 → 9.46 | 54.86 → 20.61 |
+| GGUF | 35.22 → 7.47 | 54.09 → 19.61 |
+| ONNX | 31.48 → 14.30 | 55.33 → 37.47 |
+
+The spatial-index microbenchmark indexed 10,000 short edges in 4.72 ms. A 300-tile diagonal took 0.50 ms to index; its viewport query took 0.004 ms and returned zero irrelevant edges. Overview queries averaged 0.039 ms over 100 queries. These are CPU timings, not browser frame times.
+
+### Synthetic loading
+
+Sparse fixtures contain approximately 256 MiB of tensor/payload data with no simulated network latency. Cold indexing includes WASM compilation; full scans run afterward. Sparse storage and page-cache ordering make these unsuitable for physical-disk or network-throughput claims. Each case was measured once.
+
+| Fixture | Index time (ms) | Full byte scan (ms) | Bytes avoided |
+| --- | ---: | ---: | ---: |
+| Safetensors | 1.35 | 3.93 | 99.976% |
+| Scattered ONNX tensors | 1.85 | 3.95 | 99.963% |
+| Contiguous ONNX metadata | 199.55 | 4.13 | 0.000% |
+| Large GGUF header | 2.70 | 4.37 | 99.105% |
+
+The contiguous-ONNX fixture puts 256 MiB in a non-tensor protobuf field. The index must preserve that metadata and reads everything, making indexing substantially slower than a byte scan in this adverse case. It does not demonstrate tensor-weight skipping.
+
+### Reproduction
+
+Run the existing benchmarks from the project root:
+
+```bash
+node test/benchmark-index.mjs
+node test/pattern-index.mjs --benchmark
+node test/benchmark-repeated.mjs
+node test/benchmark-rendering.mjs
+node test/benchmark-viewport.mjs
+node test/benchmark-viewport.mjs --overview
+node test/benchmark-loading.mjs --fixture=safetensors --size=256
+node test/benchmark-loading.mjs --fixture=scattered-onnx --size=256
+node test/benchmark-loading.mjs --fixture=contiguous-onnx --size=256
+node test/benchmark-loading.mjs --fixture=large-gguf --size=256
+```
+
+The additional stack-click harness and raw logs were saved locally under `/tmp/fastron-local-bench-20261019/`, including `stack-click.mjs`, `results.json` and `runs.json`. These temporary artifacts are not checked into the repository and may be removed by system cleanup; the measurements and methodology are recorded here.
+
 ## What to adapt from Model Explorer next
 
 | Priority | Technique and evidence | Fit for Fastron |

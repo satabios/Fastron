@@ -3,6 +3,7 @@ import * as base from './base.js';
 import * as grapher from './grapher.js';
 import { nodeCatalog, nodeDescriptions, repeatedBlocks } from './repeated-blocks.js';
 import { indexRange } from './stack-presentation.js';
+import { renderStackSchematic, stackSchematic } from './stack-schematic.js';
 
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
@@ -1316,6 +1317,21 @@ view.View = class {
         }
         const sidebar = new view.ObjectSidebar(this);
         sidebar.addProperty('stack', group.label, 'nowrap');
+        if (group.kind) {
+            const schematic = stackSchematic(state.analysis, group, state.selected.get(group.id) || 0);
+            sidebar.addSection('Architecture fact sheet');
+            sidebar.addProperty('layer mix', schematic.layerMix);
+            sidebar.addProperty('selected instance', `${schematic.selected} · ${schematic.operators} operators`);
+            if (schematic.outputShapes.length) {
+                sidebar.addProperty('output shape', schematic.outputShapes.join(' · '));
+            }
+            sidebar.addProperty('precision', schematic.precision);
+            sidebar.element.appendChild(renderStackSchematic(this._host.document, schematic, (indices) => {
+                const module = state.analysis.subgraph(indices, 'Block anatomy', '');
+                this.pushTarget(module).catch((error) => this.error(error, 'Error opening block anatomy.', null));
+            }));
+            sidebar.addProperty('anatomy', 'Semantic summaries inferred from operators. + marks a verified bypass connection. Inspect a region for exact operations and wiring.');
+        }
         if (group.presentation?.total) {
             sidebar.addProperty('matched total', group.presentation.total);
         }
@@ -3897,7 +3913,11 @@ view.Node = class extends grapher.Node {
         }
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => {
-            this.context.activate(value);
+            if (node._repeatHeader) {
+                this.context.view.showRepeatedBlock(node._repeatGroup);
+            } else {
+                this.context.activate(value);
+            }
         });
         if (node._repeatHeader) {
             const group = node._repeatGroup;

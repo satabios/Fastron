@@ -11,6 +11,28 @@ text.node-overview-label { font-family: -apple-system, BlinkMacSystemFont, "Sego
 .node-item-function:hover { cursor: pointer; }
 .node-item-function:hover path { fill: #eee; }
 .node-item-repeat-toggle text { text-decoration: underline; }
+.stack-schematic { display: block; width: 100%; max-width: 440px; margin: 12px 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; }
+.stack-schematic text { fill: #26364a; }
+.stack-schematic-heading { font-weight: 600; }
+.stack-schematic-frame { fill: #eef3fa; stroke: #8aa0bc; }
+.stack-schematic-region { fill: #fff; stroke: #b8c8d9; }
+.stack-schematic-zone { fill: #f1f4f8; stroke: #bdc9d7; }
+.stack-schematic-attention { fill: #e5edff; stroke: #8ba8dd; }
+.stack-schematic-mlp { fill: #e6f4ec; stroke: #8abb9f; }
+.stack-schematic-wire { fill: none; stroke: #657c98; stroke-width: 1.5; }
+.stack-schematic-merge { fill: #fff; stroke: #657c98; }
+.stack-schematic-inspect { cursor: pointer; }
+.stack-schematic-inspect rect { fill: #e6edf7; }
+.stack-schematic-inspect:hover rect, .stack-schematic-inspect:focus rect { stroke: #1689e5; }
+@media (prefers-color-scheme: dark) {
+    .stack-schematic text { fill: #e0e7f0; }
+    .stack-schematic-frame { fill: #25313e; stroke: #7a95b4; }
+    .stack-schematic-region, .stack-schematic-merge { fill: #202830; stroke: #63778e; }
+    .stack-schematic-zone { fill: #303b48; stroke: #63778e; }
+    .stack-schematic-attention { fill: #293d60; stroke: #6689bc; }
+    .stack-schematic-mlp { fill: #25483a; stroke: #639c80; }
+    .stack-schematic-inspect rect { fill: #35465b; }
+}
 .node-item-repeat-toggle:focus path { stroke: #1689e5; stroke-width: 2px; }
 .node path.node-stack-layer { fill: #dce7f3; stroke: #647b94; stroke-width: 1px; pointer-events: none; }
 .node-compound > .node-border { stroke: #647b94; stroke-dasharray: 5, 3; stroke-width: 1.5px; }
