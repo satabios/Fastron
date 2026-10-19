@@ -125,7 +125,7 @@ All eight supplied ONNX/QNN models in `graph-examples` passed renaming, canonica
 
 ResNet50 retains ×2/×3/×5/×2 runs and four separate transition functions. Qwen text has ×3 and ×24 motif runs; vision has ×3 and ×6 runs. These are repeated exported regions, which can span multiple source modules, not asserted counts of PyTorch layers. The QNN file's differing quantization metadata prevents repeat runs; its 48 branch functions remain separate. Cards show their real operator summaries and **Representative instance** selection rather than guessing source classes.
 
-Local metadata-only analysis took roughly 4 ms for ResNet50, 60 ms for Qwen vision, 0.8 seconds for Qwen text and 1.9 seconds for the QNN JSON, excluding load/layout/paint. A first generic prototype grouped small branches before searching repeats and took about eight seconds on Qwen text; finding raw sequence repeats first and verifying hash candidates avoids that cost. No Rust port or new dependency was needed.
+Local metadata-only analysis took roughly 4 ms for ResNet50, 60 ms for Qwen vision, 0.8 seconds for Qwen text and 1.9 seconds for the QNN JSON, excluding load/layout/paint. A first generic prototype grouped small branches before searching repeats and took about eight seconds on Qwen text; finding raw sequence repeats first and verifying hash candidates avoids that cost. These measurements precede the nested preview and Rust candidate search below.
 
 Synthetic CNN, explicit LSTM/GRU/RNN, unrolled LSTM, symbolic MHA/MQA/GQA and fused-attention/gated-MLP fixtures exercise the same algorithm. Consistently replacing all operator names and domains with unfamiliar ones preserves their matches. Different attributes, tensor metadata, optional slots, parameter sharing and state connections cannot be folded into a single verified run. No standalone LSTM or Llama export was supplied.
 
@@ -135,6 +135,26 @@ Initial loading still skips analysis and weights remain on demand. Each motif/br
 node test/pattern-folder.mjs graph-examples
 node test/resnet-folding.mjs /path/to/resnet50.onnx
 ```
+
+### Nested presentation and Rust candidates (2026-10-19)
+
+The Qwen vision root remains 25 display nodes. Its first stage frame shows three copies of `[6 × 46 operators] + [14 other operators]`; the following deck covers the final six 46-operator blocks. Source-only annotations account for blocks 0–23 as `3 × 6 + 6`. The complete model contains 1,170 operators; those repeated regions cover 1,146. The fourteen tail operators are not asserted to be an architecture-specific merger class. Each inline inspection opens the selected stage's own canonical indices and parameter references.
+
+For graphs of at least 512 operators, the existing Rust/WASM asset now also supplies a candidate index. It links matching operator tokens, bounds motif periods to 1,024, and applies the existing missing-metadata and fork rules. Only compact tokens and flags cross the WASM boundary; weights never do. Full signatures, cross-instance wiring and all connection preservation checks remain authoritative in JavaScript. The index is disposed on completion, error or cancellation; the JavaScript search remains the fallback. The shared WASM asset grew from 31,461 to 38,280 bytes, without a new dependency.
+
+One local 20,000-token synthetic benchmark measured approximately 59 ms for the JavaScript candidate search and 4.4 ms for the Rust/WASM index including setup, with identical candidate outputs. This is a candidate-kernel comparison, not a whole-model speedup. Full toolbar analysis including the new previews measured around 0.10 seconds for Qwen vision and 1.08 seconds for Qwen text; layout, paint and initial load are excluded. All eight supplied model files still preserve renamed matches, canonical expansion and zero extra source reads or rich-node construction. Source indices disappear when names are removed; grouping does not change.
+
+The supplied five-pass proposal is a design reference, not a replacement correctness specification. Remaining work requires stronger evidence than the prototype provides:
+
+| Proposed technique | Required before implementation |
+| --- | --- |
+| Conversion/transpose edge badges | Preserve ordered operations, attributes, both tensor identities and every consumer/output. Equal element counts do not establish semantic equivalence; quantization is numerically significant. |
+| Parallel repeat bundles | Verify disjoint branch interiors, complete signatures, fan-out/reconvergence and all boundary mappings. Existing repeat badges describe verified serial dependencies only. |
+| Variant and transition containers | Establish complete block boundaries and retain each variant and its exact order. Equal interfaces alone do not prove common layers, and filenames cannot establish a 28-layer count. |
+| Indexed tensor buses | Retain every tensor's dtype, quantization, instance index and inspection/selection mapping; endpoint/shape deduplication loses information. |
+| Full compound layout and global navigation | The current inline recipes reuse bounded node geometry. Pinned interactive barcodes, a separate canvas gutter, recursively routed child graphs and incremental stage layouts remain unimplemented. |
+
+The supplied Python prototype also leaves serial-fold edges pointing at removed nodes and deduplicates distinct tensor edges. It is not executed or shipped. No 24-layer equivalence claim is inferred for the QNN export while its quantization metadata differs.
 
 ## What to adapt from Model Explorer next
 

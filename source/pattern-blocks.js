@@ -133,89 +133,125 @@ export const patternBlocks = async (graph, current = () => true) => {
             members: Uint32Array.from({ length: end - start + 1 }, (_, offset) => start + offset), blocks });
         covered.fill(1, start, end + 1);
     };
-    const prefix = new Uint32Array(nodes.length + 1);
-    const power = new Uint32Array(nodes.length + 1);
-    const missing = new Uint32Array(nodes.length + 1);
-    const forks = new Uint32Array(nodes.length + 1);
-    const entry = new Uint8Array(nodes.length);
-    power[0] = 1;
+    const flags = new Uint8Array(nodes.length);
     for (let i = 0; i < nodes.length; i++) {
-        prefix[i + 1] = (Math.imul(prefix[i], 16777619) + (single[i] ?? 0) + 1) >>> 0;
-        power[i + 1] = Math.imul(power[i], 16777619) >>> 0;
-        missing[i + 1] = missing[i] + (valid[i] ? 0 : 1);
         const users = new Set(values(nodes[i].outputs).flatMap((value) => consumers.get(value.name) || []).filter((index) => index >= 0));
-        forks[i + 1] = forks[i] + (users.size > 1 ? 1 : 0);
-        entry[i] = values(nodes[i].inputs).some((value) => !value.initializer &&
+        const entry = values(nodes[i].inputs).some((value) => !value.initializer &&
             (!producers.has(value.name) || new Set((consumers.get(value.name) || []).filter((index) => index >= 0)).size > 1)) ? 1 : 0;
+        flags[i] = valid[i] | (entry << 1) | (users.size > 1 ? 4 : 0);
+    }
+    let accelerator = null;
+    if (nodes.length >= 512) {
+        try {
+            const { patternIndex } = await import('./pattern-index.mjs');
+            accelerator = await patternIndex(single, flags);
+        } catch {
+            // Browsers without WASM access retain the exact JavaScript search.
+        }
+    }
+    let prefix = null;
+    let power = null;
+    let missing = null;
+    let forks = null;
+    if (!accelerator) {
+        prefix = new Uint32Array(nodes.length + 1);
+        power = new Uint32Array(nodes.length + 1);
+        missing = new Uint32Array(nodes.length + 1);
+        forks = new Uint32Array(nodes.length + 1);
+        power[0] = 1;
+        for (let i = 0; i < nodes.length; i++) {
+            prefix[i + 1] = (Math.imul(prefix[i], 16777619) + (single[i] ?? 0) + 1) >>> 0;
+            power[i + 1] = Math.imul(power[i], 16777619) >>> 0;
+            missing[i + 1] = missing[i] + (valid[i] ? 0 : 1);
+            forks[i + 1] = forks[i] + ((flags[i] & 4) ? 1 : 0);
+        }
     }
     // Hashes reject candidates cheaply; full signatures and wiring always verify a match.
     const hash = (start, count) => (prefix[start + count] - Math.imul(prefix[start], power[count])) >>> 0;
-    for (let start = 0; start < nodes.length;) {
-        let best = null;
-        if (valid[start]) {
-            // shortcut: bound each motif to 1,024 operators; larger motifs need a hierarchical index.
-            for (let period = 1; period <= 1024 && start + 2 * period <= nodes.length; period++) {
-                if (missing[start + period] !== missing[start]) {
-                    break;
-                }
-                if (single[start + period] !== single[start]) {
-                    continue;
-                }
-                // Keep a fork with its branches instead of starting a repeated region inside it.
-                if (period > 1 && !entry[start] && forks[start + period] !== forks[start]) {
-                    continue;
-                }
-                const token = hash(start, period);
-                let repeats = 1;
-                while (start + (repeats + 1) * period <= nodes.length &&
-                    missing[start + (repeats + 1) * period] === missing[start + repeats * period] &&
-                    hash(start + repeats * period, period) === token) {
-                    repeats++;
-                }
-                if (repeats < 2 || (best && period * repeats - 1 <= best.saved) || !connected(start, start + period - 1)) {
-                    continue;
-                }
-                const key = signature(start, start + period - 1);
-                let verified = 1;
-                let connection = null;
-                for (; verified < repeats; verified++) {
-                    const at = start + verified * period;
-                    if (!linked(at - period, at, at + period - 1) || signature(at, at + period - 1) !== key) {
-                        break;
+    const candidates = (start) => {
+        if (accelerator) {
+            return accelerator.candidates(start);
+        }
+        const result = [];
+        for (let period = 1; period <= 1024 && start + 2 * period <= nodes.length; period++) {
+            if (missing[start + period] !== missing[start]) {
+                break;
+            }
+            if (single[start + period] !== single[start] || (period > 1 && !(flags[start] & 2) && forks[start + period] !== forks[start])) {
+                continue;
+            }
+            const token = hash(start, period);
+            let repeats = 1;
+            while (start + (repeats + 1) * period <= nodes.length &&
+                missing[start + (repeats + 1) * period] === missing[start + repeats * period] &&
+                hash(start + repeats * period, period) === token) {
+                repeats++;
+            }
+            if (repeats > 1) {
+                result.push(period, repeats);
+            }
+        }
+        return result;
+    };
+    try {
+        if (!current()) {
+            return null;
+        }
+        for (let start = 0; start < nodes.length;) {
+            let best = null;
+            if (valid[start]) {
+                // shortcut: bound each motif to 1,024 operators; larger motifs need a hierarchical index.
+                const options = candidates(start);
+                for (let at = 0; at < options.length; at += 2) {
+                    const period = options[at];
+                    const repeats = options[at + 1];
+                    if (repeats < 2 || (best && period * repeats - 1 <= best.saved) || !connected(start, start + period - 1)) {
+                        continue;
                     }
-                    const pair = signature(at - period, at + period - 1);
-                    if (connection !== null && pair !== connection) {
-                        break;
+                    const key = signature(start, start + period - 1);
+                    let verified = 1;
+                    let connection = null;
+                    for (; verified < repeats; verified++) {
+                        const at = start + verified * period;
+                        if (!linked(at - period, at, at + period - 1) || signature(at, at + period - 1) !== key) {
+                            break;
+                        }
+                        const pair = signature(at - period, at + period - 1);
+                        if (connection !== null && pair !== connection) {
+                            break;
+                        }
+                        connection = pair;
+                        // eslint-disable-next-line no-await-in-loop
+                        if (verified % 128 === 0 && !await yieldWork()) {
+                            return null;
+                        }
                     }
-                    connection = pair;
+                    const saved = period * verified - 1;
+                    if (verified > 1 && (!best || saved > best.saved)) {
+                        best = { period, repeats: verified, saved };
+                        if (start + period * verified === nodes.length) {
+                            break;
+                        }
+                    }
                     // eslint-disable-next-line no-await-in-loop
-                    if (verified % 128 === 0 && !await yieldWork()) {
+                    if (!await yieldWork()) {
                         return null;
                     }
                 }
-                const saved = period * verified - 1;
-                if (verified > 1 && (!best || saved > best.saved)) {
-                    best = { period, repeats: verified, saved };
-                    if (start + period * verified === nodes.length) {
-                        break;
-                    }
-                }
-                // eslint-disable-next-line no-await-in-loop
-                if (!await yieldWork()) {
-                    return null;
-                }
+            }
+            if (best) {
+                group(start, best.period, best.repeats);
+                start += best.period * best.repeats;
+            } else {
+                start++;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            if (start % 64 === 0 && !await yieldWork()) {
+                return null;
             }
         }
-        if (best) {
-            group(start, best.period, best.repeats);
-            start += best.period * best.repeats;
-        } else {
-            start++;
-        }
-        // eslint-disable-next-line no-await-in-loop
-        if (start % 64 === 0 && !await yieldWork()) {
-            return null;
-        }
+    } finally {
+        accelerator?.dispose();
     }
     const ancestors = (value, floor, stop = null) => {
         const seen = new Map();

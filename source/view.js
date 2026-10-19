@@ -2,6 +2,7 @@
 import * as base from './base.js';
 import * as grapher from './grapher.js';
 import { nodeCatalog, nodeDescriptions, repeatedBlocks } from './repeated-blocks.js';
+import { indexRange } from './stack-presentation.js';
 
 // Initialize global configuration for tensor weight loading optimization
 // This must be here (not in index.html) to work in both browser and Electron builds
@@ -1225,6 +1226,11 @@ view.View = class {
             if (!analysis || !current()) {
                 return graph;
             }
+            const { stackPresentation } = await import('./stack-presentation.js');
+            await stackPresentation(analysis, current);
+            if (!current()) {
+                return graph;
+            }
             state = { analysis, selected: new Map(), expanded: new Set() };
             this._repeatStates.set(graph, state);
         }
@@ -1310,6 +1316,12 @@ view.View = class {
         }
         const sidebar = new view.ObjectSidebar(this);
         sidebar.addProperty('stack', group.label, 'nowrap');
+        if (group.presentation?.total) {
+            sidebar.addProperty('matched total', group.presentation.total);
+        }
+        if (group.presentation?.indices) {
+            sidebar.addProperty('source indices', `${group.presentation.family}: ${indexRange(group.presentation.indices)}`);
+        }
         let structure = 'Matching structure; every instance retains its own parameters.';
         if (group.kind === 'structural') {
             structure = 'Transformer pattern matched by operations, shapes and connections. Every instance retains its own parameters.';
@@ -3686,6 +3698,16 @@ view.Node = class extends grapher.Node {
         if (this._stackDepth) {
             this._overviewType = `×${value._repeatGroup.blocks.length} ${this._overviewType}`;
         }
+        this._compound = this._stackDepth && value._repeatGroup.presentation?.compound;
+        if (this._compound) {
+            this._stackDepth = 0;
+            const presentation = value._repeatGroup.presentation;
+            const count = presentation.parts.filter((part) => part.count > 1).reduce((sum, part) => sum + part.count, 0);
+            this._overviewType = `${value._repeatGroup.blocks.length} × ${count} ${presentation.label || 'regions'}`;
+            this._overviewLabel = `${this._overviewType}. ${presentation.total || 'Serial stages containing nested repeats.'}`;
+        } else if (this._stackDepth && value._repeatGroup.presentation?.label) {
+            this._overviewType = `×${value._repeatGroup.blocks.length} ${value._repeatGroup.presentation.label}`;
+        }
         const category = value.type?.category;
         const dtype = view.Node._getDtypeKey(value);
         this._overviewClass = ['node-item-type', category ? `node-item-type-${category.toLowerCase()}` : '', dtype ? `node-dtype-${dtype}` : ''].filter(Boolean).join(' ');
@@ -3772,7 +3794,7 @@ view.Node = class extends grapher.Node {
     }
 
     get class() {
-        return 'graph-node';
+        return this._compound ? 'graph-node node-compound' : 'graph-node';
     }
 
     get inputs() {
@@ -3781,6 +3803,67 @@ view.Node = class extends grapher.Node {
 
     get outputs() {
         return this.value.outputs;
+    }
+
+    _addStackPresentation(group) {
+        const presentation = group.presentation;
+        const state = this.context.view._repeatStates.get(this.context.view.activeTarget);
+        const label = presentation.label || 'regions';
+        const summary = this.list();
+        const row = (list, name, content) => {
+            const item = list.argument(name, content);
+            item.separator = ': ';
+            list.add(item);
+        };
+        if (presentation.total) {
+            row(summary, 'Matched total', presentation.total);
+        }
+        if (presentation.indices) {
+            row(summary, label, `${indexRange(presentation.indices)} · ${presentation.indices.length} of ${presentation.familyTotal || presentation.indices.length}`);
+        }
+        const selected = group.blocks[state.selected.get(group.id) || 0];
+        row(summary, 'Selected', `${selected.index} · ${selected.indices.length} operators`);
+        if (!presentation.compound) {
+            row(summary, 'Each', `${group.blocks[0].indices.length} operators · own parameters`);
+            row(summary, 'Inside', group.blocks[state.selected.get(group.id) || 0].components.slice(0, 4).join(' · '));
+            row(summary, 'Cadence', group.blocks.length <= 12 ? '■'.repeat(group.blocks.length) : `■ × ${group.blocks.length}`);
+            return;
+        }
+        row(summary, 'Recipe', `(${presentation.parts.map((part) => `${part.count} × ${part.operators} ops`).join(' + ')}) × ${group.blocks.length}`);
+        const cadence = presentation.parts.map((part) => {
+            if (part.count === 1) {
+                return '◆';
+            }
+            return part.count <= 12 ? '■'.repeat(part.count) : `■ × ${part.count}`;
+        }).join(' ');
+        for (let i = 0; i < Math.min(6, group.blocks.length); i++) {
+            row(summary, presentation.ranges.length ? indexRange(presentation.ranges[i]) : `Stage ${i + 1}`, cadence);
+        }
+        if (group.blocks.length > 6) {
+            row(summary, 'More stages', String(group.blocks.length - 6));
+        }
+        row(summary, 'Key', '■ repeated region · ◆ other operators');
+        const recipe = this.list();
+        for (const part of presentation.parts) {
+            const child = new grapher.Node();
+            child._stackDepth = Math.min(2, part.count - 1);
+            const header = child.header();
+            header.add(null, ['node-item-type'], part.count > 1 ? `↓ ×${part.count} ${label}` : 'Other operators',
+                'Representative anatomy; every external tensor connection remains on the enclosing stage.');
+            const inspect = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], part.count > 1 ? 'Inspect 1 region' : 'Inspect region',
+                `Open ${part.operators} original operators from the selected stage.`);
+            inspect.on('click', () => {
+                const block = group.blocks[state.selected.get(group.id) || 0];
+                const indices = block.indices.slice(part.start, part.start + part.operators);
+                const graph = state.analysis.subgraph(indices, 'Pattern detail', '');
+                this.context.view.pushTarget(graph, this.value).catch((error) => this.context.view.error(error, 'Error opening pattern detail.', null));
+            });
+            row(child.list(), 'Each', `${part.operators} operators`);
+            row(recipe, 'Inside one stage', child);
+            if (part.linked) {
+                row(recipe, '↓', 'feeds the next region');
+            }
+        }
     }
 
     _add(value, type) {
@@ -3797,6 +3880,10 @@ view.Node = class extends grapher.Node {
         }
         let content = options.names && (node.name || node.identifier) ? (node.name || node.identifier) : node.type.name.split('.').pop();
         let tooltip = options.names && (node.name || node.identifier) ? `[${node.type.name}]` : (node.name || node.identifier);
+        if (this._compound) {
+            content = 'Repeated stage';
+            tooltip = 'A repeated region containing nested repeats. The cards below show one representative stage.';
+        }
         if (content.length > 21) {
             tooltip = options.names ? `${content}` : `[${content}]`;
             const begin = content.substring(0, 10);
@@ -3814,10 +3901,13 @@ view.Node = class extends grapher.Node {
         });
         if (node._repeatHeader) {
             const group = node._repeatGroup;
-            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `×${group.blocks.length}`, `${group.label}. Select a representative or expand this stack.`);
+            const unit = this._compound ? 'stages' : (group.presentation?.label || (group.kind === 'pattern' ? 'regions' : 'modules'));
+            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `${group.kind === 'pattern' ? '↓ ' : ''}×${group.blocks.length} ${unit}`,
+                `${group.label}. ${group.kind === 'pattern' ? 'Each instance feeds the next. ' : ''}Select a representative or expand this stack.`);
             badge.on('click', () => this.context.view.showRepeatedBlock(group));
             const expanded = this.context.view._repeatStates?.get(this.context.view.activeTarget)?.expanded.has(group.id) || false;
-            const action = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], expanded ? 'Fold stack' : 'Expand stack',
+            const unfold = this._compound ? `Unroll ${group.blocks.length} stages` : 'Expand stack';
+            const action = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], expanded ? 'Fold stack' : unfold,
                 `${expanded ? 'Fold' : 'Expand'} these ${group.blocks.length} instances. Other stacks stay unchanged.`);
             action.expanded = expanded;
             action.on('click', () => this.context.view.toggleRepeatedBlock(group)
@@ -3850,7 +3940,9 @@ view.Node = class extends grapher.Node {
             }
             return current;
         };
-        if (node._repeatHeader && this._stackDepth) {
+        if (node._repeatHeader && (this._stackDepth || this._compound) && node._repeatGroup.presentation) {
+            this._addStackPresentation(node._repeatGroup);
+        } else if (node._repeatHeader && this._stackDepth) {
             const group = node._repeatGroup;
             const state = this.context.view._repeatStates?.get(this.context.view.activeTarget);
             const block = group.blocks[state?.selected.get(group.id) || 0];

@@ -102,7 +102,7 @@ try {
             await expect(stacking).toHaveAttribute('title', 'Expand Repeated Blocks');
             assert.equal(transferred, initialBytes, 'Enabling folding cannot fetch weights.');
             await expect(page.locator('body')).toHaveClass(/default/);
-            await expect(page.locator('.node-item-repeat text')).toHaveText('×24');
+            await expect(page.locator('.node-item-repeat text')).toHaveText(format === 'onnx' ? '↓ ×24 layers' : '×24 modules');
             await page.screenshot({ path: path.join(os.tmpdir(), `fastron-repeated-${format}.png`) });
             assert.ok(transferred - before < 131072, `Unexpected model transfer: ${transferred - before}`);
             const metadataBytes = transferred;
@@ -196,7 +196,7 @@ try {
     await expect(page.locator('.node-item-repeat')).toHaveCount(0);
     await page.locator('#menu-button').click();
     await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
-    await expect(page.locator('.node-item-repeat text')).toHaveText('×256');
+    await expect(page.locator('.node-item-repeat text')).toHaveText('×256 modules');
     const metadataBytes = transferred;
     await page.locator('.node-item-repeat').click();
     await page.locator('#sidebar-content').getByText('Expand stack', { exact: true }).click();
@@ -284,18 +284,81 @@ try {
         // eslint-disable-next-line no-await-in-loop
         const original = await count();
         // eslint-disable-next-line no-await-in-loop
+        await evaluate(`(() => {
+            window.__patternWasmCalls = 0;
+            window.__originalInstantiate = WebAssembly.instantiate;
+            WebAssembly.instantiate = async (...args) => {
+                const result = await window.__originalInstantiate(...args);
+                if ((result.exports || result.instance?.exports)?.pattern_new) { window.__patternWasmCalls++; }
+                return result;
+            };
+        })()`);
+        // eslint-disable-next-line no-await-in-loop
         await stacking.click();
         // eslint-disable-next-line no-await-in-loop
         await expect.poll(count, { timeout: 30000 }).toBe(expected);
         // eslint-disable-next-line no-await-in-loop
+        const nativeCalls = await evaluate('window.__patternWasmCalls');
+        assert.equal(nativeCalls > 0, original >= 512, 'Large execution graphs must exercise the actual Rust search.');
+        // eslint-disable-next-line no-await-in-loop
+        await evaluate('WebAssembly.instantiate = window.__originalInstantiate');
+        // eslint-disable-next-line no-await-in-loop
         const groups = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.map(g => ({ id: g.id, n: g.blocks.length, operators: g.members.length, detail: g.blocks[0].indices.length }))');
         assert.deepEqual(groups.filter((g) => g.n > 1).map((g) => g.n), repeats);
+        if (file === '/qwen-vision.onnx') {
+            // eslint-disable-next-line no-await-in-loop
+            const recipe = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups[0].presentation');
+            assert.equal(recipe.total, '24 blocks (3 × 6 + 6)');
+            assert.deepEqual(recipe.ranges, [Array.from({ length: 6 }, (_, i) => i), Array.from({ length: 6 }, (_, i) => i + 6), Array.from({ length: 6 }, (_, i) => i + 12)]);
+            assert.deepEqual(recipe.parts.map((p) => [p.count, p.operators]), [[6, 46], [1, 14]]);
+            // eslint-disable-next-line no-await-in-loop
+            await evaluate(`(() => { const view = window.__view__; for (const { label: node } of view._target.nodes.values()) {
+                if (node._compound) { view._target.scrollToValue(node.value, 'instant'); return; }
+            } })()`);
+            const compound = page.locator('#canvas .graph-node.node-compound:not(.node-overview)');
+            // eslint-disable-next-line no-await-in-loop
+            await expect(compound).toBeVisible();
+            // eslint-disable-next-line no-await-in-loop
+            await expect(compound).toContainText('24 blocks (3 × 6 + 6)');
+            // eslint-disable-next-line no-await-in-loop
+            await expect(compound.getByRole('button', { name: 'Inspect 1 region', exact: true })).toBeVisible();
+            // eslint-disable-next-line no-await-in-loop
+            await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-compound-vision.png') });
+            // eslint-disable-next-line no-await-in-loop
+            await page.emulateMedia({ colorScheme: 'dark' });
+            // eslint-disable-next-line no-await-in-loop
+            await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-compound-vision-dark.png') });
+            // eslint-disable-next-line no-await-in-loop
+            await page.emulateMedia({ colorScheme: 'light' });
+            // eslint-disable-next-line no-await-in-loop
+            await compound.getByRole('button', { name: 'Unroll 3 stages', exact: true }).press('Enter');
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected + 870 - 1);
+            // eslint-disable-next-line no-await-in-loop
+            await page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true }).click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected);
+            // eslint-disable-next-line no-await-in-loop
+            await evaluate('void (window.__visionParent = window.__view__.activeTarget)');
+            // eslint-disable-next-line no-await-in-loop
+            await compound.getByRole('button', { name: 'Inspect 1 region', exact: true }).press('Enter');
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(() => evaluate('window.__view__.activeTarget.nodes.length')).toBe(46);
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(() => evaluate('window.__view__._target?._renderTarget === window.__view__.activeTarget')).toBe(true);
+            // eslint-disable-next-line no-await-in-loop
+            await evaluate('void window.__view__.popTarget()');
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(() => evaluate('window.__view__.activeTarget === window.__visionParent && window.__view__._target?._renderTarget === window.__visionParent')).toBe(true);
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected);
+        }
         const largest = groups.reduce((a, b) => a.n > b.n ? a : b);
         // eslint-disable-next-line no-await-in-loop
         await evaluate(`(() => {
             const view = window.__view__;
             for (const { label: node } of view._target.nodes.values()) {
-                if (node._overviewType === '×${largest.n} Repeated pattern') {
+                if (node.value._repeatGroup?.id === ${largest.id}) {
                     view._target.scrollToValue(node.value, 'instant');
                     return;
                 }
@@ -324,7 +387,7 @@ try {
         await page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true }).click();
         // eslint-disable-next-line no-await-in-loop
         await expect.poll(count).toBe(expected);
-        if (file === '/efficientvit.onnx') {
+        if (file === '/efficientvit.onnx' || file === '/qwen-vision.onnx') {
             // eslint-disable-next-line no-await-in-loop
             await page.locator('#menu-button').click();
             const download = page.waitForEvent('download');
@@ -333,6 +396,10 @@ try {
             // eslint-disable-next-line no-await-in-loop
             const svg = await fs.readFile(await (await download).path(), 'utf-8');
             assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, expected);
+            if (file === '/qwen-vision.onnx') {
+                assert.match(svg, /node-compound/);
+                assert.match(svg, /24 blocks/);
+            }
             // eslint-disable-next-line no-await-in-loop
             await stacking.click();
             // eslint-disable-next-line no-await-in-loop

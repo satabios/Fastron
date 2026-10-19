@@ -1,6 +1,8 @@
 //! Metadata-only indexing. Tensor bodies retain their original file offsets.
 #![cfg(any(target_arch = "wasm32", test))]
 
+mod pattern;
+
 type Result<T> = std::result::Result<T, String>;
 
 trait Source {

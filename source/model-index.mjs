@@ -1,6 +1,6 @@
 let modulePromise = null;
 
-export const indexSource = async (source, kind) => {
+export const loadIndexModule = () => {
     if (!modulePromise) {
         modulePromise = (async () => {
             const url = new URL('./model-index.wasm', import.meta.url);
@@ -11,7 +11,11 @@ export const indexSource = async (source, kind) => {
             throw error;
         });
     }
-    const module = await modulePromise;
+    return modulePromise;
+};
+
+export const indexSource = async (source, kind) => {
+    const module = await loadIndexModule();
     let wasm = null;
     let readError = null;
     let bytesRead = 0;

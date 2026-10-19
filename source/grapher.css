@@ -13,6 +13,12 @@ text.node-overview-label { font-family: -apple-system, BlinkMacSystemFont, "Sego
 .node-item-repeat-toggle text { text-decoration: underline; }
 .node-item-repeat-toggle:focus path { stroke: #1689e5; stroke-width: 2px; }
 .node path.node-stack-layer { fill: #dce7f3; stroke: #647b94; stroke-width: 1px; pointer-events: none; }
+.node-compound > .node-border { stroke: #647b94; stroke-dasharray: 5, 3; stroke-width: 1.5px; }
+.node-compound > .node-argument-list > path { fill: #edf3fa; }
+@media (prefers-color-scheme: dark) {
+    .node-compound > .node-border { stroke: #91adc9; }
+    .node-compound > .node-argument-list > path { fill: #25313e; }
+}
 
 .node-item-type path { fill: #333; }
 .node-item-type text { fill: #fff; }
