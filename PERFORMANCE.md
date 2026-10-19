@@ -23,7 +23,7 @@ This review covered Rust indexing, source reads, repeated-block folding, worker/
 | A multiplier alone gave little indication of a folded block's contents | Users had to open the sidebar to understand a stack | Add two lightweight card outlines within layout bounds, the actual index range and a selected-instance component preview from metadata; distant labels retain the multiplier and expansion removes the folded-card decoration |
 | Scope-based grouping depended on exporter naming | Renamed ONNX operators lost useful Transformer/Attention/MLP boundaries | Recognize pre-norm residual Transformer patterns from ops, concrete shapes and wiring; test MHA, MQA, GQA, renamed graphs, invalid broadcasts, preserved boundary taps and zero payload reads |
 
-Overview shapes have accessible names, keyboard activation and compact type labels. Labels stay approximately 12 screen pixels high, with a small spatial grid suppressing neighboring labels to avoid overlap; node data and controls remain deferred. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks** or the toolbar; results are reused when folding again, and the option resets to off for each newly opened model. Execution-graph stacking now uses the generic topology matcher described below; named inventory matching is retained only for weight-only formats. The shipped WASM was rebuilt alongside its Rust source in the previous optimization.
+Overview shapes have accessible names, keyboard activation and compact type labels. Labels stay approximately 12 screen pixels high, with a small spatial grid suppressing neighboring labels to avoid overlap; node data and controls remain deferred. Selected/focused nodes keep detail; image export always materializes complete node content, then restores the interactive overview. Initial loading remains at its normal zoom and weight loading remains on demand. Repeated-block analysis is opt-in after loading through **View → Fold Repeated Blocks** or the toolbar; results are reused when folding again, and the option resets to off for each newly opened model. Execution-graph stacking now prefers verified Transformer boundaries and uses generic topology matching for unclaimed operators; named inventory matching is retained only for weight-only formats. The shipped WASM was rebuilt alongside its Rust source in the previous optimization.
 
 Desktop smoke tests also now use independent Electron profiles, avoiding shared-profile launch failures and changes to a normal application's profile.
 
@@ -77,7 +77,7 @@ Metadata and range hashes matched between revisions. These measurements suggest 
 
 ## PyTorch module hierarchy assessment — 2026-10-17 (historical recognizer)
 
-The architecture-specific recognizer below remains an offline diagnostic utility. The application now uses generic topology matching; its current results and limits are in the next subsection.
+The recognizer below originally ran as an offline diagnostic utility. The Transformer-first application path added on 2026-10-19 now reuses its conservative attention/MLP residual boundaries before generic topology matching. The audit below records current coverage and unsupported exports.
 
 The supplied text and vision exports identify their producer as PyTorch 2.10.0. Both retain useful node scope names, but neither contains node, graph or model origin metadata. Rust's metadata index preserves non-payload protobuf fields, so this absence is not caused by the indexer. The reference PyTorch listing describes module ownership; the exported ONNX dependencies determine execution order and every boundary tensor. Reused modules can have multiple exported call sites: text layer 0 contains 16 `q_norm` scopes and eight `k_norm` scopes, despite a single registered module of each name in the supplied listing.
 
@@ -106,9 +106,9 @@ The supplied Qwen text export uses a separate **computation pattern** match for 
 
 Recognition remains bounded to residual regions of 2,048 operators and up to 128 unrolled query branches with the tested cache layout. Packed fused layouts beyond the tested forms, conflicting named dimensions, missing shape metadata and noncontiguous normalizer lowerings remain unsupported. Initial loading still skips all folding work.
 
-### Generic topology matching — current application path
+### Generic topology matching — fallback and earlier measurements
 
-Execution graphs now use the same matcher for every operator type and domain. No model/module names or CNN/Transformer/RNN templates determine recognition. Consecutive typed operator signatures feed a rolling hash to reject candidates cheaply; full signatures verify every match and consecutive pairs verify cross-instance wiring. Signatures include attribute types, optional input slots, operator overloads, tensor shape/dtype/layout/quantization and parameter sharing. Opaque tensor attributes expose headers without payload reads. Fork/branch boundaries guide alignment; remaining branch closures become individual functions without repeat badges. Architecture-specific diagnostic helpers no longer select application groups.
+The generic matcher handles every operator type and domain without model/module names or CNN/Transformer/RNN templates. It now runs outside verified Transformer regions, or across the full graph when architectural recognition finds no supported blocks. Consecutive typed operator signatures feed a rolling hash to reject candidates cheaply; full signatures verify every match and consecutive pairs verify cross-instance wiring. Signatures include attribute types, optional input slots, operator overloads, tensor shape/dtype/layout/quantization and parameter sharing. Opaque tensor attributes expose headers without payload reads. Fork/branch boundaries guide alignment; remaining branch closures become individual functions without repeat badges. The following measurements describe the earlier generic-only application path.
 
 All eight supplied ONNX/QNN models in `graph-examples` passed renaming, canonical expansion, exposed-connection and zero-additional-read checks on 2026-10-18. Counts exclude input/output bundles:
 
@@ -136,9 +136,9 @@ node test/pattern-folder.mjs graph-examples
 node test/resnet-folding.mjs /path/to/resnet50.onnx
 ```
 
-### Nested presentation and Rust candidates (2026-10-19)
+### Nested presentation and Rust candidates (2026-10-19, earlier generic path)
 
-The Qwen vision root remains 25 display nodes. Its first stage frame shows three copies of `[6 × 46 operators] + [14 other operators]`; the following deck covers the final six 46-operator blocks. Source-only annotations account for blocks 0–23 as `3 × 6 + 6`. The complete model contains 1,170 operators; those repeated regions cover 1,146. The fourteen tail operators are not asserted to be an architecture-specific merger class. Each inline inspection opens the selected stage's own canonical indices and parameter references.
+Before the Transformer-first path below, the Qwen vision root contained 25 display nodes. Its first stage frame shows three copies of `[6 × 46 operators] + [14 other operators]`; the following deck covers the final six 46-operator blocks. Source-only annotations account for blocks 0–23 as `3 × 6 + 6`. The complete model contains 1,170 operators; those repeated regions cover 1,146. The fourteen tail operators are not asserted to be an architecture-specific merger class. Each inline inspection opens the selected stage's own canonical indices and parameter references.
 
 For graphs of at least 512 operators, the existing Rust/WASM asset now also supplies a candidate index. It links matching operator tokens, bounds motif periods to 1,024, and applies the existing missing-metadata and fork rules. Only compact tokens and flags cross the WASM boundary; weights never do. Full signatures, cross-instance wiring and all connection preservation checks remain authoritative in JavaScript. The index is disposed on completion, error or cancellation; the JavaScript search remains the fallback. The shared WASM asset grew from 31,461 to 38,280 bytes, without a new dependency.
 
@@ -155,6 +155,37 @@ The supplied five-pass proposal is a design reference, not a replacement correct
 | Full compound layout and global navigation | The current inline recipes reuse bounded node geometry. Pinned interactive barcodes, a separate canvas gutter, recursively routed child graphs and incremental stage layouts remain unimplemented. |
 
 The supplied Python prototype also leaves serial-fold edges pointing at removed nodes and deduplicates distinct tensor edges. It is not executed or shipped. No 24-layer equivalence claim is inferred for the QNN export while its quantization metadata differs.
+
+## Transformer-first presentation and Softmax audit — 2026-10-19
+
+The main folding path now prefers verified pre-norm Attention → residual Add → pre-norm MLP → residual Add blocks. Architectural boundaries are established from operations, shapes, projections and wiring before searching for exporter-order repetition. This prevents a recurring group of several Transformer layers from replacing the actual layer count. Different metadata or intervening operations split runs; they do not merge distinct variants. Generic matching remains active outside the recognized blocks and across unsupported graphs. Initial loading still skips all folding work.
+
+Cards for repeated Transformer runs show the total detected Transformer count, detected-order indices, a canonical normalization/attention/MLP residual recipe, and the selected block's Softmax count. The stack-click fact sheet reports how many graph Softmax operators lie inside verified blocks. Named source modules and Softmax counts do not determine architectural boundaries. One canonical anatomy and compact architecture facts follow the presentation approach of [Sebastian Raschka's LLM Architecture Gallery](https://sebastianraschka.com/llm-architecture-gallery/); its model counts are not used as evidence for these exports.
+
+The real-model audit on the Ryzen 9 9950X3D / Node v24.13.0 checkout produced:
+
+| Export | Operators | Explicit Softmax ops | Detected Transformer blocks | Softmax ops per detected block | Transformer run sizes | Displayed nodes | Analysis (ms) |
+| --- | ---: | ---: | ---: | --- | --- | ---: | ---: |
+| Qwen vision | 1,170 | 24 | 24 | 1 | 6 + 6 + 6 + 6 | 66 | 33 |
+| Qwen text | 19,449 | 448 | 28 | 16 | 1 + 1 + 1 + 25 | 524 | 598 |
+| Audio encoder | 1,337 | 12 | Unverified | — | Generic fallback | 859 | 60 |
+| Vision encoder | 1,026 | 16 | Unverified | — | Generic fallback | 165 | 89 |
+| Merged decoder | 1,287 | 23 | Unverified | — | Generic fallback | 131 | 53 |
+| QNN JSON | 6,636 | 336 | Unverified | — | Generic fallback | 73 | 1,396 |
+| ResNet50 | 122 | 0 | 0 | — | Generic fallback | 14 | 9 |
+| EfficientViT B3 | 682 | 0 | 0 | — | Generic fallback | 39 | 25 |
+
+All 24 Qwen vision Softmax operators and all 448 Qwen text Softmax operators are accounted for inside the detected blocks. Text attention unrolls 16 query heads per layer, so treating each Softmax as a Transformer would overcount by 16×. Unit fixtures also cover fused attention with three blocks and zero explicit Softmax operators. The unsupported audio/vision/decoder exports contain symbolic or missing intermediate shapes and different normalization/attention lowerings; the quantized QNN export is outside the current ONNX floating-point recognizer. Their Softmax inventories are diagnostics, not asserted Transformer counts. In particular, 336 QNN Softmax operators alone cannot establish 24 layers.
+
+Every supplied export passed renamed-node/tensor matching, exact canonical expansion, exposed-connection checks, zero additional source reads and zero rich-node construction. The new application regression fixture verifies 24 Transformer blocks despite eight recurring three-block variants. Separate tests preserve generic repetition outside protected Transformer regions and reject Softmax-only evidence without the residual recipe. Timings include application analysis and presentation preparation; they exclude model opening, layout and paint, and are single local observations.
+
+Reproduce the audit, including the generic-only repeat counts for comparison:
+
+```bash
+node test/architecture-folder.mjs graph-examples
+```
+
+This audit supersedes the earlier generic-only displayed counts for the two supported Qwen exports. It does not claim support for every Transformer lowering or attach architecture labels to unsupported patterns.
 
 ## Local machine benchmarks — 2026-10-19
 

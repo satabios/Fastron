@@ -64,6 +64,14 @@ test('block schematics infer anatomy from connectivity without reading weights',
     const host = new Host({ serial: true });
     const svg = renderStackSchematic(host.document, schematic, () => {});
     assert.equal(svg.getAttribute('role'), 'group');
+    group.architecture = 'transformer';
+    analysis.blocks = new Map([['0:7', [{ title: 'Attention', start: 1, end: 1 }, { title: 'MLP', start: 4, end: 6 }]]]);
+    nodes[4].type.name = 'Conv';
+    nodes[6].type.name = 'Conv';
+    assert.equal(stackSchematic(analysis, group).regions[0].zones[1].kind, 'mlp', 'Use the verified MLP boundary for convolutional projection lowerings.');
+    delete group.architecture;
+    nodes[4].type.name = 'MatMul';
+    nodes[6].type.name = 'MatMul';
     // An ordinary Add of two branches is not a bypass from the zone input.
     nodes[2].inputs = [arg('norm'), arg('attention')];
     assert.equal(stackSchematic(analysis, group).regions[0].zones[0].residual, false);

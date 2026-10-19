@@ -1218,8 +1218,8 @@ view.View = class {
         this._repeatStates = this._repeatStates || new WeakMap();
         let state = this._repeatStates.get(graph);
         if (!state) {
-            const { patternBlocks } = await import('./pattern-blocks.js');
-            let analysis = current() ? await patternBlocks(graph, current) : null;
+            const { architectureBlocks } = await import('./architecture-blocks.js');
+            let analysis = current() ? await architectureBlocks(graph, current) : null;
             // Weight-only formats have module inventories rather than execution connections.
             if (!analysis && !graph.inputs?.length && !graph.outputs?.length && current()) {
                 analysis = await repeatedBlocks(graph, current);
@@ -1319,6 +1319,7 @@ view.View = class {
         sidebar.addProperty('stack', group.label, 'nowrap');
         if (group.kind) {
             const schematic = stackSchematic(state.analysis, group, state.selected.get(group.id) || 0);
+            const profile = group.architecture ? group.blocks[state.selected.get(group.id) || 0].profile : null;
             sidebar.addSection('Architecture fact sheet');
             sidebar.addProperty('layer mix', schematic.layerMix);
             sidebar.addProperty('selected instance', `${schematic.selected} · ${schematic.operators} operators`);
@@ -1326,10 +1327,36 @@ view.View = class {
                 sidebar.addProperty('output shape', schematic.outputShapes.join(' · '));
             }
             sidebar.addProperty('precision', schematic.precision);
+            if (group.architecture) {
+                const architecture = state.analysis.architecture;
+                sidebar.addProperty('block type', profile.label);
+                sidebar.addProperty('normalization', profile.normalization);
+                if (profile.attention.queryHeads) {
+                    sidebar.addProperty('heads', `${profile.attention.queryHeads} query / ${profile.attention.kvHeads} KV`);
+                }
+                sidebar.addProperty('MLP widths', `${profile.feedforward.hiddenWidth} → ${profile.feedforward.intermediateWidth} → ${profile.feedforward.hiddenWidth}`);
+                sidebar.addProperty('Softmax coverage', `${architecture.matchedSoftmax} inside detected blocks / ${architecture.softmax} in graph`);
+            }
             sidebar.element.appendChild(renderStackSchematic(this._host.document, schematic, (indices) => {
                 const module = state.analysis.subgraph(indices, 'Block anatomy', '');
                 this.pushTarget(module).catch((error) => this.error(error, 'Error opening block anatomy.', null));
             }));
+            if (profile) {
+                sidebar.addSection('Block recipe and references');
+                sidebar.addProperty('block family', profile.family);
+                sidebar.addProperty('attention implementation', profile.attention.implementation);
+                sidebar.addProperty('block recipe', profile.recipe);
+                for (const match of profile.reference.matches) {
+                    sidebar.addProperty('reference recipe', `${match.label} · ${match.status}`);
+                    sidebar.addProperty('shared features', match.shared);
+                    if (match.unresolved.length) {
+                        sidebar.addProperty('unverified features', match.unresolved);
+                    }
+                    sidebar.addProperty('gallery examples', `${match.examples} share these features; model identity is unverified.`);
+                }
+                sidebar.addProperty('unresolved', profile.unresolved);
+                sidebar.addProperty('reference', profile.reference.title).action('Open gallery', 'View reference architecture recipes', () => this._host.openURL(profile.reference.url));
+            }
             sidebar.addProperty('anatomy', 'Semantic summaries inferred from operators. + marks a verified bypass connection. Inspect a region for exact operations and wiring.');
         }
         if (group.presentation?.total) {
@@ -3840,6 +3867,12 @@ view.Node = class extends grapher.Node {
         const selected = group.blocks[state.selected.get(group.id) || 0];
         row(summary, 'Selected', `${selected.index} · ${selected.indices.length} operators`);
         if (!presentation.compound) {
+            if (group.architecture) {
+                row(summary, 'Blocks', `${indexRange(presentation.blockIndices)} · detected order`);
+                row(summary, 'Block type', selected.profile.label);
+                row(summary, 'Anatomy', 'Norm → Attention → (+) → Norm → MLP → (+)');
+                row(summary, 'Softmax', `${selected.softmaxCount} in selected block`);
+            }
             row(summary, 'Each', `${group.blocks[0].indices.length} operators · own parameters`);
             row(summary, 'Inside', group.blocks[state.selected.get(group.id) || 0].components.slice(0, 4).join(' · '));
             row(summary, 'Cadence', group.blocks.length <= 12 ? '■'.repeat(group.blocks.length) : `■ × ${group.blocks.length}`);

@@ -25,7 +25,7 @@ export const stackPresentation = async (analysis, current = () => true) => {
         if (!current()) {
             return;
         }
-        if (group.kind !== 'pattern' || group.blocks.length < 2) {
+        if (group.architecture || group.kind !== 'pattern' || group.blocks.length < 2) {
             continue;
         }
         const first = group.blocks[0];

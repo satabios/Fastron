@@ -14,7 +14,7 @@ class PatternBlocks extends ModuleBlocks {
 }
 
 // Bounded contiguous motifs preserve source order and every external port; they do not assert equal weights.
-export const patternBlocks = async (graph, current = () => true) => {
+export const patternBlocks = async (graph, current = () => true, excluded = []) => {
     if (!current()) {
         return null;
     }
@@ -74,6 +74,10 @@ export const patternBlocks = async (graph, current = () => true) => {
     // Anonymous axes describe unresolved metadata, never an inferred equality between tensors.
     const signature = (start, end) => patternSignature(nodes, start, end, attrs, true);
     const valid = new Uint8Array(nodes.length);
+    const protectedNodes = new Uint8Array(nodes.length);
+    for (const group of excluded) {
+        protectedNodes.fill(1, group.anchor, group.members.at(-1) + 1);
+    }
     const tokens = new Map();
     const intern = (key) => {
         if (!tokens.has(key)) {
@@ -83,7 +87,7 @@ export const patternBlocks = async (graph, current = () => true) => {
     };
     const single = [];
     for (let i = 0; i < nodes.length; i++) {
-        if (!nested(nodes[i]) && values(nodes[i].outputs).length &&
+        if (!protectedNodes[i] && !nested(nodes[i]) && values(nodes[i].outputs).length &&
             [...values(nodes[i].inputs), ...values(nodes[i].outputs)].every((value) => value.initializer || value.name)) {
             try {
                 single[i] = intern(signature(i, i));

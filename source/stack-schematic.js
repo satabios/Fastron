@@ -3,7 +3,7 @@ const values = (args) => (args || []).flatMap((arg) => arg.value || []).filter(B
 const operator = (node) => node.type.name.split(/[.:]/).pop();
 const shape = (value) => value?.type?.shape?.dimensions || [];
 
-const anatomy = (nodes) => {
+const anatomy = (nodes, parts = []) => {
     const producers = new Map();
     nodes.forEach((node, i) => values(node.outputs).forEach((value) => producers.set(value.name, i)));
     const zones = [];
@@ -12,9 +12,10 @@ const anatomy = (nodes) => {
     const append = (end, residual = false) => {
         const members = nodes.slice(start, end + 1);
         const ops = [...new Set(members.map(operator))];
-        const attention = ops.some((op) => /^(Softmax|.*Attention)$/i.test(op));
-        const mlp = !attention && members.filter((node) => /^(MatMul|Gemm|FullyConnected)$/i.test(operator(node))).length >= 2 &&
-            ops.some((op) => /^(Silu|Swish|Gelu|Relu|Sigmoid|ElementWiseNeuron)$/i.test(op));
+        const known = parts.find((part) => part.start >= start && part.end <= end && /^(Attention|MLP)/.test(part.title));
+        const attention = known?.title.startsWith('Attention') || ops.some((op) => /^(Softmax|.*Attention)$/i.test(op));
+        const mlp = known?.title === 'MLP' || (!attention && members.filter((node) => /^(MatMul|Gemm|FullyConnected)$/i.test(operator(node))).length >= 2 &&
+            ops.some((op) => /^(Silu|Swish|Gelu|Relu|Sigmoid|ElementWiseNeuron)$/i.test(op)));
         let title = 'Operations';
         let kind = 'operations';
         if (attention) {
@@ -62,7 +63,17 @@ export const stackSchematic = (analysis, group, selected = 0) => {
     const regions = parts.map((part) => {
         const indices = block.indices.slice(part.start, part.start + (part.end - part.start) / part.count);
         const nodes = Array.from(indices, (index) => analysis.describe(index));
-        return { count: part.count, indices, zones: anatomy(nodes), operators: nodes.length };
+        const known = group.architecture ? analysis.blocks?.get(`${indices[0]}:${indices.at(-1)}`) || [] : [];
+        const zones = known.map((zone) => ({ ...zone, start: zone.start - indices[0], end: zone.end - indices[0] }));
+        const details = anatomy(nodes, zones);
+        for (const zone of details) {
+            if (block.profile && zone.kind === 'attention') {
+                zone.title = `Attention (${block.profile.attention.kind})`;
+            } else if (block.profile && zone.kind === 'mlp') {
+                zone.title = block.profile.feedforward.kind;
+            }
+        }
+        return { count: part.count, indices, zones: details, operators: nodes.length };
     });
     const nodes = Array.from(block.indices, (index) => analysis.describe(index));
     const outputs = values(nodes.at(-1)?.outputs).filter((value) => !value.initializer);

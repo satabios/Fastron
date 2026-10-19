@@ -1,5 +1,6 @@
 import { dimensions, patternAttributes, patternSignature } from './pattern-signature.js';
 import { ModuleBlocks } from './module-blocks.js';
+import { architectureProfile } from './architecture-profile.js';
 import { nodeDescriptions } from './repeated-blocks.js';
 
 const values = (args) => (args || []).flatMap((arg) => arg.value || []);
@@ -35,6 +36,7 @@ class StructuralBlocks extends ModuleBlocks {
 
     subgraph(indices, name, scope) {
         const graph = super.subgraph(indices, name, scope);
+        graph._patternRegion = true;
         const parts = this.blocks.get(`${indices[0]}:${indices.at(-1)}`);
         if (parts && indices.length === indices.at(-1) - indices[0] + 1) {
             const relative = (part) => ({ ...part, start: part.start - indices[0], end: part.end - indices[0],
@@ -452,6 +454,7 @@ export const structuralBlocks = async (graph, current = () => true) => {
             variant = 'MHA';
         }
         return { title: 'Attention', displayTitle: `Attention (${variant})`, parts,
+            mechanism: { kind: variant, implementation: 'unrolled heads', queryHeads: softmax.length, kvHeads: kv.size },
             attributes: [{ name: 'query heads', type: 'int64', value: softmax.length }, { name: 'KV heads', type: 'int64', value: kv.size }] };
     };
     const fused = (index, norm, projections) => {
@@ -520,7 +523,20 @@ export const structuralBlocks = async (graph, current = () => true) => {
             projections.slice(0, -1).every((item) => item.dims.input === c && follows(values(nodes[item.index].inputs)[0], norm.output, start, pointwise)) &&
             projections.at(-1).dims.output === c && fused(cores[0], norm, projections) &&
             follows(values(nodes[projections.at(-1).index].inputs)[0], output(cores[0]), start, attentionOps)) {
-            return 'Attention';
+            const core = nodes[cores[0]];
+            const attrs = attributes(cores[0]);
+            const args = values(core.inputs);
+            const dims = dimensions(args[0]);
+            const queryHeads = Number(attrs.get('q_num_heads') ?? attrs.get('num_heads') ?? dims[1]);
+            const kvHeads = core.type.name === 'Attention' && domain(core) === 'com.microsoft' ? queryHeads
+                : Number(attrs.get('kv_num_heads') ?? (dims.length === 4 ? dimensions(args[1])[1] : queryHeads));
+            let kind = 'GQA';
+            if (kvHeads === queryHeads) {
+                kind = 'MHA';
+            } else if (kvHeads === 1) {
+                kind = 'MQA';
+            }
+            return { title: 'Attention', mechanism: { kind, implementation: 'fused', queryHeads, kvHeads } };
         }
         if (!norm.pattern && softmax.length === 1 && products.length === 2 && projections.length >= 2 && projections.length <= 4 &&
             indices.every((i) => attentionOps.has(nodes[i].type.name)) && products.every(matmul)) {
@@ -538,11 +554,33 @@ export const structuralBlocks = async (graph, current = () => true) => {
                     follows(values(nodes[item.index].inputs)[0], norm.output, start, pointwise)) &&
                 follows(values(nodes[projections.at(-1).index].inputs)[0], values(nodes[products[1]].outputs)[0], start, attentionOps) &&
                 projections.at(-1).dims.output === c) {
-                return 'Attention';
+                const query = dimensions(values(nodes[products[0]].inputs)[0]);
+                const key = dimensions(values(nodes[products[0]].inputs)[1]);
+                // Only report head sharing for direct rank-4 layouts without KV repetition.
+                // Expand/Tile lowerings need provenance before their KV count can be named.
+                let kind = 'SDPA';
+                const mechanism = { kind, implementation: 'explicit' };
+                if (query.length === 4 && key.length >= 3 && key.length <= 4 &&
+                    !indices.some((i) => ['Expand', 'Tile'].includes(nodes[i].type.name))) {
+                    const queryHeads = query[1];
+                    const kvHeads = key.length === 3 ? 1 : key[1];
+                    if (Number.isSafeInteger(queryHeads) && Number.isSafeInteger(kvHeads) && kvHeads > 0 && queryHeads % kvHeads === 0) {
+                        if (queryHeads === kvHeads) {
+                            kind = 'MHA';
+                        } else if (kvHeads === 1) {
+                            kind = 'MQA';
+                        } else {
+                            kind = 'GQA';
+                        }
+                        Object.assign(mechanism, { kind, queryHeads, kvHeads });
+                    }
+                }
+                return { title: 'Attention', mechanism };
             }
         }
         const activations = indices.filter((i) => ['Gelu', 'Relu', 'Swish', 'Sigmoid'].includes(nodes[i].type.name))
-            .map((i) => ({ index: i, input: values(nodes[i].inputs)[0], output: output(i) }));
+            .map((i) => ({ index: i, input: values(nodes[i].inputs)[0], output: output(i),
+                kind: new Map([['Gelu', 'GELU'], ['Relu', 'ReLU'], ['Swish', 'SiLU'], ['Sigmoid', 'Sigmoid']]).get(nodes[i].type.name) }));
         for (const activation of [...activations]) {
             if (nodes[activation.index].type.name === 'Sigmoid') {
                 for (const i of consumers.get(activation.output.name) || []) {
@@ -550,18 +588,20 @@ export const structuralBlocks = async (graph, current = () => true) => {
                     if (i > start && i < end && nodes[i].type.name === 'Mul' && args.length === 2 &&
                         args.some((value) => value.name === activation.input.name) && args.every((value) => value.type?.dataType === output(i)?.type?.dataType &&
                             (norm.pattern ? compatibleShape(dimensions(value), dimensions(output(i))) : sameType(value, output(i))))) {
-                        activations.push({ index: i, input: activation.input, output: output(i) });
+                        activations.push({ index: i, input: activation.input, output: output(i), kind: 'SiLU' });
                     }
                 }
             }
         }
         if (projections.length === 2 && indices.every((i) => mlpOps.has(nodes[i].type.name))) {
             const [first, last] = projections;
+            const activation = activations.find((item) => follows(item.input, output(first.index), start, transforms) &&
+                follows(values(nodes[last.index].inputs)[0], item.output, start, transforms));
             if (first.dims.input === c && first.dims.output > c && last.dims.input === first.dims.output && last.dims.output === c &&
                 follows(values(nodes[first.index].inputs)[0], norm.output, start, pointwise) &&
-                activations.some((activation) => follows(activation.input, output(first.index), start, transforms) &&
-                    follows(values(nodes[last.index].inputs)[0], activation.output, start, transforms))) {
-                return 'MLP';
+                activation) {
+                return { title: 'MLP', feedforward: { kind: `${activation.kind} MLP`, gated: false,
+                    hiddenWidth: c, intermediateWidth: first.dims.output } };
             }
         }
         if (projections.length === 3 && indices.every((i) => mlpOps.has(nodes[i].type.name))) {
@@ -581,7 +621,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
                                 args.some((value) => follows(value, activation.output, start, transforms)) &&
                                 args.some((value) => follows(value, output(up.index), start, transforms)) &&
                                 follows(values(nodes[last.index].inputs)[0], output(i), start, transforms)) {
-                                return 'MLP';
+                                const kind = new Map([['GELU', 'GEGLU'], ['SiLU', 'SwiGLU'], ['Sigmoid', 'GLU'], ['ReLU', 'ReGLU']]).get(activation.kind);
+                                return { title: 'MLP', feedforward: { kind, gated: true, hiddenWidth: c, intermediateWidth: first.dims.output } };
                             }
                         }
                     }
@@ -656,7 +697,8 @@ export const structuralBlocks = async (graph, current = () => true) => {
                 if (!signatures.has(signature)) {
                     signatures.set(signature, signature);
                 }
-                blocks.push({ start: attention.start, end: mlp.end, pattern, signature: signatures.get(signature),
+                blocks.push({ start: attention.start, end: mlp.end, input: attention.input, output: mlp.output,
+                    pattern, signature: signatures.get(signature), profile: architectureProfile(attention, mlp),
                     parts: [attention, mlp].flatMap((part) => [
                         ...(part.norm.end > part.norm.start ? [{ title: part.norm.title, start: part.norm.start, end: part.norm.end, kind: pattern ? 'pattern' : 'structural' }] : []),
                         { title: part.displayTitle || part.title, start: part.norm.end + 1, end: part.end - 1,
@@ -674,10 +716,11 @@ export const structuralBlocks = async (graph, current = () => true) => {
     const groups = [];
     for (let start = 0; start < blocks.length;) {
         let end = start + 1;
-        while (end < blocks.length && blocks[end].start === blocks[end - 1].end + 1 && blocks[end].signature === blocks[start].signature) {
+        while (end < blocks.length && blocks[end].start === blocks[end - 1].end + 1 &&
+            blocks[end].input === blocks[end - 1].output && blocks[end].signature === blocks[start].signature) {
             end++;
         }
-        const instances = blocks.slice(start, end).map((block, i) => ({ index: start + i, scope: '', components: ['Attention', 'MLP'],
+        const instances = blocks.slice(start, end).map((block, i) => ({ index: start + i, scope: '', components: ['Attention', 'MLP'], profile: block.profile,
             indices: Uint32Array.from({ length: block.end - block.start + 1 }, (_, j) => block.start + j) }));
         groups.push(group(groups.length, blocks[start].pattern ? 'Decoder blocks' : 'Transformer blocks', instances,
             blocks[start].pattern ? 'pattern' : 'structural'));

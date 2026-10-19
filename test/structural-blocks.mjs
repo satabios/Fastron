@@ -1,5 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { NodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
+import { Host } from './mock.js';
+import { View } from '../source/view.js';
+import { architectureBlocks } from '../source/architecture-blocks.js';
 import { structuralBlocks } from '../source/structural-blocks.js';
 import { test } from 'node:test';
 
@@ -186,6 +189,97 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
     return { nodes, inputs: graphInputs, outputs: [{ name: 'output', value: [previous] }], blocks };
 };
 
+test('application folding counts 24 Transformer blocks across eight recurring three-block variants', async () => {
+    const graph = fixture(24);
+    for (let i = 2; i < graph.blocks.length; i += 3) {
+        graph.nodes[graph.blocks[i].start].attributes.find((attr) => attr.name === 'epsilon').value = 1e-5;
+    }
+    const original = graph.nodes;
+    graph.nodes = new NodeCatalog(original, () => {
+        throw new Error('Application analysis must not construct rich nodes.');
+    }, (node) => node).nodes;
+    const host = new Host({ serial: true });
+    const view = new View(host);
+    view.model = { modules: [graph] };
+    view.options.foldRepeatedBlocks = true;
+    const display = await view._repeatedPresentation(graph, () => true);
+    const analysis = view._repeatStates.get(graph).analysis;
+    assert.deepEqual(analysis.architecture, { blocks: 24, softmax: 24, matchedSoftmax: 24 });
+    assert.equal(analysis.groups.filter((group) => group.architecture).reduce((sum, group) => sum + group.blocks.length, 0), 24);
+    assert.ok(analysis.groups.every((group) => group.blocks.length <= 2 && !group.presentation.compound));
+    assert.ok([...nodeDescriptions(display)].filter((node) => node._repeatHeader).every((node) => node.type.name === 'Transformer blocks'));
+    const expanded = analysis.project(new Map(), new Set(analysis.groups.map((group) => group.id)));
+    assert.deepEqual([...nodeDescriptions(expanded)].map((node) => node._originalNode || node), original);
+    const selected = [...nodeDescriptions(display)].find((node) => node._repeatHeader).type;
+    const detail = await architectureBlocks(selected);
+    assert.deepEqual([...nodeDescriptions(detail.project())].map((node) => node.type.name), ['LayerNormalization', 'Attention', 'Add', 'LayerNormalization', 'MLP', 'Add']);
+});
+
+test('architectural counts remain independent of explicit Softmax inventory', async () => {
+    const fused = await architectureBlocks(fixture(3, false, { fused: 'rank4' }));
+    assert.deepEqual(fused.architecture, { blocks: 3, softmax: 0, matchedSoftmax: 0 });
+    const unrolled = await architectureBlocks(fixture(3, false, { heads: 4, kvHeads: 2, unrolled: true, normalization: 'rms-pow' }));
+    assert.deepEqual(unrolled.architecture, { blocks: 3, softmax: 12, matchedSoftmax: 12 });
+    const invalid = fixture(3);
+    for (const block of invalid.blocks) {
+        invalid.nodes[block.attentionAdd].inputs[0] = invalid.nodes[block.attentionAdd].inputs[1];
+    }
+    assert.equal((await architectureBlocks(invalid))?.architecture, undefined, 'Softmaxes without the verified residual recipe cannot establish Transformer blocks.');
+    assert.equal(await architectureBlocks(fixture(), () => false), null);
+});
+
+for (const [name, options, expected] of [
+    ['classic dense recipe', {}, ['LayerNorm', 'MHA', 'GELU MLP', 'shared feature match']],
+    ['fused gated GQA recipe', { normalization: 'RMSNormalization', gated: 'SwiGLU', fused: 'rank3', heads: 4, kvHeads: 2 }, ['RMSNorm', 'GQA', 'SwiGLU', 'shared feature match']],
+    ['unresolved normalization stays a partial reference', { normalization: 'rms-pow', gated: 'SwiGLU', unrolled: true, heads: 4, kvHeads: 2 }, ['Unresolved normalization', 'GQA', 'SwiGLU', 'partial feature match']]
+]) {
+    test(`architecture profile: ${name}`, async () => {
+        const analysis = await architectureBlocks(fixture(3, false, options));
+        const profile = analysis.groups[0].blocks[0].profile;
+        assert.deepEqual([profile.normalization, profile.attention.kind, profile.feedforward.kind, profile.reference.matches[0].status], expected);
+        assert.deepEqual([profile.feedforward.hiddenWidth, profile.feedforward.intermediateWidth], [8, 16]);
+        assert.ok(profile.unresolved.includes('Source model identity'));
+        const other = await architectureBlocks(fixture(3, false, { ...options, gated: 'GEGLU' }));
+        assert.equal(other.groups[0].blocks[0].profile.feedforward.kind, 'GEGLU');
+    });
+}
+
+test('attention profiles preserve uncertainty about KV repetition and distinguish MQA', async () => {
+    const repeated = await architectureBlocks(fixture(3, false, { heads: 4, kvHeads: 2, repeat: 'Expand' }));
+    const profile = repeated.groups[0].blocks[0].profile;
+    assert.equal(profile.attention.kind, 'SDPA');
+    assert.equal(profile.attention.kvHeads, undefined, 'Repeated KV tensors cannot establish original KV head counts.');
+    const mqa = await architectureBlocks(fixture(3, false, { heads: 4, kvHeads: 1 }));
+    assert.deepEqual(mqa.groups[0].blocks[0].profile.attention, { kind: 'MQA', implementation: 'explicit', queryHeads: 4, kvHeads: 1 });
+});
+
+test('adjacent independent Transformer blocks cannot become a serial stack', async () => {
+    const graph = fixture(2);
+    graph.nodes[graph.blocks[1].start].inputs[0] = graph.inputs[0];
+    graph.nodes[graph.blocks[1].attentionAdd].inputs[0] = graph.inputs[0];
+    const analysis = await architectureBlocks(graph);
+    assert.equal(analysis.architecture.blocks, 2);
+    assert.deepEqual(analysis.groups.map((group) => group.blocks.length), [1, 1]);
+});
+
+test('generic fallback folds unclaimed operators without crossing Transformer boundaries', async () => {
+    const graph = fixture(3);
+    let previous = graph.outputs[0].value[0];
+    for (let i = 0; i < 4; i++) {
+        const output = { ...previous, name: `tail${i}` };
+        graph.nodes.push({ name: `tail${i}`, type: { name: 'Relu', version: 20 }, attributes: [],
+            inputs: [{ name: 'input', value: [previous] }], outputs: [{ name: 'output', value: [output] }] });
+        previous = output;
+    }
+    graph.outputs = [{ name: 'output', value: [previous] }];
+    const analysis = await architectureBlocks(graph);
+    assert.deepEqual(analysis.groups.map((group) => [group.architecture || 'generic', group.blocks.length]), [['transformer', 3], ['generic', 4]]);
+    const members = analysis.groups.flatMap((group) => [...group.members]);
+    assert.equal(new Set(members).size, members.length);
+    const expanded = analysis.project(new Map(), new Set(analysis.groups.map((group) => group.id)));
+    assert.deepEqual([...nodeDescriptions(expanded)].map((node) => node._originalNode || node), graph.nodes);
+});
+
 test('transformer detection uses operations, shapes and residual wiring with arbitrary names and no rich nodes or payload reads', async () => {
     const graph = fixture();
     let created = 0;
@@ -232,6 +326,7 @@ test('renaming every node and tensor preserves detected member indices, and exte
         inputs: args(graph.inputs), outputs: args(graph.outputs) };
     const other = await structuralBlocks(renamed);
     assert.deepEqual(other.groups.map((group) => [...group.members]), analysis.groups.map((group) => [...group.members]));
+    assert.deepEqual(other.groups.map((group) => group.blocks.map((block) => block.profile)), analysis.groups.map((group) => group.blocks.map((block) => block.profile)));
     assert.ok(projected.filter((node) => node._repeatHeader).every((node) => node._repeatGroup.blocks.length > 1));
 });
 
