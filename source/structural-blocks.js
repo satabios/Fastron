@@ -500,6 +500,42 @@ export const structuralBlocks = async (graph, current = () => true) => {
             queryHeads >= kvHeads && queryHeads % kvHeads === 0 && inputs.slice(0, 3).every((value) =>
             projections.slice(0, -1).some((item) => follows(value, output(item.index), norm.end, attentionOps)));
     };
+    const splitConcat = (index, splitAxis, concatAxis) => {
+        const concatDimension = concatAxis < 0 ? concatAxis + 4 : concatAxis;
+        if (nodes[index].type.name !== 'Concat' || ![concatDimension, concatDimension - 4].includes(Number(attributes(index).get('axis')))) {
+            return null;
+        }
+        const inputs = values(nodes[index].inputs);
+        const split = source(inputs[0], 'Split');
+        if (split === undefined || inputs.length < 2) {
+            return null;
+        }
+        const pieces = values(nodes[split].outputs);
+        const original = values(nodes[split].inputs)[0];
+        const dims = dimensions(original);
+        const piece = dimensions(inputs[0]);
+        const axis = Number(attributes(split).get('axis') ?? 0);
+        if (!dims || dims.length !== 4 || !piece || piece.length !== 4 || ![splitAxis, splitAxis - 4].includes(axis) ||
+            pieces.length !== inputs.length || !inputs.every((value, i) => value.name === pieces[i].name && same(dimensions(value), piece)) ||
+            !Number.isSafeInteger(piece[splitAxis]) || dims[splitAxis] !== piece[splitAxis] * inputs.length ||
+            !dims.every((dim, i) => i === splitAxis || dim === piece[i]) || !Number.isSafeInteger(piece[concatDimension])) {
+            return null;
+        }
+        const expected = piece.map((dim, i) => i === concatDimension ? dim * inputs.length : dim);
+        return same(dimensions(output(index)), expected) ? { index, split, count: inputs.length, input: original, output: output(index) } : null;
+    };
+    const packedHeads = (indices, products, start, projections) => {
+        const partitions = indices.map((i) => splitConcat(i, 3, 0)).filter(Boolean);
+        const roles = [...values(nodes[products[0]].inputs), values(nodes[products[1]].inputs)[1]]
+            .map((value) => partitions.find((part) => follows(value, part.output, start, attentionOps)));
+        if (roles.some((part) => !part) || new Set(roles.map((part) => part.index)).size !== 3 ||
+            !roles.every((part) => part.count === roles[0].count)) {
+            return null;
+        }
+        const merge = indices.map((i) => splitConcat(i, 0, -1)).find((part) => part && part.count === roles[0].count &&
+            part.input.name === output(products[1]).name && follows(values(nodes[projections.at(-1).index].inputs)[0], part.output, start, attentionOps));
+        return merge ? roles[0].count : null;
+    };
     const classify = (norm, end, input) => {
         const start = norm.end;
         const c = dimensions(norm.pattern ? norm.output : input)?.at(-1);
@@ -560,11 +596,19 @@ export const structuralBlocks = async (graph, current = () => true) => {
                 // Expand/Tile lowerings need provenance before their KV count can be named.
                 let kind = 'SDPA';
                 const mechanism = { kind, implementation: 'explicit' };
-                if (query.length === 4 && key.length >= 3 && key.length <= 4 &&
-                    !indices.some((i) => ['Expand', 'Tile'].includes(nodes[i].type.name))) {
+                const packed = packedHeads(indices, products, start, projections);
+                if (packed) {
+                    Object.assign(mechanism, { kind: 'MHA', implementation: 'heads packed into batch', queryHeads: packed, kvHeads: packed });
+                } else if (query.length === 4 && key.length >= 3 && key.length <= 4 &&
+                    !indices.some((i) => ['Expand', 'Tile', 'Split', 'Concat', 'Slice', 'Gather'].includes(nodes[i].type.name))) {
                     const queryHeads = query[1];
                     const kvHeads = key.length === 3 ? 1 : key[1];
-                    if (Number.isSafeInteger(queryHeads) && Number.isSafeInteger(kvHeads) && kvHeads > 0 && queryHeads % kvHeads === 0) {
+                    const args = [...values(nodes[products[0]].inputs), values(nodes[products[1]].inputs)[1]];
+                    const widths = [queryHeads * query.at(-1), kvHeads * key.at(-2), kvHeads * dimensions(args[2]).at(-1)];
+                    const roles = args.map((value, i) => projections.slice(0, -1).find((item) => item.dims.output === widths[i] &&
+                        follows(value, output(item.index), start, transforms))?.index);
+                    if (Number.isSafeInteger(queryHeads) && Number.isSafeInteger(kvHeads) && kvHeads > 0 && queryHeads % kvHeads === 0 &&
+                        roles.every((role) => role !== undefined) && new Set(roles).size === 3) {
                         if (queryHeads === kvHeads) {
                             kind = 'MHA';
                         } else if (kvHeads === 1) {

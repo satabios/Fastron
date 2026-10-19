@@ -7,7 +7,7 @@ import { structuralBlocks } from '../source/structural-blocks.js';
 import { test } from 'node:test';
 
 const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = '', compact = false, grouped = false,
-    normalization = 'LayerNormalization', gated = '', fused = '', unrolled = false } = {}) => {
+    normalization = 'LayerNormalization', gated = '', fused = '', unrolled = false, packedHeads = false } = {}) => {
     let sequence = 0;
     const value = (dims, initializer = false) => ({ name: `v${sequence++}`, type: { dataType: normalization === 'rms-cast' ? 'float16' : 'float32', shape: { dimensions: dims } },
         ...(initializer ? { initializer: { get values() {
@@ -62,6 +62,25 @@ const fixture = (count = 3, gap = false, { heads = 2, kvHeads = heads, repeat = 
         const keyValueHeads = Array.isArray(kvHeads) ? kvHeads[i] : kvHeads;
         const batches = grouped ? [1, keyValueHeads, heads / keyValueHeads] : [1, heads];
         const attention = () => {
+            if (packedHeads) {
+                const splitConcat = (x, axis, concatAxis, dims, count) => {
+                    const first = add('Split', [x], dims, [{ name: 'axis', type: 'int64', value: axis }]);
+                    const outputs = [first, ...Array.from({ length: count - 1 }, () => value(dims))];
+                    nodes.at(-1).outputs[0].value = outputs;
+                    return add('Concat', outputs, dims.map((dim, i) => i === concatAxis ? dim * count : dim),
+                        [{ name: 'axis', type: 'int64', value: concatAxis }]);
+                };
+                const partition = () => splitConcat(add('Reshape', [project(normalized, 8, 8)], [1, 1, 3, 8]), 3, 0, [1, 1, 3, width], heads);
+                const q = partition();
+                const k = add('Transpose', [partition()], [heads, 1, width, 3], [{ name: 'perm', type: 'int64[]', value: [0, 1, 3, 2] }]);
+                const v = partition();
+                const scores = add('MatMul', [q, k], [heads, 1, 3, 3]);
+                const softmax = nodes.length;
+                const probabilities = add('Softmax', [scores], [heads, 1, 3, 3], [{ name: 'axis', type: 'int64', value: -1 }]);
+                const product = nodes.length;
+                const attended = add('MatMul', [probabilities, v], [heads, 1, 3, width]);
+                return { attended: splitConcat(attended, 0, 3, [1, 1, 3, width], heads), softmax, product, tap: probabilities };
+            }
             if (unrolled) {
                 const split = (input, count) => {
                     const first = add('Split', [input], [1, 1, 3, width], [{ name: 'axis', type: 'int64', value: -1 }]);
@@ -251,6 +270,17 @@ test('attention profiles preserve uncertainty about KV repetition and distinguis
     assert.equal(profile.attention.kvHeads, undefined, 'Repeated KV tensors cannot establish original KV head counts.');
     const mqa = await architectureBlocks(fixture(3, false, { heads: 4, kvHeads: 1 }));
     assert.deepEqual(mqa.groups[0].blocks[0].profile.attention, { kind: 'MQA', implementation: 'explicit', queryHeads: 4, kvHeads: 1 });
+});
+
+test('packed-head profiles follow Split/Concat provenance instead of interpreting batch axes as heads', async () => {
+    const graph = fixture(3, false, { packedHeads: true, heads: 4 });
+    const analysis = await architectureBlocks(graph);
+    assert.deepEqual(analysis.groups[0].blocks[0].profile.attention,
+        { kind: 'MHA', implementation: 'heads packed into batch', queryHeads: 4, kvHeads: 4 });
+    const concat = graph.nodes.find((node) => node.type.name === 'Concat');
+    concat.inputs[1] = concat.inputs[0];
+    const invalid = await architectureBlocks(graph);
+    assert.equal(invalid.groups[0].blocks[0].profile.attention.kind, 'SDPA', 'Repeated slices do not establish separate heads.');
 });
 
 test('adjacent independent Transformer blocks cannot become a serial stack', async () => {

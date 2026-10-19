@@ -187,6 +187,21 @@ node test/architecture-folder.mjs graph-examples
 
 This audit supersedes the earlier generic-only displayed counts for the two supported Qwen exports. It does not claim support for every Transformer lowering or attach architecture labels to unsupported patterns.
 
+### Architecture profiles and gallery references
+
+Verified blocks now carry a feature profile alongside their repeat signature. Profiles report normalization, MHA/MQA/GQA when established, explicit/fused/unrolled attention, dense or gated MLP activation, hidden/intermediate widths, and evidence ranges. These labels are derived from the recognized computation paths, not operator-name presence alone. For example, SwiGLU requires the verified SiLU gate, a separate up projection, multiplicative merge and down projection; GELU on a separate branch cannot establish it.
+
+The initial reference catalogue uses two gallery recipes: classic LayerNorm + MHA + GELU dense blocks (shared by GPT-2), and RMSNorm + GQA blocks (shared by Llama 3 and Qwen3). These are shared-feature comparisons, not model identification. Known conflicting features reject a reference recipe; unverified features produce an explicitly partial match. Positional encoding, attention masking and source model identity remain unresolved unless separately established. The gallery is linked from the fact sheet and is not fetched during model loading.
+
+| Supplied export | Observed block profile | Reference comparison |
+| --- | --- | --- |
+| Qwen vision | LayerNorm · MHA with 16 query / 16 KV heads · GELU MLP, 1024 → 4096 → 1024 | Shared features with the classic dense Transformer recipe; this does not identify GPT-2 or establish a text decoder |
+| Qwen text | Unresolved normalization · GQA with 16 query / 8 KV heads · SwiGLU, 2048 → 6144 → 2048 | Partial RMSNorm/GQA recipe match: GQA is established; the opaque Pow normalization exponent remains unread |
+
+Qwen vision packs its heads into the leading dimension through Split/Concat, then broadcasts spatial/query dimensions during attention. Reading the second MatMul dimension as a head count would incorrectly label it MQA. The profile now verifies all Q/K/V feature partitions, their ordered Split/Concat mapping and the complete output-head merge before reporting 16-head MHA. Ambiguous slice/concat/expand layouts retain the generic SDPA label instead of guessing head sharing. Fused and unrolled layouts use their separately validated schema/provenance evidence.
+
+Regression tests cover dense and gated recipes, MQA, fused GQA, opaque-normalization partial matches, packed-head provenance, duplicated-slice rejection, and profile invariance after renaming. All profiles remain metadata-only and do not modify grouping or inference semantics. The reference catalogue is deliberately limited to the verified feature recipes above; it does not identify arbitrary architectures from the full gallery.
+
 ## Local machine benchmarks — 2026-10-19
 
 Measured on an AMD Ryzen 9 9950X3D (16 cores / 32 threads), approximately 29 GiB RAM, Linux x86_64 and Node v24.13.0. The checkout was based on `658dba33ea0bca5d3e5e503ed9c1c68f16681c2f`, including the uncommitted stack schematic changes. Benchmarks ran sequentially. All ten existing benchmark commands and the additional stack-click harness completed successfully. The folding and viewport commands required a retry outside the execution sandbox because their Node child processes were initially blocked with `EPERM`.

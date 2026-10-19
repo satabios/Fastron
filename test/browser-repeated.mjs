@@ -330,6 +330,12 @@ try {
             // eslint-disable-next-line no-await-in-loop
             await expect(page.locator('.sidebar-object')).toContainText('24 inside detected blocks / 24 in graph');
             // eslint-disable-next-line no-await-in-loop
+            await expect(page.locator('.sidebar-object')).toContainText('MHA + GELU MLP');
+            // eslint-disable-next-line no-await-in-loop
+            await expect(page.locator('.sidebar-object')).toContainText('16 query / 16 KV');
+            // eslint-disable-next-line no-await-in-loop
+            await expect(page.locator('.sidebar-object')).toContainText('Classic dense Transformer recipe · shared feature match');
+            // eslint-disable-next-line no-await-in-loop
             await expect(page.locator('.stack-schematic-mlp')).toHaveCount(1);
             // eslint-disable-next-line no-await-in-loop
             await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-transformer-vision.png'), animations: 'disabled' });

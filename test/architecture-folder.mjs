@@ -74,7 +74,8 @@ for (const file of files) {
         other.options.foldRepeatedBlocks = true;
         // eslint-disable-next-line no-await-in-loop
         const renamedDisplay = await other._repeatedPresentation(renamed, () => true);
-        const matches = (items) => (items || []).map((group) => ({ architecture: group.architecture, members: [...group.members] }));
+        const matches = (items) => (items || []).map((group) => ({ architecture: group.architecture, members: [...group.members],
+            profiles: group.blocks.map((block) => block.profile) }));
         assert.deepEqual(matches(other._repeatStates.get(renamed)?.analysis.groups), matches(analysis?.groups));
         assert.equal(renamedDisplay.nodes.length, display.nodes.length);
         // eslint-disable-next-line no-await-in-loop
@@ -85,6 +86,7 @@ for (const file of files) {
             transformerBlocks: blocks.length, softmaxInBlocks: analysis?.architecture?.matchedSoftmax || 0,
             softmaxPerBlock: [...new Set(blocks.map((block) => block.softmaxCount))],
             profiles: [...new Set(blocks.map((block) => `${block.profile.normalization} · ${block.profile.label}`))],
+            referenceRecipes: [...new Set(blocks.flatMap((block) => block.profile.reference.matches.map((match) => `${match.label} · ${match.status}`)))],
             genericRepeatCounts: generic?.groups.filter((group) => group.blocks.length > 1).map((group) => group.blocks.length) || [],
             transformerRuns: analysis?.groups.filter((group) => group.architecture).map((group) => group.blocks.length) || [],
             displayed: display.nodes.length, analysisMs: Math.round(analysisMs), renamedGraphMatches: true,
