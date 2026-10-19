@@ -3,6 +3,7 @@ import * as base from './base.js';
 import * as grapher from './grapher.js';
 import { nodeCatalog, nodeDescriptions, repeatedBlocks } from './repeated-blocks.js';
 import { renderStackSchematic, stackSchematic } from './stack-schematic.js';
+import { repeatGroup, repeatSelection } from './module-blocks.js';
 import { indexRange } from './stack-presentation.js';
 
 // Initialize global configuration for tensor weight loading optimization
@@ -637,6 +638,7 @@ view.View = class {
                 this._host.update({ foldRepeatedBlocks: this._options.foldRepeatedBlocks });
                 if (this._options.foldRepeatedBlocks) {
                     this._repeatStates?.get(this.activeTarget)?.expanded.clear();
+                    this._repeatStates?.get(this.activeTarget)?.inlineExpanded?.clear();
                 }
                 this._discardRepeatedViews();
                 this._reload();
@@ -1215,6 +1217,10 @@ view.View = class {
         if (this._options.foldRepeatedBlocks !== true) {
             return graph;
         }
+        // Full-block inspection is target-local and created only on explicit request.
+        if (graph._fullBlockInspection) {
+            return graph;
+        }
         this._repeatStates = this._repeatStates || new WeakMap();
         let state = this._repeatStates.get(graph);
         if (!state) {
@@ -1232,11 +1238,11 @@ view.View = class {
             if (!current()) {
                 return graph;
             }
-            state = { analysis, selected: new Map(), expanded: new Set() };
+            state = { analysis, selected: new Map(), expanded: new Set(), inlineExpanded: new Map() };
             this._repeatStates.set(graph, state);
         }
         nodeCatalog(graph.nodes)?.release();
-        return state.analysis.project(state.selected, state.expanded);
+        return state.analysis.project(state.selected, state.expanded, state.inlineExpanded);
     }
 
     async revealRepeated(value) {
@@ -1277,29 +1283,91 @@ view.View = class {
     }
 
     async toggleRepeatedBlock(group) {
+        const run = group._repeatParent ? group : null;
+        const inspect = this._sidebar._stack?.at(-1)?.title === 'Repeated Blocks';
+        group = repeatGroup(group);
         const graph = this.activeTarget;
         const state = this._repeatStates?.get(graph);
         if (!state || !state.analysis.groups.includes(group)) {
             return;
         }
-        if (state.expanded.has(group.id)) {
+        if (run) {
+            state.inlineExpanded ||= new Map();
+            const instances = new Set(state.inlineExpanded.get(group.id));
+            for (let i = run._repeatOffset; i < run._repeatOffset + run.blocks.length; i++) {
+                instances.add(i);
+            }
+            if (instances.size === group.blocks.length) {
+                state.expanded.add(group.id);
+                state.inlineExpanded.delete(group.id);
+            } else {
+                state.inlineExpanded.set(group.id, instances);
+            }
+        } else if (state.expanded.has(group.id)) {
             state.expanded.delete(group.id);
+            state.inlineExpanded?.delete(group.id);
         } else {
             state.expanded.add(group.id);
+            state.inlineExpanded?.delete(group.id);
         }
         this.show('welcome spinner');
         this._discardRepeatedViews();
         await this._updateTarget(this._model, this._path);
+        if (run && inspect && this.activeTarget === graph) {
+            this.showRepeatedBlock(group);
+        }
         this._scrollToRepeatedBlock(graph, group);
     }
 
-    _scrollToRepeatedBlock(graph, group) {
+    async toggleRepeatedInstance(group, index) {
+        group = repeatGroup(group);
+        const inspect = this._sidebar._stack?.at(-1)?.title === 'Repeated Blocks';
+        const graph = this.activeTarget;
+        const state = this._repeatStates?.get(graph);
+        if (!state?.analysis.canExpandInline?.(group) || !state.analysis.groups.includes(group) ||
+            !Number.isInteger(index) || index < 0 || index >= group.blocks.length) {
+            return;
+        }
+        state.inlineExpanded ||= new Map();
+        const instances = state.expanded.has(group.id) ? new Set(group.blocks.map((_, i) => i))
+            : new Set(state.inlineExpanded.get(group.id));
+        if (instances.has(index)) {
+            instances.delete(index);
+        } else {
+            instances.add(index);
+        }
+        state.selected.set(group.id, index);
+        state.expanded.delete(group.id);
+        if (instances.size === group.blocks.length) {
+            state.expanded.add(group.id);
+            state.inlineExpanded.delete(group.id);
+        } else if (instances.size) {
+            state.inlineExpanded.set(group.id, instances);
+        } else {
+            state.inlineExpanded.delete(group.id);
+        }
+        this.show('welcome spinner');
+        this._discardRepeatedViews();
+        await this._updateTarget(this._model, this._path);
+        if (this.activeTarget === graph) {
+            if (inspect) {
+                this.showRepeatedBlock(group);
+            }
+            this._scrollToRepeatedBlock(graph, group, index);
+        }
+    }
+
+    _scrollToRepeatedBlock(graph, group, instance = null) {
+        group = repeatGroup(group);
         const target = this._target;
         if (this.activeTarget === graph && target?._displayGraph) {
             this._host.window.requestAnimationFrame(() => {
                 if (this._target === target && this.activeTarget === graph) {
                     for (const node of nodeDescriptions(target._displayGraph)) {
-                        if (node._repeatHeader && node._repeatGroup === group) {
+                        if (node._repeatGroup && repeatGroup(node._repeatGroup) === group &&
+                            (node._repeatHeader || Number.isInteger(node._repeatInlineIndex)) &&
+                            (instance === null || node._repeatInlineIndex === instance ||
+                                (node._repeatHeader && node._repeatGroup.blocks.includes(group.blocks[instance])))) {
                             target.scrollToValue(node, 'instant');
                             break;
                         }
@@ -1315,6 +1383,10 @@ view.View = class {
         if (!state) {
             return;
         }
+        if (group._repeatParent) {
+            state.selected.set(group.id, group._repeatOffset + repeatSelection(group, state.selected));
+            group = repeatGroup(group);
+        }
         const sidebar = new view.ObjectSidebar(this);
         sidebar.addProperty('stack', group.label, 'nowrap');
         if (group.kind) {
@@ -1323,6 +1395,10 @@ view.View = class {
             sidebar.addSection('Architecture fact sheet');
             sidebar.addProperty('layer mix', schematic.layerMix);
             sidebar.addProperty('selected instance', `${schematic.selected} · ${schematic.operators} operators`);
+            const visible = state.expanded.has(group.id) ? group.blocks.length : state.inlineExpanded?.get(group.id)?.size || 0;
+            if (visible) {
+                sidebar.addProperty('inline view', `${visible} expanded · ${group.blocks.length - visible} collapsed`);
+            }
             if (schematic.outputShapes.length) {
                 sidebar.addProperty('output shape', schematic.outputShapes.join(' · '));
             }
@@ -1401,6 +1477,15 @@ view.View = class {
         });
         sidebar.element.appendChild(select);
         const expanded = state.expanded.has(group.id);
+        if (state.analysis.canExpandInline?.(group)) {
+            const index = Number(select.value);
+            const inline = expanded || state.inlineExpanded?.get(group.id)?.has(index);
+            sidebar.addProperty('inline block', `${group.unit || 'Block'} ${group.blocks[index].index}`)
+                .action(inline ? 'Fold selected block inline' : 'Expand selected block inline',
+                    'Show the selected instance’s original operators and tensor shapes here; keep other blocks in their current state.', () =>
+                        this.toggleRepeatedInstance(group, Number(select.value))
+                            .catch((error) => this.error(error, 'Error changing inline block.', null)));
+        }
         sidebar.addProperty('view', expanded ? 'All instances' : `${representative} ${group.blocks[Number(select.value)].index}`)
             .action(expanded ? 'Fold stack' : 'Expand stack', 'Show or hide every instance in this stack', async () => {
                 try {
@@ -1418,6 +1503,13 @@ view.View = class {
                 const module = state.analysis.subgraph(block.indices, group.title, block.scope);
                 await this.pushTarget(module);
             });
+            sidebar.addProperty('full block', 'Original operators and tensor shapes').action('Open full block',
+                'Inspect only the selected block without nested stacks. Tensor shapes are shown where provided by the model.', async () => {
+                    const block = group.blocks[Number(select.value)];
+                    const module = state.analysis.subgraph(block.indices, `${group.title} — block ${block.index}`, block.scope);
+                    module._fullBlockInspection = true;
+                    await this.pushTarget(module);
+                });
         }
         this._sidebar.open(sidebar, 'Repeated Blocks');
     }
@@ -2698,6 +2790,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     add(graph, signature) {
+        this._fullBlockInspection = graph._fullBlockInspection === true;
         this.identifier = this.model.identifier;
         this.identifier += graph && graph.name ? `.${graph.name.replace(/\/|\\/g, '.')}` : '';
         const clusters = new Set();
@@ -3864,7 +3957,7 @@ view.Node = class extends grapher.Node {
         if (presentation.indices) {
             row(summary, label, `${indexRange(presentation.indices)} · ${presentation.indices.length} of ${presentation.familyTotal || presentation.indices.length}`);
         }
-        const selected = group.blocks[state.selected.get(group.id) || 0];
+        const selected = group.blocks[repeatSelection(group, state.selected)];
         row(summary, 'Selected', `${selected.index} · ${selected.indices.length} operators`);
         if (!presentation.compound) {
             if (group.architecture) {
@@ -3874,7 +3967,7 @@ view.Node = class extends grapher.Node {
                 row(summary, 'Softmax', `${selected.softmaxCount} in selected block`);
             }
             row(summary, 'Each', `${group.blocks[0].indices.length} operators · own parameters`);
-            row(summary, 'Inside', group.blocks[state.selected.get(group.id) || 0].components.slice(0, 4).join(' · '));
+            row(summary, 'Inside', selected.components.slice(0, 4).join(' · '));
             row(summary, 'Cadence', group.blocks.length <= 12 ? '■'.repeat(group.blocks.length) : `■ × ${group.blocks.length}`);
             return;
         }
@@ -3902,7 +3995,7 @@ view.Node = class extends grapher.Node {
             const inspect = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], part.count > 1 ? 'Inspect 1 region' : 'Inspect region',
                 `Open ${part.operators} original operators from the selected stage.`);
             inspect.on('click', () => {
-                const block = group.blocks[state.selected.get(group.id) || 0];
+                const block = group.blocks[repeatSelection(group, state.selected)];
                 const indices = block.indices.slice(part.start, part.start + part.operators);
                 const graph = state.analysis.subgraph(indices, 'Pattern detail', '');
                 this.context.view.pushTarget(graph, this.value).catch((error) => this.context.view.error(error, 'Error opening pattern detail.', null));
@@ -3955,7 +4048,9 @@ view.Node = class extends grapher.Node {
         if (node._repeatHeader) {
             const group = node._repeatGroup;
             const unit = this._compound ? 'stages' : (group.presentation?.label || (group.kind === 'pattern' ? 'regions' : 'modules'));
-            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], `${group.kind === 'pattern' ? '↓ ' : ''}×${group.blocks.length} ${unit}`,
+            const multiplier = group.blocks.length > 1 ? `${group.kind === 'pattern' ? '↓ ' : ''}×${group.blocks.length} ${unit}`
+                : `${group.unit || 'Block'} ${group.blocks[0].index}`;
+            const badge = header.add(null, ['node-item-type', 'node-item-repeat'], multiplier,
                 `${group.label}. ${group.kind === 'pattern' ? 'Each instance feeds the next. ' : ''}Select a representative or expand this stack.`);
             badge.on('click', () => this.context.view.showRepeatedBlock(group));
             const expanded = this.context.view._repeatStates?.get(this.context.view.activeTarget)?.expanded.has(group.id) || false;
@@ -3965,6 +4060,25 @@ view.Node = class extends grapher.Node {
             action.expanded = expanded;
             action.on('click', () => this.context.view.toggleRepeatedBlock(group)
                 .catch((error) => this.context.view.error(error, 'Error changing repeated stack.', null)));
+            const state = this.context.view._repeatStates?.get(this.context.view.activeTarget);
+            if (state?.analysis.canExpandInline?.(repeatGroup(group))) {
+                const index = repeatSelection(group, state.selected) + (group._repeatOffset || 0);
+                const parent = repeatGroup(group);
+                const open = expanded || state.inlineExpanded?.get(group.id)?.has(index);
+                const inline = header.add(null, ['node-item-function', 'node-item-repeat-toggle'],
+                    `${open ? 'Fold' : 'Expand'} block ${parent.blocks[index].index} inline`,
+                    'Change only this block; preserve the other collapsed runs and expanded blocks.');
+                inline.on('click', () => this.context.view.toggleRepeatedInstance(parent, index)
+                    .catch((error) => this.context.view.error(error, 'Error changing inline block.', null)));
+            }
+        }
+        if (Number.isInteger(node._repeatInlineIndex)) {
+            const group = node._repeatGroup;
+            const index = node._repeatInlineIndex;
+            const fold = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], `Fold block ${group.blocks[index].index}`,
+                'Collapse this block back into its neighboring stack.');
+            fold.on('click', () => this.context.view.toggleRepeatedInstance(group, index)
+                .catch((error) => this.context.view.error(error, 'Error folding inline block.', null)));
         }
         if (node.type.type || (Array.isArray(node.type.nodes) && node.type.nodes.length > 0)) {
             let icon = '\u0192';
@@ -3993,12 +4107,12 @@ view.Node = class extends grapher.Node {
             }
             return current;
         };
-        if (node._repeatHeader && (this._stackDepth || this._compound) && node._repeatGroup.presentation) {
+        if (node._repeatHeader && (this._stackDepth || this._compound || node._repeatGroup._repeatParent) && node._repeatGroup.presentation) {
             this._addStackPresentation(node._repeatGroup);
         } else if (node._repeatHeader && this._stackDepth) {
             const group = node._repeatGroup;
             const state = this.context.view._repeatStates?.get(this.context.view.activeTarget);
-            const block = group.blocks[state?.selected.get(group.id) || 0];
+            const block = group.blocks[state ? repeatSelection(group, state.selected) : 0];
             const indices = group.blocks.map((item) => item.index);
             const consecutive = indices.every((index, i) => i === 0 || index === indices[i - 1] + 1);
             const range = consecutive ? `${indices[0]}–${indices.at(-1)}` : `${indices.slice(0, 6).join(', ')}${indices.length > 6 ? ', …' : ''}`;
@@ -4344,9 +4458,9 @@ view.Value = class {
                     type.shape.dimensions.length > 0 &&
                     type.shape.dimensions.every((dim) => !dim || Number.isInteger(dim) || typeof dim === 'bigint' || (typeof dim === 'string'))) {
                     content = type.shape.dimensions.map((dim) => (dim !== null && dim !== undefined && dim !== -1) ? dim : '?').join('\u00D7');
-                    content = content.length > 16 ? '' : content;
+                    content = content.length > 16 && !this.context._fullBlockInspection ? '' : content;
                 }
-                if (this.context.options.names) {
+                if (this.context.options.names && !this.context._fullBlockInspection) {
                     content = this.value.name.split('\n').shift(); // custom argument id
                 }
                 const edge = this.from.edge(to);

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
+import { Graph, View } from '../source/view.js';
 import { NodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
 import { Host } from './mock.js';
-import { View } from '../source/view.js';
 import { architectureBlocks } from '../source/architecture-blocks.js';
 import { structuralBlocks } from '../source/structural-blocks.js';
 import { test } from 'node:test';
@@ -290,6 +290,102 @@ test('adjacent independent Transformer blocks cannot become a serial stack', asy
     const analysis = await architectureBlocks(graph);
     assert.equal(analysis.architecture.blocks, 2);
     assert.deepEqual(analysis.groups.map((group) => group.blocks.length), [1, 1]);
+});
+
+test('inline Transformer expansion preserves 25-block boundaries, shapes, taps and canonical collapse', async () => {
+    const graph = fixture(25);
+    graph.outputs.push({ name: 'attention tap', value: [graph.blocks[12].tap] });
+    const analysis = await architectureBlocks(graph);
+    const group = analysis.groups[0];
+    assert.equal(group.blocks.length, 25);
+    const operators = group.blocks[0].indices.length;
+    for (const index of [0, 12, 24]) {
+        const display = analysis.project(new Map([[group.id, index]]), new Set(), new Map([[group.id, new Set([index])]]));
+        const nodes = [...nodeDescriptions(display)];
+        const summaries = nodes.filter((node) => node._repeatHeader);
+        assert.deepEqual(summaries.map((node) => node._repeatGroup.blocks.length), index === 12 ? [12, 12] : [24]);
+        const raw = nodes.filter((node) => !node._repeatHeader);
+        const original = [...group.blocks[index].indices].map((i) => graph.nodes[i]);
+        assert.deepEqual(raw.map((node) => node._originalNode || node), original);
+        assert.equal(raw[0]._repeatInlineIndex, index);
+        assert.equal(display.nodes.length, operators + summaries.length);
+        assert.equal(raw[0].inputs[0].value[0].type, original[0].inputs[0].value[0].type);
+        const available = new Set([...display.inputs, ...nodes.flatMap((node) => node.outputs)].flatMap((arg) => arg.value.map((value) => value.name)));
+        for (const value of [...display.outputs, ...nodes.flatMap((node) => node.inputs)].flatMap((arg) => arg.value)) {
+            assert.ok(value.initializer || available.has(value.name), `Orphan ${value.name}`);
+        }
+        const host = new Host({ serial: true });
+        const view = new View(host);
+        view.model = { modules: [graph] };
+        view._path = [{ target: graph }];
+        view._repeatStates.set(graph, { analysis, selected: new Map([[group.id, index]]), expanded: new Set() });
+        const ui = new Graph(view, false);
+        ui.add(display);
+        ui.build(host.document);
+        // eslint-disable-next-line no-await-in-loop
+        await ui.measure();
+    }
+    const mixed = analysis.project(new Map(), new Set(), new Map([[group.id, new Set([0, 12, 24])]]));
+    assert.deepEqual([...nodeDescriptions(mixed)].filter((node) => node._repeatHeader).map((node) => node._repeatGroup.blocks.length), [11, 11]);
+    const singleton = analysis.project(new Map(), new Set(), new Map([[group.id, new Set([1])]]));
+    const first = [...nodeDescriptions(singleton)][0];
+    assert.equal(first._repeatGroup.blocks.length, 1);
+    assert.ok(first._repeatHeader, 'A singleton collapsed remainder must retain its controls.');
+    assert.equal(analysis.project().nodes.length, 1);
+    assert.deepEqual([...nodeDescriptions(analysis.project(new Map(), new Set([group.id])))].map((node) => node._originalNode || node), graph.nodes);
+});
+
+test('inline controls toggle individual blocks and normalize full expansion', async () => {
+    const graph = fixture(3);
+    const host = new Host({ serial: true });
+    const view = new View(host);
+    view.model = { modules: [graph] };
+    view._path = [{ target: graph }];
+    const analysis = await architectureBlocks(graph);
+    const state = { analysis, selected: new Map(), expanded: new Set(), inlineExpanded: new Map() };
+    view._repeatStates.set(graph, state);
+    view.show = () => {};
+    view.showRepeatedBlock = () => {};
+    view._updateTarget = async () => {};
+    view._scrollToRepeatedBlock = () => {};
+    const group = analysis.groups[0];
+    await view.toggleRepeatedInstance(group, 0);
+    assert.deepEqual([...state.inlineExpanded.get(group.id)], [0]);
+    await view.toggleRepeatedInstance(group, 1);
+    assert.deepEqual([...state.inlineExpanded.get(group.id)], [0, 1]);
+    await view.toggleRepeatedInstance(group, 2);
+    assert.ok(state.expanded.has(group.id));
+    assert.equal(state.inlineExpanded.has(group.id), false);
+    await view.toggleRepeatedInstance(group, 1);
+    assert.equal(state.expanded.has(group.id), false);
+    assert.deepEqual([...state.inlineExpanded.get(group.id)], [0, 2]);
+    await view.toggleRepeatedInstance(group, 0);
+    await view.toggleRepeatedInstance(group, 2);
+    assert.equal(state.inlineExpanded.has(group.id), false);
+});
+
+test('expanding one remainder run keeps the other run and unrelated Transformer stacks collapsed', async () => {
+    const graph = fixture(6, true);
+    const host = new Host({ serial: true });
+    const view = new View(host);
+    view.model = { modules: [graph] };
+    view._path = [{ target: graph }];
+    const analysis = await architectureBlocks(graph);
+    const group = analysis.groups.find((item) => item.blocks.length === 5);
+    const other = analysis.groups.find((item) => item !== group);
+    const state = { analysis, selected: new Map(), expanded: new Set(), inlineExpanded: new Map([[group.id, new Set([2])]]) };
+    view._repeatStates.set(graph, state);
+    view.show = () => {};
+    view._updateTarget = async () => {};
+    view._scrollToRepeatedBlock = () => {};
+    const display = analysis.project(state.selected, state.expanded, state.inlineExpanded);
+    const left = [...nodeDescriptions(display)].find((node) => node._repeatGroup?._repeatParent === group)._repeatGroup;
+    await view.toggleRepeatedBlock(left);
+    assert.deepEqual([...state.inlineExpanded.get(group.id)].sort(), [0, 1, 2]);
+    const remaining = [...nodeDescriptions(analysis.project(state.selected, state.expanded, state.inlineExpanded))];
+    assert.deepEqual(remaining.filter((node) => node._repeatGroup?._repeatParent === group).map((node) => node._repeatGroup.blocks.length), [2]);
+    assert.ok(remaining.some((node) => node._repeatGroup === other));
+    assert.equal(state.expanded.has(other.id), false);
 });
 
 test('generic fallback folds unclaimed operators without crossing Transformer boundaries', async () => {

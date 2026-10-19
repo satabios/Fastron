@@ -37,6 +37,19 @@ const fixture = () => {
     return { nodes, inputs, outputs };
 };
 
+test('interleaved module inventories do not offer unsafe inline expansion', async () => {
+    const type = { dataType: 'float32', shape: { dimensions: [8] } };
+    const arg = (name) => ({ name, value: [{ name, type }] });
+    const input = arg('input');
+    const nodes = [0, 1, 0, 1].map((block, index) => ({ name: `/model/layers.${block}/op${index}`, type: { name: 'Relu' },
+        inputs: [input], outputs: [arg(`out${index}`)] }));
+    const graph = { nodes, inputs: [input], outputs: nodes.flatMap((node) => node.outputs) };
+    const analysis = await moduleBlocks(graph);
+    const group = analysis.groups[0];
+    assert.equal(analysis.canExpandInline(group), false);
+    assert.equal(analysis.project(new Map(), new Set(), new Map([[group.id, new Set([0])]])).nodes.length, 1);
+});
+
 test('module scopes preserve every external input and intermediate output without asserting identical structure', async () => {
     const graph = fixture();
     Object.defineProperty(graph.nodes[0], 'attributes', { get() {

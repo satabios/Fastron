@@ -5,6 +5,24 @@ import * as vm from 'node:vm';
 import { View } from '../source/view.js';
 import { test } from 'node:test';
 
+test('first open and full-block inspection bypass block analysis without reading operators', async () => {
+    const graph = {
+        get nodes() {
+            throw new Error('Must not enumerate operators.');
+        }
+    };
+    const current = () => {
+        throw new Error('Must not start analysis.');
+    };
+    const view = { _options: { foldRepeatedBlocks: false } };
+    assert.equal(await View.prototype._repeatedPresentation.call(view, graph, current), graph);
+    assert.equal(view._repeatStates, undefined);
+    view._options.foldRepeatedBlocks = true;
+    graph._fullBlockInspection = true;
+    assert.equal(await View.prototype._repeatedPresentation.call(view, graph, current), graph);
+    assert.equal(view._repeatStates, undefined);
+});
+
 const previousWindow = globalThis.window;
 globalThis.window = { document: { documentElement: { style: { scrollBehavior: 'auto' } } } };
 const { Host: BrowserHost } = await import('../source/browser.js');

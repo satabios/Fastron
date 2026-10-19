@@ -3,7 +3,26 @@ import { NodeCatalog, nodeCatalog, nodeDescriptions, overlay } from './repeated-
 const values = (args) => (args || []).flatMap((arg) => arg?.value || []);
 const pathOf = (name) => name.match(/^(.*?(?:^|[./])(?:layers?|blocks?|blk|h)[./])(0|[1-9][0-9]*)(?:[./]|$)/);
 
+export const repeatGroup = (group) => group._repeatParent || group;
+
+export const repeatSelection = (group, selected) => {
+    const index = (selected.get(group.id) || 0) - (group._repeatOffset || 0);
+    return index >= 0 && index < group.blocks.length ? index : 0;
+};
+
 export class ModuleBlocks {
+    canExpandInline(group) {
+        let cursor = group.anchor;
+        for (const block of group.blocks) {
+            for (const index of block.indices) {
+                if (index !== cursor++) {
+                    return false;
+                }
+            }
+        }
+        return cursor === group.members.at(-1) + 1;
+    }
+
     constructor(graph, groups, producers, consumers) {
         this.graph = graph;
         this.groups = groups;
@@ -55,8 +74,26 @@ export class ModuleBlocks {
         return null;
     }
 
-    project(selected = new Map(), expanded = new Set()) {
+    project(selected = new Map(), expanded = new Set(), inlineExpanded = new Map()) {
         const records = [];
+        const summary = (group) => {
+            const block = group.blocks[repeatSelection(group, selected)];
+            const detail = this.subgraph(block.indices, group.label, block.scope);
+            const boundary = this.subgraph(group.members, group.label, group.scope);
+            records.push({ summary: { name: `${group.scope || 'Graph operations'}#${group.anchor}`,
+                type: { ...detail, name: group.title, type: 'function' }, inputs: boundary.inputs, outputs: boundary.outputs,
+                attributes: [{ name: 'operators', type: 'int64', value: group.members.length }, ...(group.attributes || [])],
+                _repeatHeader: group.blocks.length > 1 || Boolean(group._repeatParent), _repeatGroup: group } });
+        };
+        const run = (group, start, end) => {
+            const blocks = group.blocks.slice(start, end);
+            const members = Uint32Array.from(blocks.flatMap((block) => [...block.indices]));
+            const presentation = group.presentation ? { ...group.presentation,
+                ranges: group.presentation.ranges.slice(start, end),
+                ...(group.presentation.indices ? { indices: group.presentation.ranges.slice(start, end).flat() } : {}),
+                ...(group.presentation.blockIndices ? { blockIndices: group.presentation.blockIndices.slice(start, end) } : {}) } : undefined;
+            summary({ ...group, blocks, members, anchor: members[0], presentation, _repeatParent: group, _repeatOffset: start });
+        };
         let cursor = 0;
         for (const group of this.groups) {
             while (cursor < group.anchor) {
@@ -67,23 +104,37 @@ export class ModuleBlocks {
                     records.push({ index, group: index === group.anchor ? group : null });
                 }
             } else {
-                const block = group.blocks[selected.get(group.id) || 0];
-                const detail = this.subgraph(block.indices, group.label, block.scope);
-                const boundary = this.subgraph(group.members, group.label, group.scope);
-                records.push({ summary: { name: `${group.scope || 'Graph operations'}#${group.anchor}`,
-                    type: { ...detail, name: group.title, type: 'function' }, inputs: boundary.inputs, outputs: boundary.outputs,
-                    attributes: [{ name: 'operators', type: 'int64', value: group.members.length }, ...(group.attributes || [])],
-                    _repeatHeader: group.blocks.length > 1, _repeatGroup: group } });
+                const inline = this.canExpandInline(group) ? inlineExpanded.get(group.id) : null;
+                if (inline?.size) {
+                    let start = 0;
+                    for (let i = 0; i < group.blocks.length; i++) {
+                        if (inline.has(i)) {
+                            if (start < i) {
+                                run(group, start, i);
+                            }
+                            for (const index of group.blocks[i].indices) {
+                                records.push({ index, group: index === group.blocks[i].indices[0] ? group : null, inline: i });
+                            }
+                            start = i + 1;
+                        }
+                    }
+                    if (start < group.blocks.length) {
+                        run(group, start, group.blocks.length);
+                    }
+                } else {
+                    summary(group);
+                }
             }
             cursor = group.members.at(-1) + 1;
         }
         while (cursor < this.graph.nodes.length) {
             records.push({ index: cursor++ });
         }
-        const decorate = (node, group) => group ? overlay(node, { _originalNode: node, _repeatHeader: group.blocks.length > 1, _repeatGroup: group }) : node;
+        const decorate = (node, record) => record.group ? overlay(node, { _originalNode: node, _repeatGroup: record.group,
+            ...(Number.isInteger(record.inline) ? { _repeatInlineIndex: record.inline } : { _repeatHeader: record.group.blocks.length > 1 }) }) : node;
         const catalog = nodeCatalog(this.graph.nodes);
-        const nodes = new NodeCatalog(records, (record) => record.summary || decorate(this.graph.nodes[record.index], record.group),
-            (record) => record.summary || decorate(this.describe(record.index), record.group), () => catalog?.release(),
+        const nodes = new NodeCatalog(records, (record) => record.summary || decorate(this.graph.nodes[record.index], record),
+            (record) => record.summary || decorate(this.describe(record.index), record), () => catalog?.release(),
             (index) => {
                 if (records[index].index !== undefined) {
                     catalog?.evict(records[index].index);

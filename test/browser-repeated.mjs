@@ -279,7 +279,7 @@ try {
         const metadataBytes = transferred;
         // eslint-disable-next-line no-await-in-loop
         const cdp = await context.newCDPSession(page);
-        const evaluate = async (expression) => (await cdp.send('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+        const evaluate = async (expression) => (await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
         const count = () => evaluate('window.__view__?._target?._displayGraph?.nodes.length');
         // eslint-disable-next-line no-await-in-loop
         const original = await count();
@@ -369,6 +369,51 @@ try {
         await expect(page.locator('body')).toHaveClass(/default/);
         // eslint-disable-next-line no-await-in-loop
         await expect(badge).toBeVisible();
+        if (file.startsWith('/qwen')) {
+            // eslint-disable-next-line no-await-in-loop
+            await select.selectOption('0');
+            // eslint-disable-next-line no-await-in-loop
+            await page.getByText('Expand selected block inline', { exact: true }).click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected + largest.detail);
+            // eslint-disable-next-line no-await-in-loop
+            const inline = await evaluate(`(() => {
+                const view = window.__view__;
+                const state = view._repeatStates.get(view.activeTarget);
+                const id = state.inlineExpanded.keys().next().value;
+                const group = state.analysis.groups.find(g => g.id === id);
+                return { block: group.blocks[0].index, id,
+                    counts: [...view._target._displayGraph.nodes].filter(n => n._repeatGroup?._repeatParent?.id === id).map(n => n._repeatGroup.blocks.length) };
+            })()`);
+            assert.deepEqual(inline.counts, [largest.n - 1]);
+            // eslint-disable-next-line no-await-in-loop
+            await expect(page.getByRole('button', { name: `Fold block ${inline.block}`, exact: true })).toBeVisible();
+            // eslint-disable-next-line no-await-in-loop
+            await expect(page.locator('#canvas .edge-label').first()).toBeAttached();
+            // eslint-disable-next-line no-await-in-loop
+            await page.screenshot({ path: path.join(os.tmpdir(), `fastron-inline-${file.slice(1)}.png`), animations: 'disabled' });
+            // eslint-disable-next-line no-await-in-loop
+            await page.getByRole('button', { name: `Fold block ${inline.block}`, exact: true }).click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected);
+            const middle = Math.floor(largest.n / 2);
+            // eslint-disable-next-line no-await-in-loop
+            await select.selectOption(String(middle));
+            // eslint-disable-next-line no-await-in-loop
+            const middleBlock = await evaluate(`window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.find(g => g.id === ${inline.id}).blocks[${middle}].index`);
+            // eslint-disable-next-line no-await-in-loop
+            await page.getByRole('button', { name: `Expand block ${middleBlock} inline`, exact: true }).click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected + largest.detail + 1);
+            // eslint-disable-next-line no-await-in-loop
+            const runs = await evaluate(`(() => { const view = window.__view__; return [...view._target._displayGraph.nodes]
+                .filter(n => n._repeatGroup?._repeatParent?.id === ${inline.id}).map(n => n._repeatGroup.blocks.length); })()`);
+            assert.deepEqual(runs, [middle, largest.n - middle - 1]);
+            // eslint-disable-next-line no-await-in-loop
+            await page.getByText('Fold selected block inline', { exact: true }).click();
+            // eslint-disable-next-line no-await-in-loop
+            await expect.poll(count).toBe(expected);
+        }
         // eslint-disable-next-line no-await-in-loop
         await page.screenshot({ path: path.join(os.tmpdir(), `fastron-generic-${file.slice(1)}.png`) });
         const card = page.locator('#canvas .graph-node').filter({ has: badge }).first();
@@ -404,6 +449,26 @@ try {
         }
         // eslint-disable-next-line no-await-in-loop
         await badge.click();
+        // eslint-disable-next-line no-await-in-loop
+        await page.getByText('Open full block', { exact: true }).click();
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(() => evaluate('Boolean(window.__view__.activeTarget?._fullBlockInspection && window.__view__._target?._renderTarget === window.__view__.activeTarget)')).toBe(true);
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBe(largest.detail);
+        // eslint-disable-next-line no-await-in-loop
+        await expect(page.locator('#canvas .node-item-repeat')).toHaveCount(0);
+        if (file.startsWith('/qwen')) {
+            // eslint-disable-next-line no-await-in-loop
+            await expect(page.locator('#canvas .edge-label').first()).toBeAttached();
+            // eslint-disable-next-line no-await-in-loop
+            assert.ok(await evaluate(`Array.from(document.querySelectorAll('#canvas .edge-label')).some((label) => label.textContent.includes('×'))`));
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await evaluate('(async () => { await window.__view__.popTarget(); })()');
+        // eslint-disable-next-line no-await-in-loop
+        await expect.poll(count).toBe(expected);
+        // eslint-disable-next-line no-await-in-loop
+        await evaluate(`window.__view__.showRepeatedBlock(window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.find((group) => group.id === ${largest.id}))`);
         // eslint-disable-next-line no-await-in-loop
         await page.getByText('Open module', { exact: true }).click();
         // eslint-disable-next-line no-await-in-loop
