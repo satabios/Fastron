@@ -1,8 +1,10 @@
-// Run: node test/benchmark-loading.mjs [model path] [--latency=10] [--size=256] [--fixture=scattered-onnx|contiguous-onnx|large-gguf]
+// Run: node test/benchmark-loading.mjs [model path] [--exact-reads] [--latency=10] [--size=256] [--fixture=scattered-onnx|metadata-scattered-onnx|contiguous-onnx|large-gguf]
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { formatKind, indexSource } from '../source/model-index.mjs';
+import { bufferedSource } from '../source/model-source-reader.mjs';
 import { performance } from 'node:perf_hooks';
 
 const args = process.argv.slice(2);
@@ -32,12 +34,13 @@ if (!file) {
         bytes.writeBigUInt64LE(BigInt(value));
         return bytes;
     };
-    if (fixture === 'scattered-onnx') {
+    if (fixture === 'scattered-onnx' || fixture === 'metadata-scattered-onnx') {
         file = path.join(folder, 'synthetic.onnx');
         const tensors = 128;
         const payload = Math.floor(length / tensors);
         const tensor = Buffer.concat([Buffer.from([8, 2, 16, 1]), field(9, payload)]);
-        const tensorSize = tensor.length + payload;
+        const tail = fixture === 'metadata-scattered-onnx' ? Buffer.concat([field(12, 1700), Buffer.alloc(1700, 97)]) : Buffer.alloc(0);
+        const tensorSize = tensor.length + payload + tail.length;
         const prefix = field(5, tensorSize);
         const header = Buffer.concat([Buffer.from([8, 9]), field(7, tensors * (prefix.length + tensorSize))]);
         const output = fs.openSync(file, 'w');
@@ -46,6 +49,9 @@ if (!file) {
             for (let i = 0; i < tensors; i++) {
                 fs.writeSync(output, prefix, 0, prefix.length, header.length + i * (prefix.length + tensorSize));
                 fs.writeSync(output, tensor, 0, tensor.length, header.length + i * (prefix.length + tensorSize) + prefix.length);
+                if (tail.length) {
+                    fs.writeSync(output, tail, 0, tail.length, header.length + i * (prefix.length + tensorSize) + prefix.length + tensor.length + payload);
+                }
             }
             fs.ftruncateSync(output, header.length + tensors * (prefix.length + tensorSize));
         } finally {
@@ -109,7 +115,7 @@ try {
     }
     // Cold indexing includes WASM compilation; the full scan runs afterward.
     const first = performance.now();
-    const result = await indexSource(source, kind);
+    const result = await indexSource(args.includes('--exact-reads') ? source : bufferedSource(source), kind);
     const coldMs = performance.now() - first;
     const indexedBytes = bytesRead;
     const indexedRequests = requests;
@@ -122,8 +128,12 @@ try {
     }
     const fullMs = performance.now() - start;
     process.stdout.write(`${JSON.stringify({
-        file, sizeBytes: length, latencyMsPerRead: latency,
-        indexed: { coldMs, bytesRead: indexedBytes, requests: indexedRequests, metadataBytes: result.metadata.byteLength },
+        file, sizeBytes: length, latencyMsPerRead: latency, readAhead: !args.includes('--exact-reads'),
+        indexed: {
+            coldMs, bytesRead: indexedBytes, requests: indexedRequests, metadataBytes: result.metadata.byteLength,
+            metadataHash: crypto.createHash('sha256').update(new Uint8Array(result.metadata)).digest('hex'),
+            rangesHash: crypto.createHash('sha256').update(JSON.stringify(result.ranges)).digest('hex')
+        },
         fullScan: { ms: fullMs, bytesRead, requests },
         bytesAvoidedPercent: 100 * (1 - indexedBytes / length)
     }, null, 2)}\n`);

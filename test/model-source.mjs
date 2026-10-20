@@ -6,6 +6,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as view from '../source/view.js';
 import { nodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
+import { Worker } from 'node:worker_threads';
+import { bufferedSource } from '../source/model-source-reader.mjs';
+import { indexSource } from '../source/model-index.mjs';
 import { openSource } from '../source/model-source.mjs';
 import { pathToFileURL } from 'node:url';
 import { patternBlocks } from '../source/pattern-blocks.js';
@@ -32,6 +35,120 @@ const model = (tensor) => Buffer.concat([
 ]);
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-source-'));
 process.on('exit', () => fs.rmSync(folder, { recursive: true, force: true }));
+
+test('native open resolves its initial path once and still canonicalizes referenced symlinks', async () => {
+    const file = path.join(folder, 'canonical.safetensors');
+    fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));
+    const directory = path.join(folder, 'contained');
+    fs.mkdirSync(directory);
+    const initial = path.join(directory, 'initial.safetensors');
+    fs.copyFileSync(file, initial);
+    const script = `
+        import fs from 'node:fs';
+        import { parentPort } from 'node:worker_threads';
+        const original = fs.promises.realpath;
+        fs.promises.realpath = async (...args) => {
+            parentPort.postMessage({ trace: 'realpath' });
+            return original(...args);
+        };
+        await import(${JSON.stringify(new URL('../source/model-source-worker.mjs', import.meta.url).href)});
+        parentPort.postMessage({ ready: true });
+    `;
+    const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(script)}`));
+    let resolutions = 0;
+    worker.on('message', (message) => {
+        if (message.trace) {
+            resolutions++;
+        }
+    });
+    const response = (predicate) => new Promise((resolve, reject) => {
+        const receive = (message) => {
+            if (predicate(message)) {
+                worker.off('message', receive);
+                worker.off('error', reject);
+                resolve(message);
+            }
+        };
+        worker.on('message', receive);
+        worker.once('error', reject);
+    });
+    try {
+        await response((message) => message.ready);
+        const opened = response((message) => message.id === 1);
+        worker.postMessage({ id: 1, command: 'open', input: { path: initial } });
+        assert.equal((await opened).error, undefined);
+        assert.equal(resolutions, 1);
+        if (process.platform !== 'win32') {
+            fs.symlinkSync(file, path.join(directory, 'escape.safetensors'));
+            const denied = response((message) => message.id === 2);
+            worker.postMessage({ id: 2, command: 'index', file: 'escape.safetensors' });
+            assert.match((await denied).error, /outside its directory/);
+            assert.equal(resolutions, 2);
+        }
+    } finally {
+        await worker.terminate();
+    }
+});
+
+test('native index read-ahead preserves bytes, bounds probes and retries failed reads', () => {
+    const data = Uint8Array.from({ length: 20000 }, (_, i) => i % 251);
+    const reads = [];
+    let fail = false;
+    const source = bufferedSource({
+        length: data.length,
+        readSync(offset, bytes) {
+            if (fail) {
+                throw new Error('Read failed');
+            }
+            reads.push([offset, bytes.length]);
+            bytes.set(data.subarray(offset, offset + bytes.length));
+        }
+    });
+    const read = (offset, length) => {
+        const bytes = new Uint8Array(length);
+        source.readSync(offset, bytes);
+        assert.deepEqual(bytes, data.slice(offset, offset + length));
+    };
+    read(0, 9);
+    read(1000, 256);
+    read(1256, 512);
+    read(1768, 1024);
+    read(2792, 2048);
+    read(10000, 256);
+    assert.deepEqual(reads, [[0, 9], [1000, 256], [1256, 4096], [10000, 256]]);
+    fail = true;
+    assert.throws(() => read(10256, 512), /Read failed/);
+    fail = false;
+    read(10256, 512);
+    read(19990, 10);
+    read(20000, 0);
+    assert.throws(() => read(-1, 1), /Invalid source range/);
+    assert.throws(() => read(20000, 1), /Invalid source range/);
+});
+
+test('native read-ahead preserves ONNX metadata and tensor offsets while reducing sequential refills', async () => {
+    const payload = Buffer.alloc(128 * 1024, 42);
+    const tensors = Array.from({ length: 12 }, (_, i) => field(5, Buffer.concat([
+        Buffer.from([8, 2, 16, 1]), field(9, payload), field(8, `weight.${i}`), field(12, Buffer.alloc(1700, 97))
+    ])));
+    const data = Buffer.concat([Buffer.from([8, 8]), field(7, Buffer.concat(tensors))]);
+    const run = async (buffered) => {
+        let calls = 0;
+        let bytesRead = 0;
+        const source = { length: data.length, readSync(offset, bytes) {
+            calls++;
+            bytesRead += bytes.length;
+            bytes.set(data.subarray(offset, offset + bytes.length));
+        } };
+        return { result: await indexSource(buffered ? bufferedSource(source) : source, 1), calls, bytesRead };
+    };
+    const exact = await run(false);
+    const buffered = await run(true);
+    assert.deepEqual(buffered.result.metadata, exact.result.metadata);
+    assert.deepEqual(buffered.result.ranges, exact.result.ranges);
+    assert.ok(buffered.calls < exact.calls);
+    assert.ok(buffered.bytesRead - exact.bytesRead < 4096 * tensors.length);
+});
 
 test('ONNX descriptors distinguish tensor headers from subgraphs and retain empty optional input slots', async () => {
     const type = field(1, Buffer.concat([Buffer.from([8, 1]), field(2, field(1, Buffer.from([8, 8])))]));

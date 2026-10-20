@@ -317,6 +317,33 @@ Keep Fastron's exact repeated-block validation. Model Explorer's [`IdenticalGrou
 
 Further Rust work should follow measured CPU costs: compact topology indexes and structural signatures are candidates. Moving rendering code to Rust cannot by itself remove SVG elements, browser layout/paint, or network round trips. For remote weights, request count, metadata placement, source-version checks and bounded previews still matter more than scalar decode time.
 
+## Native source optimizations — 2026-10-20
+
+The supplied Windows ARM64 Orion/SMB profile reported two initial `realpath` calls taking 3.82 seconds combined in one run and 3.18 seconds in another. Its 572 filesystem reads included 474 post-skip 256-byte probes; reads dominated the slower run. Those are supplied observations, not measurements reproduced on this Linux machine. The source worker already retained one descriptor across indexing, so per-read descriptor caching was not added.
+
+The native open handler now reuses its canonical initial path in `describe(initial=true)`. Referenced files still undergo `realpath` and directory-containment checks. File metadata validation and descriptor version checks before/after indexing and tensor reads remain in place. A worker-level regression counts one initial canonicalization and verifies that a referenced symlink escaping the model directory is rejected.
+
+Native indexing also uses a bounded adaptive read-ahead cache. Isolated post-skip probes remain exact, normally 256 bytes. Only when another small request immediately follows the cached window does it fetch up to 4 KiB, serving following requests from that window. Large sequential windows remain unchanged. Extra speculative reads are bounded to less than 4 KiB per refill, though cumulative extra bytes depend on the model. The cache exists only for the index pass; tensor previews/full reads retain exact requested ranges. Browser/HTTP sources retain their original policy and do not import the native helper. No Rust/WASM changes were required.
+
+Local comparisons using the same native-index read policy:
+
+| Fixture | Source requests, exact → adaptive | Source bytes, exact → adaptive | Index time, exact → adaptive |
+| --- | ---: | ---: | ---: |
+| Qwen vision, no injected latency | 266 → 263 | 653,435 → 656,507 | 9.08 → 5.87 ms |
+| Qwen text, 1 ms injected per read | 214 → 212 | 7,159,548 → 7,160,060 | 248.92 → 246.43 ms |
+| 128 scattered ONNX tensors with 1,700-byte metadata tails, 2 ms injected per read | 385 → 257 | 294,823 → 619,943 | 812.85 → 542.06 ms |
+
+These are sequential single-run spot checks with fresh WASM compilation, not controlled physical-disk/cache measurements. The synthetic case reduces requests by 33% while reading 325,120 extra bytes; it still avoids 96.35% of the 16,996,743-byte file. The real Qwen improvements are much smaller. Matching SHA-256 metadata/range hashes were checked for Qwen vision and the synthetic case; unit fixtures compare metadata and ranges byte-for-byte. No Orion/SMB end-to-end speedup is established. Mandatory probes at widely separated tensor boundaries remain; removing one redundant path resolution does not eliminate the other filesystem metadata operations.
+
+Reproduce the synthetic comparison:
+
+```bash
+node test/benchmark-loading.mjs --fixture=metadata-scattered-onnx --size=16 --latency=2 --exact-reads
+node test/benchmark-loading.mjs --fixture=metadata-scattered-onnx --size=16 --latency=2
+```
+
+The benchmark now defaults to the production native read policy, with `--exact-reads` providing the previous behavior, and reports SHA-256 hashes for metadata and tensor ranges. Full-scan behavior is unchanged. Tests cover cache hits/misses, isolated probes, EOF, invalid ranges, failed-read retry, payload offsets, mutation and symlink containment. ESLint and all 19 unit test files pass. A fresh 19,449-operator Qwen opening retained all 27,466 connections and 163,515 route points, with zero source bytes during rendering (index 40.40 ms, parse 106.58 ms, preparation 257.23 ms, serial layout 3400.74 ms, tile indexing 138.91 ms; mock DOM, excludes paint/network). Raw local results are under `/tmp/fastron-*-before.json`, `/tmp/fastron-*-after.json`, `/tmp/fastron-local-*.json` and `/tmp/fastron-open-optimized.log`.
+
 ## Remaining limits
 
 Canonical metadata, ONNX initializer records, displayed graph topology, layout and the spatial index remain resident. Repetition checks still inspect later instances' metadata. Generic formats and HTTP servers without usable versioned ranges can retain full-download behavior. The new overview only simplifies ordinary nodes in large deferred graphs; it does not page the entire model or replace edge rendering with a GPU backend.

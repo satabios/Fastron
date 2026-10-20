@@ -5,6 +5,7 @@ const files = new Map();
 let input = null;
 let fs = null;
 let path = null;
+let bufferedSource = null;
 let root = '';
 let readBytes = 0;
 let readRequests = 0;
@@ -16,7 +17,9 @@ const version = (stat) => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`
 
 const describe = async (name, initial = false) => {
     if (native) {
-        const file = await fs.promises.realpath(initial ? input.path : path.resolve(root, name));
+        // The open handler already canonicalized the initial path. References
+        // must still resolve symlinks before checking directory containment.
+        const file = initial ? input.path : await fs.promises.realpath(path.resolve(root, name));
         if (!initial) {
             const relative = path.relative(root, file);
             if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
@@ -124,7 +127,7 @@ const indexed = async (name, initial = false) => {
         source.readSync(0, head);
         const kind = formatKind(descriptor.name, head);
         if (kind) {
-            return indexSource(source, kind);
+            return indexSource(native ? bufferedSource(source) : source, kind);
         }
         if (!initial) {
             return { kind: 0, metadata: null, ranges: [] };
@@ -144,6 +147,7 @@ const handle = async (message) => {
             if (native) {
                 fs = await import('node:fs');
                 path = await import('node:path');
+                ({ bufferedSource } = await import('./model-source-reader.mjs'));
                 const filename = await fs.promises.realpath(input.path);
                 input = { ...input, path: filename };
                 root = path.dirname(filename);
