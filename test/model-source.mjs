@@ -190,6 +190,81 @@ test('cached metadata still checks descriptor identity before and after reuse', 
     }
 });
 
+test('Windows initial-open retry discards changed metadata, stays bounded and never retries previews', async () => {
+    for (const mode of ['metadata', 'always', 'preview']) {
+        const file = path.join(folder, `windows-retry-${mode}.safetensors`);
+        fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));
+        const script = `
+            import fs from 'node:fs';
+            import { parentPort } from 'node:worker_threads';
+            import { syncBuiltinESMExports } from 'node:module';
+            Object.defineProperty(process, 'platform', { value: 'win32' });
+            const original = fs.fstatSync;
+            let calls = 0;
+            fs.fstatSync = (...args) => {
+                if (!args[1]?.bigint) {
+                    return original(...args);
+                }
+                calls++;
+                if (${JSON.stringify(mode)} === 'metadata' && calls === 2) {
+                    const header = Buffer.from('{"new":true}');
+                    const prefix = Buffer.alloc(8);
+                    prefix.writeBigUInt64LE(BigInt(header.length));
+                    fs.writeFileSync(${JSON.stringify(file)}, Buffer.concat([prefix, header]));
+                }
+                const stat = original(...args);
+                if ((${JSON.stringify(mode)} === 'always' && calls % 2 === 0) ||
+                    (${JSON.stringify(mode)} === 'preview' && calls === 4)) {
+                    stat.ctimeNs += 1n;
+                }
+                parentPort.postMessage({ statCall: calls });
+                return stat;
+            };
+            syncBuiltinESMExports();
+            await import(${JSON.stringify(new URL('../source/model-source-worker.mjs', import.meta.url).href)});
+            parentPort.postMessage({ ready: true });
+        `;
+        const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(script)}`));
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve, reject) => {
+            worker.once('message', resolve);
+            worker.once('error', reject);
+        });
+        let calls = 0;
+        worker.on('message', (message) => {
+            calls = message.statCall || calls;
+        });
+        const source = new ModelSource(worker);
+        try {
+            const opening = source.request('open', { input: { path: file } });
+            if (mode === 'always') {
+                // eslint-disable-next-line no-await-in-loop
+                await assert.rejects(opening, /changed while reading.*ctimeNs:/);
+                assert.equal(calls, 4, 'Only one retry is allowed.');
+            } else {
+                // eslint-disable-next-line no-await-in-loop
+                const descriptor = await opening;
+                if (mode === 'metadata') {
+                    assert.equal(calls, 4);
+                    assert.equal(Buffer.from(descriptor.metadata).subarray(8).toString(), '{"new":true}');
+                    assert.equal(descriptor.length, 20);
+                    // eslint-disable-next-line no-await-in-loop
+                    assert.equal((await source.request('stats')).indexCacheHits, 0);
+                } else {
+                    assert.equal(calls, 2, 'Stable opens retain exactly two descriptor stats.');
+                    // eslint-disable-next-line no-await-in-loop
+                    await assert.rejects(source.request('read', {
+                        file: descriptor.key, version: descriptor.version, offset: 8, length: 1
+                    }), /changed while reading.*ctimeNs:/);
+                    assert.equal(calls, 4, 'Preview reads must not retry against changed offsets.');
+                }
+            }
+        } finally {
+            source.dispose();
+        }
+    }
+});
+
 test('native open resolves its initial path once and still canonicalizes referenced symlinks', async () => {
     const file = path.join(folder, 'canonical.safetensors');
     fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));

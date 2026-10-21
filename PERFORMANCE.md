@@ -395,6 +395,12 @@ Metadata/range SHA-256 hashes and operator counts matched on every open. These s
 
 ESLint and all 19 unit test files pass, including cancellation during lazy cache initialization. Browser checks for Safetensors, GGUF, ONNX, viewport eviction, folding and SVG export pass, with an explicit assertion that no `model-source-cache.mjs` request occurs. The browser log is `/tmp/fastron-native-cache-browser.log`.
 
+## Windows first-open identity changes — 2026-10-20
+
+Windows users reported `Model file changed while reading` on the first open of local files, with the next open succeeding. The particular changing stat field has not yet been captured on the affected machine. Initial native Windows opens now retry indexing exactly once after a post-read identity mismatch. The failed snapshot and candidate cached index are discarded, the descriptor is reopened, and a fresh index must pass both descriptor checks. Repeated instability still fails. Normal opens retain the existing two descriptor stats; retries add work only after a failed attempt. Linux/browser behavior and preview offset pinning are unchanged.
+
+Identity errors now name the changed fields and their expected/observed values (device, inode, size, modification timestamp or change timestamp), rather than asserting a change without evidence. No timestamp or identity field is ignored to accommodate this report. Regressions emulate Windows initial-read mutation, verify that only the freshly rebuilt metadata is returned, reject a second unstable attempt, and reject changed preview reads without retrying them. These tests run on Linux with the Windows branch exercised; reproducing the affected Windows filesystem behavior remains necessary to identify its underlying cause.
+
 ## Remaining limits
 
 Canonical metadata, ONNX initializer records, displayed graph topology, layout and the spatial index remain resident. Repetition checks still inspect later instances' metadata. Generic formats and HTTP servers without usable versioned ranges can retain full-download behavior. The new overview only simplifies ordinary nodes in large deferred graphs; it does not page the entire model or replace edge rendering with a GPU backend.

@@ -16,6 +16,19 @@ const identity = (request) => {
     return etag && !etag.startsWith('W/') ? etag : request.getResponseHeader('Last-Modified');
 };
 const version = (stat) => fileVersion(stat, process.platform);
+const changedFile = (descriptor, actual, duringRead = false) => {
+    const fields = ['device', 'inode', 'size', 'mtimeNs', 'ctimeNs'];
+    const expected = descriptor.version.split(':');
+    const observed = actual.split(':');
+    const changes = fields.filter((name, i) => expected[i] !== observed[i])
+        .map((name) => {
+            const i = fields.indexOf(name);
+            return `${name}: ${expected[i]} → ${observed[i]}`;
+        }).join(', ');
+    const error = new Error(`Model file changed${duringRead ? ' while reading' : ''}. Reopen the model. (${changes})`);
+    error.code = duringRead ? 'MODEL_CHANGED_DURING_READ' : 'MODEL_CHANGED';
+    return error;
+};
 
 const describe = async (name, initial = false) => {
     if (native) {
@@ -110,12 +123,18 @@ const withSource = async (descriptor, action, opened = null) => {
         }
     };
     try {
-        if (native && opened === null && version(fs.fstatSync(fd, { bigint: true })) !== descriptor.version) {
-            throw new Error('Model file changed. Reopen the model.');
+        if (native && opened === null) {
+            const actual = version(fs.fstatSync(fd, { bigint: true }));
+            if (actual !== descriptor.version) {
+                throw changedFile(descriptor, actual);
+            }
         }
         const result = await action(source);
-        if (native && version(fs.fstatSync(fd, { bigint: true })) !== descriptor.version) {
-            throw new Error('Model file changed while reading.');
+        if (native) {
+            const actual = version(fs.fstatSync(fd, { bigint: true }));
+            if (actual !== descriptor.version) {
+                throw changedFile(descriptor, actual, true);
+            }
         }
         return result;
     } finally {
@@ -170,7 +189,19 @@ const handle = async (message) => {
                 input.url = new URL(input.url).href;
             }
             try {
-                return await indexed('', true);
+                try {
+                    return await indexed('', true);
+                } catch (error) {
+                    if (!native || process.platform !== 'win32' || error.code !== 'MODEL_CHANGED_DURING_READ') {
+                        throw error;
+                    }
+                    // Discard the failed snapshot and reindex once. Never relax
+                    // identity checks or retry reads against an open model's offsets.
+                    delete input.cachedIndex;
+                    files.clear();
+                    indexCacheHits = 0;
+                    return await indexed('', true);
+                }
             } finally {
                 // Do not retain an extra metadata buffer for the worker lifetime.
                 delete input.cachedIndex;
