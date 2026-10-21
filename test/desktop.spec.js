@@ -7,6 +7,14 @@ import { writeRepeatedModel } from './repeated-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
 
+const createProfile = (directory) => {
+    fs.mkdirSync(directory, { recursive: true });
+    // Graph tests must not wait for geolocation or a delayed consent dialog.
+    // The isolated profile never changes a user's normal application settings.
+    fs.writeFileSync(path.join(directory, 'configuration.json'), JSON.stringify({ consent: Date.now(), recents: [] }));
+    return directory;
+};
+
 playwright.test('desktop', async ({ playwright: driver }, testInfo) => {
 
     const self = url.fileURLToPath(import.meta.url);
@@ -16,8 +24,7 @@ playwright.test('desktop', async ({ playwright: driver }, testInfo) => {
 
     // Launch app
     const electron = driver._electron;
-    const profile = testInfo.outputPath('profile');
-    fs.mkdirSync(profile, { recursive: true });
+    const profile = createProfile(testInfo.outputPath('profile'));
     const args = ['.', '--no-sandbox', `--user-data-dir=${profile}`];
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
@@ -179,7 +186,8 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
     const { file } = writeRepeatedModel(folder, 'safetensors');
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${path.join(folder, 'profile')}`], env });
+    const profile = createProfile(path.join(folder, 'profile'));
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${profile}`], env });
     try {
         const page = await app.firstWindow();
         await page.waitForSelector('body.welcome', { timeout: 30000 });

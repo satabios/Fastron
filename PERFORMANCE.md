@@ -378,6 +378,23 @@ All 278 tests in the 18 platform-available unit files pass; the publishing file 
 
 The final source-worker profile independently verified zero path-stat calls, one realpath, one open and two descriptor stats on every Orion open. Source open/index took 109.635 s initially and 4.110/0.795 s on cache hits; all metadata/range hashes and 1,386 operators matched. Cache hits read zero model bytes. The initial 570 reads took 107.10 s, so eliminating redundant metadata calls does not solve first-open scattered-read latency. Raw source observations are in `dist/benchmark-onnx/windows-native/source-orion.json`, with I/O/CPU profiles in `dist/profile-orion/windows-native/`.
 
+## Cross-platform integration validation — 2026-10-20
+
+The captured native optimizations are integrated in the checkout: descriptor-based identity checks, one initial canonicalization, adaptive metadata reads, the bounded session index cache, asynchronous desktop metadata ordering and Electron source lifetime cancellation. PowerShell is needed only for the standalone snapshot installer, not for running these optimizations.
+
+The shared source transport now imports and allocates the native metadata cache lazily on the first native open. Browser and Electron renderer module loading no longer fetch this native-only module. Concurrent native opens share initialization; failed initialization can retry, and disposal during initialization prevents an obsolete request from being sent. Cache hits still require fresh descriptor validation; exact tensor previews and first-open folding behavior are unchanged.
+
+Fresh local Linux processes using `test/benchmark-source-reopen.mjs`, with a fresh source worker for every trial, observed:
+
+| Model | Operators | Initial source open/index | Repeat source open/index | Initial bytes read | Repeat bytes read |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen vision | 1,170 | 23.80 ms | 17.82 / 17.54 ms | 656,516 | 0 / 0 |
+| Qwen text | 19,449 | 39.18 ms | 21.59 / 17.78 ms | 7,160,069 | 0 / 0 |
+
+Metadata/range SHA-256 hashes and operator counts matched on every open. These single-run observations exclude parsing, layout, paint and Electron IPC, use uncontrolled OS caches, and ran while the browser regression suite was active. They establish cache reuse and zero repeat model-data reads, not a controlled throughput comparison or an SMB performance claim. Reports are saved locally as `/tmp/fastron-integrated-reopen-vision.json` and `/tmp/fastron-integrated-reopen-text.json`.
+
+ESLint and all 19 unit test files pass, including cancellation during lazy cache initialization. Browser checks for Safetensors, GGUF, ONNX, viewport eviction, folding and SVG export pass, with an explicit assertion that no `model-source-cache.mjs` request occurs. The browser log is `/tmp/fastron-native-cache-browser.log`.
+
 ## Remaining limits
 
 Canonical metadata, ONNX initializer records, displayed graph topology, layout and the spatial index remain resident. Repetition checks still inspect later instances' metadata. Generic formats and HTTP servers without usable versioned ranges can retain full-download behavior. The new overview only simplifies ordinary nodes in large deferred graphs; it does not page the entire model or replace edge rendering with a GPU backend.
