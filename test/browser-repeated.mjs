@@ -27,10 +27,14 @@ if (process.argv[5]) {
     fixtures.set('/resnet.onnx', path.resolve(process.argv[5]));
 }
 let transferred = 0;
+let nativeCacheRequests = 0;
 const errors = [];
 const server = http.createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://localhost');
+        if (url.pathname === '/model-source-cache.mjs') {
+            nativeCacheRequests++;
+        }
         if (fixtures.has(url.pathname)) {
             const file = await fs.open(fixtures.get(url.pathname));
             try {
@@ -484,6 +488,7 @@ try {
         process.stdout.write(`${file}: architecture/generic folding ${original} → ${expected}, per-instance navigation and zero weight reads passed.\n`);
     }
 
+    assert.equal(nativeCacheRequests, 0, 'Browser loading must not fetch the native metadata cache.');
 } finally {
     await browser?.close();
     await new Promise((resolve) => {

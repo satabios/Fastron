@@ -70,6 +70,21 @@ test('metadata cache bounds bytes and entries, evicts LRU and owns transferred m
     assert.ok(bounded.get('b'));
 });
 
+test('disposing during lazy native cache initialization never sends an obsolete open', async () => {
+    let sent = 0;
+    const source = new ModelSource({
+        addEventListener() {},
+        postMessage() {
+            sent++;
+        },
+        terminate() {}
+    });
+    const pending = source.request('open', { input: { path: path.join(folder, 'cancelled.onnx') } });
+    source.dispose();
+    await assert.rejects(pending, /closed/);
+    assert.equal(sent, 0);
+});
+
 test('native reopens reuse metadata across workers and invalidate changed or replaced files', async () => {
     const gguf = Buffer.alloc(24);
     gguf.write('GGUF');

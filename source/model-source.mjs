@@ -1,8 +1,9 @@
 import { BinaryStream } from './base.js';
-import { MetadataIndexCache } from './model-source-cache.mjs';
 
 // Electron retains this cache in the main-process transport, not each renderer.
-const nativeIndexCache = typeof process !== 'undefined' && process.versions?.node && process.type !== 'renderer' ? new MetadataIndexCache() : null;
+const nativeIndexing = typeof process !== 'undefined' && process.versions?.node && process.type !== 'renderer';
+let nativeIndexCache = null;
+let nativeIndexCachePromise = null;
 
 // A metadata prefix can be read synchronously; payload ranges stay asynchronous.
 export class RangeStream {
@@ -127,12 +128,27 @@ export class ModelSource {
             worker.on('exit', () => this.dispose(new Error('Model source worker closed.')));
         }
     }
-    request(command, args = {}) {
+    async request(command, args = {}) {
         if (!this._worker) {
             return Promise.reject(new Error('Model source is closed.'));
         }
-        const cacheKey = nativeIndexCache && command === 'open' && typeof args.input?.path === 'string' ? args.input.path : null;
+        const cacheKey = nativeIndexing && command === 'open' && typeof args.input?.path === 'string' ? args.input.path : null;
         if (cacheKey !== null) {
+            // Browser/renderer loading must not fetch or allocate a native cache.
+            // Share initialization between concurrent native opens and retry failures.
+            if (!nativeIndexCache) {
+                nativeIndexCachePromise = nativeIndexCachePromise || import('./model-source-cache.mjs')
+                    .then(({ MetadataIndexCache }) => {
+                        nativeIndexCache = new MetadataIndexCache();
+                    }).catch((error) => {
+                        nativeIndexCachePromise = null;
+                        throw error;
+                    });
+                await nativeIndexCachePromise;
+                if (!this._worker) {
+                    throw new Error('Model source is closed.');
+                }
+            }
             args = { ...args, input: { ...args.input, cachedIndex: nativeIndexCache.get(cacheKey) } };
         }
         const id = ++this._next;
