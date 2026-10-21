@@ -156,16 +156,20 @@ test('cached metadata still checks descriptor identity before and after reuse', 
     fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));
     const first = await openSource(new mock.Host({}), { path: file });
     first.source.dispose();
-    for (const failAt of [1, 2]) {
+    const cases = [...new Set([process.platform, 'win32'])].flatMap((platform) => [1, 2].map((failAt) => ({ platform, failAt })));
+    for (const { platform, failAt } of cases) {
         const script = `
             import fs from 'node:fs';
             import { syncBuiltinESMExports } from 'node:module';
             import { parentPort } from 'node:worker_threads';
+            Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} });
             const original = fs.fstatSync;
             let calls = 0;
             fs.fstatSync = (...args) => {
                 const stat = original(...args);
-                if (args[1]?.bigint && ++calls === ${failAt}) {
+                // Repeat the mismatch on each attempt: Windows can recover from
+                // a single transient change, but must reject persistent changes.
+                if (args[1]?.bigint && (++calls - 1) % 2 + 1 === ${failAt}) {
                     stat.mtimeNs += 1n;
                 }
                 return stat;
