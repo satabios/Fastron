@@ -5,11 +5,12 @@ import * as mock from './mock.js';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as view from '../source/view.js';
+import { ModelSource, openSource } from '../source/model-source.mjs';
+import { bufferedSource, fileVersion } from '../source/model-source-reader.mjs';
 import { nodeCatalog, nodeDescriptions } from '../source/repeated-blocks.js';
+import { MetadataIndexCache } from '../source/model-source-cache.mjs';
 import { Worker } from 'node:worker_threads';
-import { bufferedSource } from '../source/model-source-reader.mjs';
 import { indexSource } from '../source/model-index.mjs';
-import { openSource } from '../source/model-source.mjs';
 import { pathToFileURL } from 'node:url';
 import { patternBlocks } from '../source/pattern-blocks.js';
 import { test } from 'node:test';
@@ -36,6 +37,144 @@ const model = (tensor) => Buffer.concat([
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-source-'));
 process.on('exit', () => fs.rmSync(folder, { recursive: true, force: true }));
 
+test('native file versions normalize Windows device IDs without ignoring mutation or replacement', () => {
+    const stat = { dev: 0n, ino: 10n, size: 20n, mtimeNs: 30n, ctimeNs: 40n };
+    assert.equal(fileVersion(stat, 'win32'), fileVersion({ ...stat, dev: 3163522874n }, 'win32'));
+    assert.notEqual(fileVersion(stat, 'linux'), fileVersion({ ...stat, dev: 1n }, 'linux'));
+    for (const key of ['ino', 'size', 'mtimeNs', 'ctimeNs']) {
+        assert.notEqual(fileVersion(stat, 'win32'), fileVersion({ ...stat, [key]: stat[key] + 1n }, 'win32'));
+    }
+});
+
+test('metadata cache bounds bytes and entries, evicts LRU and owns transferred metadata', () => {
+    const index = { kind: 1, metadata: new Uint8Array([8, 8]).buffer, ranges: [[0, 1, 2, 3]], key: 'file', name: 'file.onnx', length: 4, version: 'v1' };
+    const cache = new MetadataIndexCache(4096, 2);
+    cache.set('a', index);
+    structuredClone(index.metadata, { transfer: [index.metadata] });
+    assert.deepEqual(new Uint8Array(cache.get('a').metadata), new Uint8Array([8, 8]));
+    index.metadata = new ArrayBuffer(2);
+    cache.set('b', index);
+    cache.get('a');
+    cache.set('c', index);
+    assert.equal(cache.get('b'), null);
+    assert.ok(cache.get('a'));
+    cache.set('a', { ...index, metadata: new ArrayBuffer(8192) });
+    assert.equal(cache.get('a'), null);
+    assert.ok(cache.get('c'));
+    cache.set('c', { ...index, kind: 0 });
+    assert.equal(cache.get('c'), null);
+    const bounded = new MetadataIndexCache(300);
+    bounded.set('a', index);
+    bounded.set('b', index);
+    assert.equal(bounded.get('a'), null);
+    assert.ok(bounded.get('b'));
+});
+
+test('native reopens reuse metadata across workers and invalidate changed or replaced files', async () => {
+    const gguf = Buffer.alloc(24);
+    gguf.write('GGUF');
+    gguf.writeUInt32LE(3, 4);
+    const fixtures = [
+        ['cached.onnx', model(Buffer.concat([Buffer.from([8, 1, 16, 1]), field(8, 'weight'), field(9, Buffer.alloc(4))]))],
+        ['cached.safetensors', Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125])],
+        ['cached.gguf', gguf]
+    ];
+    for (const [name, bytes] of fixtures) {
+        const file = path.join(folder, name);
+        fs.writeFileSync(file, bytes);
+        const open = () => openSource(new mock.Host({}), { path: file });
+        // eslint-disable-next-line no-await-in-loop
+        const first = await open();
+        let metadata = null;
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const stats = await first.source.request('stats');
+            assert.equal(stats.indexCacheHits, 0);
+            assert.ok(stats.readBytes > 0);
+            metadata = Buffer.from(first.stream.peek(Math.min(first.stream.length, bytes.length)));
+            first.stream.peek(1)[0] ^= 255;
+        } finally {
+            first.source.dispose();
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const second = await open();
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            assert.deepEqual(await second.source.request('stats'), { readBytes: 0, readRequests: 0, indexCacheHits: 1 });
+            assert.deepEqual(Buffer.from(second.stream.peek(metadata.length)), metadata);
+            // Cached models still reject invalid ranges and out-of-directory references.
+            // eslint-disable-next-line no-await-in-loop
+            await assert.rejects(second.source.request('index', { file: '../outside.bin' }));
+        } finally {
+            second.source.dispose();
+        }
+        fs.utimesSync(file, new Date(), new Date(Date.now() + 10000));
+        // eslint-disable-next-line no-await-in-loop
+        const changed = await open();
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            assert.equal((await changed.source.request('stats')).indexCacheHits, 0);
+        } finally {
+            changed.source.dispose();
+        }
+        const oldStat = fs.statSync(file);
+        const replacement = `${file}.replacement`;
+        fs.writeFileSync(replacement, bytes);
+        fs.utimesSync(replacement, oldStat.atime, oldStat.mtime);
+        fs.renameSync(replacement, file);
+        // eslint-disable-next-line no-await-in-loop
+        const replaced = await open();
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            assert.equal((await replaced.source.request('stats')).indexCacheHits, 0);
+        } finally {
+            replaced.source.dispose();
+        }
+        fs.rmSync(file);
+        // eslint-disable-next-line no-await-in-loop
+        await assert.rejects(open(), /ENOENT/);
+    }
+});
+
+test('cached metadata still checks descriptor identity before and after reuse', async () => {
+    const file = path.join(folder, 'cached-guard.safetensors');
+    fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));
+    const first = await openSource(new mock.Host({}), { path: file });
+    first.source.dispose();
+    for (const failAt of [1, 2]) {
+        const script = `
+            import fs from 'node:fs';
+            import { syncBuiltinESMExports } from 'node:module';
+            import { parentPort } from 'node:worker_threads';
+            const original = fs.fstatSync;
+            let calls = 0;
+            fs.fstatSync = (...args) => {
+                const stat = original(...args);
+                if (args[1]?.bigint && ++calls === ${failAt}) {
+                    stat.mtimeNs += 1n;
+                }
+                return stat;
+            };
+            syncBuiltinESMExports();
+            await import(${JSON.stringify(new URL('../source/model-source-worker.mjs', import.meta.url).href)});
+            parentPort.postMessage({ ready: true });
+        `;
+        const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(script)}`));
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve, reject) => {
+            worker.once('message', resolve);
+            worker.once('error', reject);
+        });
+        const source = new ModelSource(worker);
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            await assert.rejects(source.request('open', { input: { path: file } }), /changed/);
+        } finally {
+            source.dispose();
+        }
+    }
+});
+
 test('native open resolves its initial path once and still canonicalizes referenced symlinks', async () => {
     const file = path.join(folder, 'canonical.safetensors');
     fs.writeFileSync(file, Buffer.from([2, 0, 0, 0, 0, 0, 0, 0, 123, 125]));
@@ -47,6 +186,9 @@ test('native open resolves its initial path once and still canonicalizes referen
         import fs from 'node:fs';
         import { parentPort } from 'node:worker_threads';
         const original = fs.promises.realpath;
+        fs.promises.stat = async () => {
+            throw new Error('Unexpected redundant path stat');
+        };
         fs.promises.realpath = async (...args) => {
             parentPort.postMessage({ trace: 'realpath' });
             return original(...args);
@@ -124,6 +266,13 @@ test('native index read-ahead preserves bytes, bounds probes and retries failed 
     read(20000, 0);
     assert.throws(() => read(-1, 1), /Invalid source range/);
     assert.throws(() => read(20000, 1), /Invalid source range/);
+});
+
+test('native indexing rejects directories without retaining their descriptor', async () => {
+    const directory = path.join(folder, 'invalid.onnx');
+    fs.mkdirSync(directory);
+    await assert.rejects(openSource(new mock.Host({}), { path: directory }), /Invalid model file|EISDIR|EACCES|EPERM/);
+    fs.rmdirSync(directory);
 });
 
 test('native read-ahead preserves ONNX metadata and tensor offsets while reducing sequential refills', async () => {

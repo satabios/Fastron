@@ -6,14 +6,16 @@ let input = null;
 let fs = null;
 let path = null;
 let bufferedSource = null;
+let fileVersion = null;
 let root = '';
 let readBytes = 0;
 let readRequests = 0;
+let indexCacheHits = 0;
 const identity = (request) => {
     const etag = request.getResponseHeader('ETag');
     return etag && !etag.startsWith('W/') ? etag : request.getResponseHeader('Last-Modified');
 };
-const version = (stat) => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`;
+const version = (stat) => fileVersion(stat, process.platform);
 
 const describe = async (name, initial = false) => {
     if (native) {
@@ -26,11 +28,20 @@ const describe = async (name, initial = false) => {
                 throw new Error('Model reference is outside its directory.');
             }
         }
-        const stat = await fs.promises.stat(file, { bigint: true });
-        if (!stat.isFile() || stat.size > BigInt(Number.MAX_SAFE_INTEGER)) {
-            throw new Error('Invalid model file.');
+        // Use the descriptor's initial stat both to describe and pin the file.
+        // A separate path stat adds an SMB round trip and can race replacement.
+        // On POSIX reject a FIFO without blocking while waiting for a writer.
+        const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0));
+        try {
+            const stat = fs.fstatSync(fd, { bigint: true });
+            if (!stat.isFile() || stat.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+                throw new Error('Invalid model file.');
+            }
+            return { fd, key: file, name: initial ? path.basename(file) : name, length: Number(stat.size), version: version(stat) };
+        } catch (error) {
+            fs.closeSync(fd);
+            throw error;
         }
-        return { key: file, name: initial ? path.basename(file) : name, length: Number(stat.size), version: version(stat) };
     }
     if (input.file) {
         const file = initial ? input.file : input.files.find((entry) => entry.name === name);
@@ -52,14 +63,10 @@ const describe = async (name, initial = false) => {
     return { key: url, name: initial ? (input.name || new URL(url).pathname.split('/').pop()) : name, length, version: revision };
 };
 
-const withSource = async (descriptor, action) => {
-    let fd = null;
-    if (native) {
+const withSource = async (descriptor, action, opened = null) => {
+    let fd = opened;
+    if (native && fd === null) {
         fd = fs.openSync(descriptor.key, 'r');
-        if (version(fs.fstatSync(fd, { bigint: true })) !== descriptor.version) {
-            fs.closeSync(fd);
-            throw new Error('Model file changed. Reopen the model.');
-        }
     }
     const source = {
         length: descriptor.length,
@@ -103,6 +110,9 @@ const withSource = async (descriptor, action) => {
         }
     };
     try {
+        if (native && opened === null && version(fs.fstatSync(fd, { bigint: true })) !== descriptor.version) {
+            throw new Error('Model file changed. Reopen the model.');
+        }
         const result = await action(source);
         if (native && version(fs.fstatSync(fd, { bigint: true })) !== descriptor.version) {
             throw new Error('Model file changed while reading.');
@@ -116,13 +126,18 @@ const withSource = async (descriptor, action) => {
 };
 
 const indexed = async (name, initial = false) => {
-    const descriptor = await describe(name, initial);
-    const previous = files.get(descriptor.key);
-    if (previous && previous.version !== descriptor.version) {
-        throw new Error('Model reference changed. Reopen the model.');
-    }
-    files.set(descriptor.key, descriptor);
+    const { fd = null, ...descriptor } = await describe(name, initial);
     const result = await withSource(descriptor, async (source) => {
+        const previous = files.get(descriptor.key);
+        if (previous && previous.version !== descriptor.version) {
+            throw new Error('Model reference changed. Reopen the model.');
+        }
+        files.set(descriptor.key, descriptor);
+        const cached = native && initial ? input.cachedIndex : null;
+        if (cached && cached.key === descriptor.key && cached.version === descriptor.version && cached.length === descriptor.length && cached.name === descriptor.name) {
+            indexCacheHits++;
+            return { kind: cached.kind, metadata: cached.metadata, ranges: cached.ranges, bytesRead: 0 };
+        }
         const head = new Uint8Array(Math.min(9, source.length));
         source.readSync(0, head);
         const kind = formatKind(descriptor.name, head);
@@ -136,7 +151,7 @@ const indexed = async (name, initial = false) => {
         const bytes = new Uint8Array(source.length);
         source.readSync(0, bytes);
         return { kind: 0, metadata: bytes.buffer, ranges: [] };
-    });
+    }, fd);
     return { ...result, key: descriptor.key, name: descriptor.name, length: descriptor.length, version: descriptor.version };
 };
 
@@ -147,14 +162,19 @@ const handle = async (message) => {
             if (native) {
                 fs = await import('node:fs');
                 path = await import('node:path');
-                ({ bufferedSource } = await import('./model-source-reader.mjs'));
+                ({ bufferedSource, fileVersion } = await import('./model-source-reader.mjs'));
                 const filename = await fs.promises.realpath(input.path);
                 input = { ...input, path: filename };
                 root = path.dirname(filename);
             } else if (input.url) {
                 input.url = new URL(input.url).href;
             }
-            return indexed('', true);
+            try {
+                return await indexed('', true);
+            } finally {
+                // Do not retain an extra metadata buffer for the worker lifetime.
+                delete input.cachedIndex;
+            }
         }
         case 'index': return indexed(message.file);
         case 'read': {
@@ -169,7 +189,7 @@ const handle = async (message) => {
                 return bytes.buffer;
             });
         }
-        case 'stats': return { readBytes, readRequests };
+        case 'stats': return { readBytes, readRequests, indexCacheHits };
         default: throw new Error('Unsupported model source request.');
     }
 };

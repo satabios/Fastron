@@ -1,4 +1,8 @@
 import { BinaryStream } from './base.js';
+import { MetadataIndexCache } from './model-source-cache.mjs';
+
+// Electron retains this cache in the main-process transport, not each renderer.
+const nativeIndexCache = typeof process !== 'undefined' && process.versions?.node && process.type !== 'renderer' ? new MetadataIndexCache() : null;
 
 // A metadata prefix can be read synchronously; payload ranges stay asynchronous.
 export class RangeStream {
@@ -127,6 +131,10 @@ export class ModelSource {
         if (!this._worker) {
             return Promise.reject(new Error('Model source is closed.'));
         }
+        const cacheKey = nativeIndexCache && command === 'open' && typeof args.input?.path === 'string' ? args.input.path : null;
+        if (cacheKey !== null) {
+            args = { ...args, input: { ...args.input, cachedIndex: nativeIndexCache.get(cacheKey) } };
+        }
         const id = ++this._next;
         return new Promise((resolve, reject) => {
             this._pending.set(id, { resolve, reject });
@@ -135,6 +143,11 @@ export class ModelSource {
             } catch (error) {
                 this._pending.delete(id); reject(error);
             }
+        }).then((result) => {
+            if (cacheKey !== null) {
+                nativeIndexCache.set(cacheKey, result);
+            }
+            return result;
         });
     }
     context(host, descriptor) {

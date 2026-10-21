@@ -450,9 +450,9 @@ desktop.Host = class {
         }
     }
 
-    async _context(location) {
+    async _context(location, stat = null) {
         const basename = path.basename(location);
-        const stat = fs.statSync(location);
+        stat = stat || await fs.promises.stat(location);
         if (stat.isFile()) {
             if (/\.(onnx|gguf|safetensors|safetensors\.index\.json)$/i.test(location)) {
                 return openSource(this, { path: location });
@@ -487,15 +487,24 @@ desktop.Host = class {
             return;
         }
         const path = location.path;
-        const stat = fs.existsSync(path) ? fs.statSync(path) : null;
+        const request = {};
+        this._statRequest = request;
+        let stat = null;
+        try {
+            stat = await fs.promises.stat(path);
+        } catch {
+            // Let context creation report missing/inaccessible files normally.
+        }
+        if (request !== this._statRequest) {
+            return;
+        }
         const size = stat && stat.isFile() ? stat.size : 0;
         if (path && this._view.accept(path, size)) {
-            const request = {};
             this._openRequest = request;
             this._view.show('welcome spinner');
             let context = null;
             try {
-                context = await this._context(path);
+                context = await this._context(path, stat);
                 this._telemetry.set('session_engaged', 1);
             } catch (error) {
                 if (request !== this._openRequest) {

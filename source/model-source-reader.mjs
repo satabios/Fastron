@@ -1,3 +1,8 @@
+// On Windows Node's path stat can report dev=0 while fstat reports the
+// volume serial number. Keep inode, size and both timestamps authoritative
+// at the canonical path; retain device identity on platforms that agree.
+export const fileVersion = (stat, platform) => `${platform === 'win32' ? '' : stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+
 // Bounded read-ahead for native indexing only. Tensor previews use exact ranges.
 export const bufferedSource = (source) => {
     const limit = 4096;

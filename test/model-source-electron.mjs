@@ -7,6 +7,90 @@ import { EventEmitter } from 'node:events';
 import { registerModelSources } from '../source/model-source-electron.mjs';
 import { test } from 'node:test';
 
+for (const action of ['dispose', 'destroyed', 'replace']) {
+    test(`Electron broker cancels pending open on ${action}`, async () => {
+        const ipc = new EventEmitter();
+        registerModelSources(ipc);
+        const handle = ipc.listeners('model-source')[0];
+        const session = crypto.randomUUID();
+        const sender = new EventEmitter();
+        let destroyed = false;
+        sender.isDestroyed = () => destroyed;
+        const responses = new Map();
+        sender.send = (channel, response) => responses.set(response.id, response);
+        const event = { sender };
+        const pending = handle(event, { session, request: { id: 1, command: 'open', input: { path: path.resolve('package.json') } } });
+        try {
+            assert.equal(sender.listenerCount('destroyed'), 1);
+            let replacement = null;
+            if (action === 'destroyed') {
+                destroyed = true;
+                sender.emit('destroyed');
+            } else {
+                const disposed = handle(event, { session, request: { command: 'dispose' } });
+                assert.equal(sender.listenerCount('destroyed'), 0);
+                if (action === 'replace') {
+                    replacement = handle(event, { session, request: { id: 2, command: 'open', input: { path: path.resolve('package.json') } } });
+                }
+                await disposed;
+            }
+            await pending;
+            assert.equal(responses.has(1), false);
+            if (replacement) {
+                await replacement;
+                assert.equal(responses.get(2).error, undefined);
+                assert.equal(sender.listenerCount('destroyed'), 1);
+            } else {
+                assert.equal(sender.listenerCount('destroyed'), 0);
+                destroyed = false;
+                await handle(event, { session, request: { id: 3, command: 'stats' } });
+                assert.match(responses.get(3).error, /closed/);
+            }
+        } finally {
+            sender.emit('destroyed');
+            await pending;
+        }
+    });
+}
+
+test('Electron broker rejects duplicate pending opens, pending requests and foreign disposal without closing owner session', async () => {
+    const ipc = new EventEmitter();
+    registerModelSources(ipc);
+    const handle = ipc.listeners('model-source')[0];
+    const session = crypto.randomUUID();
+    const sender = new EventEmitter();
+    sender.isDestroyed = () => false;
+    const responses = new Map();
+    sender.send = (channel, response) => responses.set(response.id, response);
+    const event = { sender };
+    const request = { id: 1, command: 'open', input: { path: path.resolve('package.json') } };
+    const pending = handle(event, { session, request });
+    try {
+        assert.equal(sender.listenerCount('destroyed'), 1);
+        const duplicate = handle(event, { session, request: { ...request, id: 2 } });
+        const unavailable = ['read', 'index', 'stats'].map((command, index) => handle(event, { session, request: { id: index + 3, command } }));
+        const foreign = new EventEmitter();
+        foreign.isDestroyed = () => false;
+        const denied = [];
+        foreign.send = (channel, response) => denied.push(response);
+        const disposal = handle({ sender: foreign }, { session, request: { command: 'dispose' } });
+        assert.match(responses.get(2).error, /already open/);
+        for (const id of [3, 4, 5]) {
+            assert.match(responses.get(id).error, /not ready/);
+        }
+        assert.match(denied[0].error, /owner/);
+        assert.equal(sender.listenerCount('destroyed'), 1);
+        await Promise.all([pending, duplicate, ...unavailable, disposal]);
+        assert.equal(responses.get(1).error, undefined);
+        await handle(event, { session, request: { id: 6, command: 'stats' } });
+        assert.equal(responses.get(6).error, undefined);
+        assert.equal(sender.listenerCount('destroyed'), 1);
+    } finally {
+        sender.emit('destroyed');
+        await pending;
+    }
+});
+
 test('Electron broker preserves request IDs, bounds reads, checks owners and closes destroyed sessions', async () => {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'fastron-electron-source-'));
     const file = path.join(folder, 'model.safetensors');
@@ -41,6 +125,17 @@ test('Electron broker preserves request IDs, bounds reads, checks owners and clo
         const stats = await rpc(sender, 103, 'stats');
         assert.equal(stats.error, undefined);
         assert.ok(stats.result.readBytes < 131072);
+        sender.emit('destroyed');
+        // The main-process cache survives the source session/worker lifetime.
+        const reopened = await rpc(sender, 105, 'open', { input: { path: file } });
+        assert.equal(reopened.error, undefined);
+        assert.deepEqual(reopened.result.metadata, descriptor.metadata);
+        assert.deepEqual((await rpc(sender, 106, 'stats')).result, { readBytes: 0, readRequests: 0, indexCacheHits: 1 });
+        const cachedRead = await rpc(sender, 107, 'read', { file: descriptor.key, version: descriptor.version, offset: 8 + header.length, length: 4 });
+        assert.equal(new DataView(cachedRead.result).getFloat32(0, true), 1.5);
+        fs.utimesSync(file, new Date(), new Date(Date.now() + 10000));
+        const staleRead = await rpc(sender, 108, 'read', { file: descriptor.key, version: descriptor.version, offset: 8 + header.length, length: 4 });
+        assert.match(staleRead.error, /changed/);
         sender.emit('destroyed');
         const closed = await rpc(sender, 104, 'stats');
         assert.match(closed.error, /closed/);

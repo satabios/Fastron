@@ -72,12 +72,12 @@ const browserHost = (view = makeView()) => ({
     _openContext: BrowserHost.prototype._openContext
 });
 
-const desktopMethod = async (recents) => {
+const desktopMethod = async (recents, stat = async () => ({ isFile: () => true, size: 1 })) => {
     const source = await fs.readFile(new URL('../source/desktop.mjs', import.meta.url), 'utf8');
     const start = source.indexOf('    async _open(location) {');
     const end = source.indexOf('\n    _request(location, headers, timeout) {', start);
     return vm.runInNewContext(`({ ${source.slice(start, end)} })._open`, {
-        fs: { existsSync: () => true, statSync: () => ({ isFile: () => true, size: 1 }) },
+        fs: { promises: { stat } },
         electron: { ipcRenderer: { send(command, value) {
             recents.push([command, value.path]);
         } } }
@@ -116,6 +116,32 @@ test('older parsing cannot supersede a newer model and releases its unused sourc
     assert.equal(app._openingContext, undefined);
 });
 
+test('desktop uses one asynchronous path stat and preserves request order during slow SMB metadata checks', async () => {
+    const pending = deferred();
+    const requests = [];
+    const recents = [];
+    const stat = { isFile: () => true, size: 42 };
+    const open = await desktopMethod(recents, (file) => {
+        requests.push(file);
+        return file === 'older.onnx' ? pending.promise : Promise.resolve(stat);
+    });
+    const contexts = [];
+    const host = { _view: makeView(), _telemetry: { set() {} },
+        _context: async (file, info) => {
+            contexts.push([file, info]);
+            return makeContext(file);
+        }, _title() {}, update() {} };
+    const older = open.call(host, { path: 'older.onnx' });
+    await open.call(host, { path: 'latest.onnx' });
+    pending.resolve(stat);
+    await older;
+    assert.deepEqual(requests, ['older.onnx', 'latest.onnx']);
+    assert.equal(contexts.length, 1);
+    assert.equal(contexts[0][0], 'latest.onnx');
+    assert.equal(contexts[0][1], stat);
+    assert.deepEqual(recents, [['update-recents', 'latest.onnx']]);
+});
+
 test('superseded parse errors are silent and preserve sources shared by the latest model', async () => {
     const first = makeContext('first');
     const latest = makeContext('latest');
@@ -142,6 +168,26 @@ test('superseded parse errors are silent and preserve sources shared by the late
     assert.equal(await older, undefined);
     assert.equal(app._model, newest);
     assert.equal(first.disposed, 0);
+});
+
+test('an unsupported desktop path does not cancel an accepted model still opening', async () => {
+    const pending = deferred();
+    const started = deferred();
+    const recents = [];
+    const open = await desktopMethod(recents);
+    const host = { _view: makeView(), _telemetry: { set() {} },
+        _context: async () => {
+            started.resolve();
+            return pending.promise;
+        }, _title() {}, update() {} };
+    host._view.accept = (file) => file.endsWith('.onnx');
+    const opening = open.call(host, { path: 'accepted.onnx' });
+    await started.promise;
+    await open.call(host, { path: 'unsupported.txt' });
+    pending.resolve(makeContext('accepted.onnx'));
+    await opening;
+    assert.deepEqual(recents, [['update-recents', 'accepted.onnx']]);
+    assert.ok(host._view.model);
 });
 
 test('browser ignores stale success, error, and explicit superseded completions', async () => {
@@ -206,13 +252,20 @@ test('desktop ignores stale contexts and closes their source and stream', async 
     const first = makeContext('first');
     const latest = makeContext('latest');
     const pending = deferred();
+    const started = deferred();
     const recents = [];
     const updates = [];
     const titles = [];
     const opened = [];
     const open = await desktopMethod(recents);
     const host = { _view: makeView(), _telemetry: { set() {} },
-        _context: (path) => path === 'first' ? pending.promise : Promise.resolve(latest),
+        _context: (path) => {
+            if (path === 'first') {
+                started.resolve();
+                return pending.promise;
+            }
+            return Promise.resolve(latest);
+        },
         _title: (title) => titles.push(title), update: (options) => updates.push(options)
     };
     host._view.open = async (context) => {
@@ -220,6 +273,7 @@ test('desktop ignores stale contexts and closes their source and stream', async 
         return {};
     };
     const older = open.call(host, { path: 'first', label: 'First' });
+    await started.promise;
     await open.call(host, { path: 'latest', label: 'Latest' });
     pending.resolve(first);
     await older;
@@ -262,8 +316,16 @@ test('desktop stale rendering and read failures cannot update title, recents, or
     assert.deepEqual(recents, [['update-recents', 'latest']]);
 
     const reading = deferred();
-    host._context = (path) => path === 'first' ? reading.promise : Promise.resolve(latest);
+    const readingStarted = deferred();
+    host._context = (path) => {
+        if (path === 'first') {
+            readingStarted.resolve();
+            return reading.promise;
+        }
+        return Promise.resolve(latest);
+    };
     const olderRead = open.call(host, { path: 'first', label: 'First' });
+    await readingStarted.promise;
     await open.call(host, { path: 'latest', label: 'Latest' });
     reading.reject(new Error('Obsolete read failure'));
     await olderRead;

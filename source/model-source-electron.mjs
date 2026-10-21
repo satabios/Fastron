@@ -49,27 +49,30 @@ export const registerModelSources = (ipc) => {
                 if (entry) {
                     throw new Error('Model source is already open.');
                 }
-                const threads = await import('node:worker_threads');
-                if (event.sender.isDestroyed()) {
-                    return;
-                }
-                if (sessions.has(session)) {
-                    throw new Error('Model source is already open.');
-                }
-                const url = new URL('./model-source-worker.mjs', import.meta.url);
-                const source = new ModelSource(new threads.Worker(new URL(url.href.replace('/app.asar/', '/app.asar.unpacked/'))));
                 const close = () => {
-                    sessions.delete(session);
+                    if (sessions.get(session) === entry) {
+                        sessions.delete(session);
+                    }
                     event.sender.removeListener('destroyed', close);
-                    source.dispose();
+                    entry.source?.dispose();
                 };
-                entry = { owner: event.sender, source, close };
+                entry = { owner: event.sender, source: null, close };
                 sessions.set(session, entry);
                 created = true;
                 event.sender.once('destroyed', close);
+                const threads = await import('node:worker_threads');
+                if (sessions.get(session) !== entry || event.sender.isDestroyed()) {
+                    entry.close();
+                    return;
+                }
+                const url = new URL('./model-source-worker.mjs', import.meta.url);
+                entry.source = new ModelSource(new threads.Worker(new URL(url.href.replace('/app.asar/', '/app.asar.unpacked/'))));
             }
             if (!entry) {
                 throw new Error('Model source is closed.');
+            }
+            if (!entry.source) {
+                throw new Error('Model source is not ready.');
             }
             const { command, id, ...args } = request;
             const result = await entry.source.request(command, args);
