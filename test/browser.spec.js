@@ -2,8 +2,47 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as playwright from '@playwright/test';
 import * as url from 'url';
+import { hierarchyModel } from './group-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
+
+playwright.test('grouped graph keeps shapes and supports nested keyboard expansion', async ({ page }, testInfo) => {
+    await page.goto('/');
+    await page.waitForSelector('body.welcome');
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('.open-file-button').click();
+    await (await chooser).setFiles({ name: 'hierarchy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(hierarchyModel())) });
+    const stack = page.locator('#fold-repeated-blocks-button');
+    await playwright.expect(stack).toBeEnabled();
+    await stack.click();
+    await playwright.expect(stack).toBeEnabled();
+    await playwright.expect(stack).toHaveAttribute('aria-pressed', 'true');
+    const first = page.getByRole('button', { name: 'Expand blocks.0', exact: true });
+    await playwright.expect(first).toBeVisible();
+    await playwright.expect(page.locator('.edge-label').filter({ hasText: 'batch×sequence_length×64' }).first()).toBeVisible();
+    await first.focus();
+    await first.press('Enter');
+    await playwright.expect(stack).toBeEnabled();
+    await playwright.expect(page.getByRole('button', { name: 'Collapse blocks.0', exact: true })).toBeVisible();
+    await playwright.expect(page.getByRole('button', { name: 'Expand attn', exact: true })).toBeVisible();
+    await playwright.expect(page.getByRole('button', { name: 'Expand blocks.1', exact: true })).toHaveCount(1);
+    await page.screenshot({ path: testInfo.outputPath('grouped-shapes.png'), animations: 'disabled' });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.screenshot({ path: testInfo.outputPath('grouped-shapes-dark.png'), animations: 'disabled' });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.getByRole('button', { name: 'Expand attn', exact: true }).click();
+    await playwright.expect(stack).toBeEnabled();
+    await playwright.expect(page.getByRole('button', { name: 'Collapse attn', exact: true })).toBeVisible();
+    await playwright.expect(page.locator('.edge-label').filter({ hasText: 'batch×sequence_length×64' }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Collapse blocks.0', exact: true }).click();
+    await playwright.expect(stack).toBeEnabled();
+    await playwright.expect(page.getByRole('button', { name: 'Expand blocks.0', exact: true })).toBeVisible();
+    await stack.click();
+    await playwright.expect(stack).toBeEnabled();
+    await playwright.expect(stack).toHaveAttribute('aria-pressed', 'false');
+    await playwright.expect(page.locator('.node-model-group')).toHaveCount(0);
+    await playwright.expect(page.locator('.model-group')).toHaveCount(0);
+});
 
 playwright.test('browser', async ({ page }) => {
 

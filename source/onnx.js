@@ -340,6 +340,9 @@ onnx.Node = class {
         for (const metadata of metadata_props) {
             const key = metadata.key;
             const value = metadata.value;
+            if (key === 'namespace') {
+                this._scope = value;
+            }
             if (key === 'input_names' && value.startsWith('[') && value.endsWith(']') && !Array.isArray(this.type.inputs)) {
                 const input_names = value.slice(1, -1).split(', ');
                 if (input_names.every((item) => /^'.*'$/.test(item))) {
@@ -1751,6 +1754,9 @@ onnx.Context.Graph = class {
             }] : [] }));
             return {
                 name: node.name || '', type: { name: node.op_type, domain, identifier: node.overload || '', version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
+                get _scope() {
+                    return (node.metadata_props || []).find((entry) => entry.key === 'namespace')?.value;
+                },
                 inputs: args(node.input), outputs: args(node.output),
                 _hasSubgraphs: node.attribute.some((attr) => attr.g || attr.graphs?.length),
                 get attributes() {

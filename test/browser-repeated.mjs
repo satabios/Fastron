@@ -87,7 +87,7 @@ try {
         page.on('pageerror', (error) => errors.push(error.message));
         const before = transferred;
         await page.goto(`${origin}/?url=/repeated.${format}&identifier=repeated.${format}`);
-        const foldedNodes = format === 'onnx' ? 1 : 2;
+        const foldedNodes = 2;
         const nodes = page.locator('#canvas .graph-node');
         try {
             await expect(nodes).toHaveCount(48, { timeout: 30000 });
@@ -103,16 +103,16 @@ try {
             await expect(nodes).toHaveCount(foldedNodes, { timeout: 30000 });
             await expect(stacking).toHaveAttribute('aria-pressed', 'true');
             await expect(stacking).toHaveClass(/active/);
-            await expect(stacking).toHaveAttribute('title', 'Expand Repeated Blocks');
+            await expect(stacking).toHaveAttribute('title', 'Show Ungrouped Graph');
             assert.equal(transferred, initialBytes, 'Enabling folding cannot fetch weights.');
             await expect(page.locator('body')).toHaveClass(/default/);
-            await expect(page.locator('.node-item-repeat text')).toHaveText(format === 'onnx' ? '↓ ×24 layers' : '×24 modules');
+            await expect(page.locator('.node-item-repeat text')).toHaveText('×24 modules');
             await page.screenshot({ path: path.join(os.tmpdir(), `fastron-repeated-${format}.png`) });
             assert.ok(transferred - before < 131072, `Unexpected model transfer: ${transferred - before}`);
             const metadataBytes = transferred;
             await page.locator('.node-item-repeat').click();
-            await page.getByLabel(format === 'onnx' ? 'Representative instance' : 'Representative layer').selectOption('17');
-            await expect(page.getByLabel(format === 'onnx' ? 'Representative instance' : 'Representative layer')).toHaveValue('17');
+            await page.getByLabel('Representative layer').selectOption('17');
+            await expect(page.getByLabel('Representative layer')).toHaveValue('17');
             await expect(nodes).toHaveCount(foldedNodes);
             await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).click();
             await expect(nodes).toHaveCount(48);
@@ -139,7 +139,7 @@ try {
             await page.locator('#weights-toggle-button').click();
             await expect(page.locator('#weights-toggle-button')).toHaveClass(/weights-enabled/);
             await expect(page.locator('body')).toHaveClass(/default/);
-            await expect(nodes).toHaveCount(format === 'onnx' ? 48 : foldedNodes);
+            await expect(nodes).toHaveCount(foldedNodes);
             assert.equal(transferred, metadataBytes, 'Enabling weights must not bulk-load the model.');
             await page.locator('#menu-button').click();
             await page.locator('button:has-text("Find...")').first().click();
@@ -149,12 +149,6 @@ try {
             await entry.locator('.sidebar-item-value-button').first().click();
             await expect(entry.locator('pre').last()).toContainText('70');
             assert.equal(transferred - previewBytes, 4000);
-            if (format === 'onnx') {
-                await stacking.click();
-                await expect(stacking).toHaveAttribute('aria-pressed', 'false');
-                await stacking.click();
-                await expect(nodes).toHaveCount(foldedNodes);
-            }
             await page.locator('#menu-button').click();
             const download = page.waitForEvent('download');
             await page.locator('button:has-text("Export as SVG")').first().click();
@@ -164,7 +158,7 @@ try {
             const exportedNodes = (svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node'));
             assert.equal(exportedNodes.length, foldedNodes);
             await page.locator('#menu-button').click();
-            await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
+            await page.locator('button:has-text("Show Ungrouped Graph")').first().click();
             await expect(nodes).toHaveCount(48);
             await expect(stacking).toHaveAttribute('aria-pressed', 'false');
             await expect(stacking).not.toHaveClass(/active/);
@@ -188,9 +182,102 @@ try {
             await context.close();
         }
     };
+    const checkHierarchy = async (file, expected) => {
+        const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
+        const page = await context.newPage();
+        page.on('pageerror', (error) => errors.push(error.message));
+        try {
+            await page.goto(`${origin}/?url=${file}&identifier=${file.slice(1)}`);
+            await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
+            const stacking = page.getByRole('button', { name: 'Graph Stacking', exact: true });
+            await expect(stacking).toBeEnabled();
+            const cdp = await context.newCDPSession(page);
+            const evaluate = async (expression) => (await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
+            const count = () => evaluate('window.__view__._target?._displayGraph.nodes.length');
+            const original = await count();
+            const metadataBytes = transferred;
+            const start = performance.now();
+            await stacking.click();
+            await expect(stacking).toBeEnabled();
+            await expect.poll(count).toBe(expected);
+            const elapsed = performance.now() - start;
+            assert.equal(transferred, metadataBytes, 'Grouping cannot fetch parameters.');
+            await expect(page.locator('.node-item-repeat')).toHaveCount(0);
+            const selected = await evaluate(`(() => {
+                const view = window.__view__;
+                let selected = null;
+                for (const node of view._target._groupNodes.values()) {
+                    const group = node.value?._hierarchyGroup;
+                    if (group) {
+                        selected ||= node;
+                        if (group.label === 'blocks.13') {
+                            selected = node;
+                            break;
+                        }
+                    }
+                }
+                if (!selected) {
+                    return null;
+                }
+                view._target.scrollToValue(selected.value, 'instant');
+                const group = selected.value._hierarchyGroup;
+                return { id: group.id, label: group.label };
+            })()`);
+            assert.ok(selected);
+            await page.getByRole('button', { name: `Expand ${selected.label}`, exact: true }).first().click();
+            await expect(stacking).toBeEnabled();
+            assert.ok(await count() > expected);
+            await expect(page.locator('#canvas .edge-label').first()).toBeAttached();
+            await page.screenshot({ path: path.join(os.tmpdir(), `fastron-grouped-${file.slice(1)}.png`), animations: 'disabled' });
+            await page.emulateMedia({ colorScheme: 'dark' });
+            await page.screenshot({ path: path.join(os.tmpdir(), `fastron-grouped-${file.slice(1)}-dark.png`), animations: 'disabled' });
+            await page.emulateMedia({ colorScheme: 'light' });
+            await page.getByRole('button', { name: `Collapse ${selected.label}`, exact: true }).first().click();
+            await expect(stacking).toBeEnabled();
+            await expect.poll(count).toBe(expected);
+            assert.equal(transferred, metadataBytes, 'Expanding real groups cannot fetch weights.');
+            if (file === '/repeated.onnx') {
+                const findWeight = async () => {
+                    await page.locator('#menu-button').click();
+                    await page.locator('button:has-text("Find...")').first().click();
+                    await page.locator('#search').fill('encoder.layers.7.weight');
+                    await page.locator('.sidebar-find-content li').filter({ hasText: 'encoder.layers.7.weight' }).first().dblclick();
+                };
+                await findWeight();
+                const entry = page.locator('#sidebar-content .sidebar-item:has(.sidebar-item-name input[value="value"])');
+                await entry.locator('.sidebar-item-value-button').first().click();
+                await expect(entry.locator('pre')).toContainText('Click to load on demand');
+                assert.equal(transferred, metadataBytes);
+                await page.locator('#weights-toggle-button').click();
+                await expect(stacking).toBeEnabled();
+                await findWeight();
+                const previewBytes = transferred;
+                await entry.locator('.sidebar-item-value-button').first().click();
+                await expect(entry.locator('pre').last()).toContainText('70');
+                assert.equal(transferred - previewBytes, 4000);
+            }
+            const grouped = await count();
+            await page.locator('#menu-button').click();
+            const download = page.waitForEvent('download');
+            await page.locator('button:has-text("Export as SVG")').first().click();
+            const svg = await fs.readFile(await (await download).path(), 'utf-8');
+            assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, grouped);
+            await stacking.click();
+            await expect(stacking).toBeEnabled();
+            await expect.poll(count).toBe(original);
+            await stacking.click();
+            await expect(stacking).toBeEnabled();
+            await expect.poll(count).toBe(grouped);
+            assert.deepEqual(errors, []);
+            process.stdout.write(`${file}: hierarchy ${original} → ${expected} in ${Math.round(elapsed)} ms, shapes, real-instance inspection and SVG export passed.\n`);
+        } finally {
+            await context.close();
+        }
+    };
     await check('safetensors');
     await check('gguf');
-    await check('onnx');
+    await checkHierarchy('/repeated.onnx', 24);
     const context = await browser.newContext();
     await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
     const page = await context.newPage();
@@ -199,7 +286,7 @@ try {
     await expect(page.locator('body')).toHaveClass(/default/);
     await expect(page.locator('.node-item-repeat')).toHaveCount(0);
     await page.locator('#menu-button').click();
-    await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+    await page.locator('button:has-text("Group Model")').first().click();
     await expect(page.locator('.node-item-repeat text')).toHaveText('×256 modules');
     const metadataBytes = transferred;
     await page.locator('.node-item-repeat').click();
@@ -249,243 +336,21 @@ try {
     assert.doesNotMatch(svg, /node-overview/);
     await expect(overview.first()).toBeVisible();
     await page.locator('#menu-button').click();
-    await page.locator('button:has-text("Expand Repeated Blocks")').first().click();
+    await page.locator('button:has-text("Show Ungrouped Graph")').first().click();
     await expect(page.locator('body')).toHaveClass(/default/);
     await page.locator('#menu-button').click();
-    await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+    await page.locator('button:has-text("Group Model")').first().click();
     await expect(page.locator('#canvas .graph-node')).toHaveCount(2);
     assert.deepEqual(errors, []);
     await context.close();
     process.stdout.write('512-node expanded stack: viewport eviction, overview zoom/keyboard access, distant real weights, full SVG export and folding passed.\n');
-    for (const [file, expected, repeats] of [
-        ['/efficientvit.onnx', 39, [3, 5, 5, 8]],
-        ['/qwen.onnx', 524, [25]],
-        ['/qwen-vision.onnx', 66, [6, 6, 6, 6]],
-        ['/resnet.onnx', 14, [2, 3, 5, 2]]
+    for (const [file, expected] of [
+        ['/efficientvit.onnx', 3], ['/qwen.onnx', 585], ['/qwen-vision.onnx', 39], ['/resnet.onnx', 10]
     ]) {
-        if (!fixtures.has(file)) {
-            continue;
+        if (fixtures.has(file)) {
+            // eslint-disable-next-line no-await-in-loop
+            await checkHierarchy(file, expected);
         }
-        // eslint-disable-next-line no-await-in-loop
-        const context = await browser.newContext();
-        // eslint-disable-next-line no-await-in-loop
-        await context.addCookies([{ name: 'consent', value: '1', url: origin }]);
-        // eslint-disable-next-line no-await-in-loop
-        const page = await context.newPage();
-        page.on('pageerror', (error) => errors.push(error.message));
-        // eslint-disable-next-line no-await-in-loop
-        await page.goto(`${origin}/?url=${file}&identifier=${file.slice(1)}`);
-        // eslint-disable-next-line no-await-in-loop
-        await expect(page.locator('body')).toHaveClass(/default/, { timeout: 30000 });
-        const stacking = page.getByRole('button', { name: 'Graph Stacking', exact: true });
-        // eslint-disable-next-line no-await-in-loop
-        await expect(stacking).toHaveAttribute('aria-pressed', 'false');
-        const metadataBytes = transferred;
-        // eslint-disable-next-line no-await-in-loop
-        const cdp = await context.newCDPSession(page);
-        const evaluate = async (expression) => (await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
-        const count = () => evaluate('window.__view__?._target?._displayGraph?.nodes.length');
-        // eslint-disable-next-line no-await-in-loop
-        const original = await count();
-        // eslint-disable-next-line no-await-in-loop
-        await evaluate(`(() => {
-            window.__patternWasmCalls = 0;
-            window.__originalInstantiate = WebAssembly.instantiate;
-            WebAssembly.instantiate = async (...args) => {
-                const result = await window.__originalInstantiate(...args);
-                if ((result.exports || result.instance?.exports)?.pattern_new) { window.__patternWasmCalls++; }
-                return result;
-            };
-        })()`);
-        // eslint-disable-next-line no-await-in-loop
-        await stacking.click();
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count, { timeout: 30000 }).toBe(expected);
-        // eslint-disable-next-line no-await-in-loop
-        const nativeCalls = await evaluate('window.__patternWasmCalls');
-        assert.equal(nativeCalls > 0, original >= 512, 'Large execution graphs must exercise the actual Rust search.');
-        // eslint-disable-next-line no-await-in-loop
-        await evaluate('WebAssembly.instantiate = window.__originalInstantiate');
-        // eslint-disable-next-line no-await-in-loop
-        const groups = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.map(g => ({ id: g.id, n: g.blocks.length, operators: g.members.length, detail: g.blocks[0].indices.length }))');
-        assert.deepEqual(groups.filter((g) => g.n > 1).map((g) => g.n), repeats);
-        if (file === '/qwen-vision.onnx') {
-            // eslint-disable-next-line no-await-in-loop
-            const architecture = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.architecture');
-            assert.deepEqual(architecture, { blocks: 24, softmax: 24, matchedSoftmax: 24 });
-            // eslint-disable-next-line no-await-in-loop
-            const recipe = await evaluate('window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.find(g => g.architecture).presentation');
-            assert.equal(recipe.total, '24 detected Transformer blocks');
-            assert.deepEqual(recipe.blockIndices, [0, 1, 2, 3, 4, 5]);
-            assert.equal(recipe.compound, false);
-            // eslint-disable-next-line no-await-in-loop
-            await evaluate(`(() => { const view = window.__view__; for (const { label: node } of view._target.nodes.values()) {
-                if (node.value._repeatGroup?.architecture) { view._target.scrollToValue(node.value, 'instant'); return; }
-            } })()`);
-            const transformer = page.locator('#canvas .graph-node').filter({ hasText: '24 detected Transformer blocks' }).first();
-            // eslint-disable-next-line no-await-in-loop
-            await expect(transformer).toBeVisible();
-            // eslint-disable-next-line no-await-in-loop
-            await expect(transformer).toContainText('Norm → Attention → (+) → Norm → MLP → (+)');
-            // eslint-disable-next-line no-await-in-loop
-            await transformer.locator('.node-item-repeat').click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.stack-schematic')).toBeVisible();
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.sidebar-object')).toContainText('24 inside detected blocks / 24 in graph');
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.sidebar-object')).toContainText('MHA + GELU MLP');
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.sidebar-object')).toContainText('16 query / 16 KV');
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.sidebar-object')).toContainText('Classic dense Transformer recipe · shared feature match');
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('.stack-schematic-mlp')).toHaveCount(1);
-            // eslint-disable-next-line no-await-in-loop
-            await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-transformer-vision.png'), animations: 'disabled' });
-            // eslint-disable-next-line no-await-in-loop
-            await page.emulateMedia({ colorScheme: 'dark' });
-            // eslint-disable-next-line no-await-in-loop
-            await page.screenshot({ path: path.join(os.tmpdir(), 'fastron-transformer-vision-dark.png'), animations: 'disabled' });
-            // eslint-disable-next-line no-await-in-loop
-            await page.emulateMedia({ colorScheme: 'light' });
-        }
-        const largest = groups.reduce((a, b) => a.n > b.n ? a : b);
-        // eslint-disable-next-line no-await-in-loop
-        await evaluate(`(() => {
-            const view = window.__view__;
-            for (const { label: node } of view._target.nodes.values()) {
-                if (node.value._repeatGroup?.id === ${largest.id}) {
-                    view._target.scrollToValue(node.value, 'instant');
-                    return;
-                }
-            }
-        })()`);
-        const badge = page.locator('.node-item-repeat').filter({ hasText: `×${largest.n}` }).first();
-        // eslint-disable-next-line no-await-in-loop
-        await badge.click();
-        const select = page.getByLabel(file.startsWith('/qwen') ? 'Representative block' : 'Representative instance', { exact: true });
-        // eslint-disable-next-line no-await-in-loop
-        await select.selectOption(String(largest.n - 1));
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBe(expected);
-        // eslint-disable-next-line no-await-in-loop
-        await expect(page.locator('body')).toHaveClass(/default/);
-        // eslint-disable-next-line no-await-in-loop
-        await expect(badge).toBeVisible();
-        if (file.startsWith('/qwen')) {
-            // eslint-disable-next-line no-await-in-loop
-            await select.selectOption('0');
-            // eslint-disable-next-line no-await-in-loop
-            await page.getByText('Expand selected block inline', { exact: true }).click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(expected + largest.detail);
-            // eslint-disable-next-line no-await-in-loop
-            const inline = await evaluate(`(() => {
-                const view = window.__view__;
-                const state = view._repeatStates.get(view.activeTarget);
-                const id = state.inlineExpanded.keys().next().value;
-                const group = state.analysis.groups.find(g => g.id === id);
-                return { block: group.blocks[0].index, id,
-                    counts: [...view._target._displayGraph.nodes].filter(n => n._repeatGroup?._repeatParent?.id === id).map(n => n._repeatGroup.blocks.length) };
-            })()`);
-            assert.deepEqual(inline.counts, [largest.n - 1]);
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.getByRole('button', { name: `Fold block ${inline.block}`, exact: true })).toBeVisible();
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('#canvas .edge-label').first()).toBeAttached();
-            // eslint-disable-next-line no-await-in-loop
-            await page.screenshot({ path: path.join(os.tmpdir(), `fastron-inline-${file.slice(1)}.png`), animations: 'disabled' });
-            // eslint-disable-next-line no-await-in-loop
-            await page.getByRole('button', { name: `Fold block ${inline.block}`, exact: true }).click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(expected);
-            const middle = Math.floor(largest.n / 2);
-            // eslint-disable-next-line no-await-in-loop
-            await select.selectOption(String(middle));
-            // eslint-disable-next-line no-await-in-loop
-            const middleBlock = await evaluate(`window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.find(g => g.id === ${inline.id}).blocks[${middle}].index`);
-            // eslint-disable-next-line no-await-in-loop
-            await page.getByRole('button', { name: `Expand block ${middleBlock} inline`, exact: true }).click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(expected + largest.detail + 1);
-            // eslint-disable-next-line no-await-in-loop
-            const runs = await evaluate(`(() => { const view = window.__view__; return [...view._target._displayGraph.nodes]
-                .filter(n => n._repeatGroup?._repeatParent?.id === ${inline.id}).map(n => n._repeatGroup.blocks.length); })()`);
-            assert.deepEqual(runs, [middle, largest.n - middle - 1]);
-            // eslint-disable-next-line no-await-in-loop
-            await page.getByText('Fold selected block inline', { exact: true }).click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(expected);
-        }
-        // eslint-disable-next-line no-await-in-loop
-        await page.screenshot({ path: path.join(os.tmpdir(), `fastron-generic-${file.slice(1)}.png`) });
-        const card = page.locator('#canvas .graph-node').filter({ has: badge }).first();
-        // eslint-disable-next-line no-await-in-loop
-        await card.getByRole('button', { name: 'Expand stack', exact: true }).click();
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBe(expected + largest.operators - 1);
-        // eslint-disable-next-line no-await-in-loop
-        await page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true }).click();
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBe(expected);
-        if (file === '/efficientvit.onnx' || file === '/qwen-vision.onnx') {
-            // eslint-disable-next-line no-await-in-loop
-            await page.locator('#menu-button').click();
-            const download = page.waitForEvent('download');
-            // eslint-disable-next-line no-await-in-loop
-            await page.locator('button:has-text("Export as SVG")').first().click();
-            // eslint-disable-next-line no-await-in-loop
-            const svg = await fs.readFile(await (await download).path(), 'utf-8');
-            assert.equal((svg.match(/class="[^"]*"/g) || []).filter((attr) => attr.slice(7, -1).split(/\s+/).includes('graph-node')).length, expected);
-            if (file === '/qwen-vision.onnx') {
-                assert.match(svg, /24 detected Transformer blocks/);
-                assert.match(svg, /Transformer blocks/);
-            }
-            // eslint-disable-next-line no-await-in-loop
-            await stacking.click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(original);
-            // eslint-disable-next-line no-await-in-loop
-            await stacking.click();
-            // eslint-disable-next-line no-await-in-loop
-            await expect.poll(count).toBe(expected);
-        }
-        // eslint-disable-next-line no-await-in-loop
-        await badge.click();
-        // eslint-disable-next-line no-await-in-loop
-        await page.getByText('Open full block', { exact: true }).click();
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(() => evaluate('Boolean(window.__view__.activeTarget?._fullBlockInspection && window.__view__._target?._renderTarget === window.__view__.activeTarget)')).toBe(true);
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBe(largest.detail);
-        // eslint-disable-next-line no-await-in-loop
-        await expect(page.locator('#canvas .node-item-repeat')).toHaveCount(0);
-        if (file.startsWith('/qwen')) {
-            // eslint-disable-next-line no-await-in-loop
-            await expect(page.locator('#canvas .edge-label').first()).toBeAttached();
-            // eslint-disable-next-line no-await-in-loop
-            assert.ok(await evaluate(`Array.from(document.querySelectorAll('#canvas .edge-label')).some((label) => label.textContent.includes('×'))`));
-        }
-        // eslint-disable-next-line no-await-in-loop
-        await evaluate('(async () => { await window.__view__.popTarget(); })()');
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBe(expected);
-        // eslint-disable-next-line no-await-in-loop
-        await evaluate(`window.__view__.showRepeatedBlock(window.__view__._repeatStates.get(window.__view__.activeTarget).analysis.groups.find((group) => group.id === ${largest.id}))`);
-        // eslint-disable-next-line no-await-in-loop
-        await page.getByText('Open module', { exact: true }).click();
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(() => evaluate('Boolean(window.__view__.activeTarget?._patternRegion && window.__view__._target?._renderTarget === window.__view__.activeTarget)')).toBe(true);
-        // eslint-disable-next-line no-await-in-loop
-        await expect.poll(count).toBeGreaterThan(0);
-        // eslint-disable-next-line no-await-in-loop
-        assert.ok(await count() <= largest.detail);
-        assert.equal(transferred, metadataBytes, 'Generic matching, selection, expansion and navigation cannot fetch weights.');
-        assert.deepEqual(errors, []);
-        // eslint-disable-next-line no-await-in-loop
-        await context.close();
-        process.stdout.write(`${file}: architecture/generic folding ${original} → ${expected}, per-instance navigation and zero weight reads passed.\n`);
     }
 
     assert.equal(nativeCacheRequests, 0, 'Browser loading must not fetch the native metadata cache.');

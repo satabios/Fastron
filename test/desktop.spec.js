@@ -208,14 +208,14 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
             await playwright.expect.poll(() => app.evaluate(({ Menu }) => {
                 const item = Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks');
                 return { present: Boolean(item), enabled: item?.enabled, label: item?.label };
-            })).toMatchObject({ present: true, enabled: true, label: playwright.expect.stringContaining('Fold') });
+            })).toMatchObject({ present: true, enabled: true, label: playwright.expect.stringContaining('Group') });
             await app.evaluate(({ Menu }) => {
                 const item = Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks');
                 item.click();
             });
         } else {
             await page.locator('#menu-button').click();
-            await page.locator('button:has-text("Fold Repeated Blocks")').first().click();
+            await page.locator('button:has-text("Group Model")').first().click();
         }
         await playwright.expect(nodes).toHaveCount(2, { timeout: 30000 });
         const stacking = page.getByRole('button', { name: 'Graph Stacking', exact: true });
@@ -229,7 +229,7 @@ playwright.test('desktop folds repeated blocks and reveals the actual hidden wei
             await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
             await playwright.expect.poll(() => app.evaluate(({ Menu }) =>
                 Menu.getApplicationMenu().getMenuItemById('view.toggle-repeated-blocks').label
-            )).toContain('Expand');
+            )).toContain('Ungrouped');
         }
         await page.locator('.node-item-repeat').click();
         await page.getByLabel('Representative layer').selectOption('17');

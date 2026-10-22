@@ -600,7 +600,7 @@ dagre.layout = (nodes, edges, layout, state) => {
     //      get placed on the same rank as subgraph border nodes.
     //
     // The nesting graph idea comes from Sander, 'Layout of Compound Directed Graphs.'
-    const nestingGraph_run = (g, state) => {
+    const nestingGraph_run = (g, state, layout) => {
         const root = addDummyNode(g, 'root', {}, '_root');
         const treeDepths = (g) => {
             const depths = {};
@@ -623,9 +623,13 @@ dagre.layout = (nodes, edges, layout, state) => {
                 }
                 return;
             }
-            const top = addDummyNode(g, 'border', { width: 0, height: 0 }, '_bt');
-            const bottom = addDummyNode(g, 'border', { width: 0, height: 0 }, '_bb');
             const label = g.node(v).label;
+            const horizontal = /^(lr|rl)$/i.test(layout.rankdir);
+            const top = addDummyNode(g, 'border', {
+                width: (label.headerWidth || 0) * (horizontal ? 2 : 1),
+                height: horizontal ? 0 : (label.headerHeight || 0) * 2
+            }, '_bt');
+            const bottom = addDummyNode(g, 'border', { width: 0, height: 0 }, '_bb');
             g.hasBorder = true;
             g.setParent(top, v);
             label.borderTop = top;
@@ -874,9 +878,12 @@ dagre.layout = (nodes, edges, layout, state) => {
         }
     };
 
-    const addBorderSegments = (g) => {
+    const addBorderSegments = (g, state, layout) => {
         const addBorderNode = (g, prop, prefix, sg, sgNode, rank) => {
             const label = { width: 0, height: 0, rank, borderType: prop };
+            if (/^(lr|rl)$/i.test(layout.rankdir) && prop === 'borderLeft') {
+                label.height = (sgNode.headerHeight || 0) * 2;
+            }
             const prev = sgNode[prop][rank - 1];
             const curr = addDummyNode(g, 'border', label, prefix);
             sgNode[prop][rank] = curr;
@@ -2166,7 +2173,8 @@ dagre.layout = (nodes, edges, layout, state) => {
     for (const node of nodes) {
         g.setNode(node.v, {
             width: node.width,
-            height: node.height
+            height: node.height,
+            ...(node.headerHeight ? { headerWidth: node.headerWidth, headerHeight: node.headerHeight } : {})
         });
         if (node.parent) {
             g.setParent(node.v, node.parent);

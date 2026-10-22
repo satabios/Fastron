@@ -148,6 +148,20 @@ text.node-overview-label { font-family: -apple-system, BlinkMacSystemFont, "Sego
 .edge-path-control-dependency { stroke-dasharray: 3, 2; }
 
 .cluster rect { stroke: #000; fill: #000; fill-opacity: 0.02; stroke-opacity: 0.06; stroke-width: 1px; }
+.model-group rect { fill: #e8f0fa; fill-opacity: 0.5; stroke: #8cabc8; stroke-opacity: 1; }
+.model-group text { fill: #283d52; font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; }
+.model-group text:focus { outline: 2px solid #1689e5; }
+.model-group:focus-within > rect { stroke: #1689e5; stroke-width: 2px; }
+.cluster.model-group.selected-model-group > rect { fill: #bde4fb; fill-opacity: 0.6; stroke: #1260d6; stroke-width: 2px; }
+.node-model-group .node-item-type path { fill: #dce7f3; }
+.node-model-group .node-item-type text { fill: #283d52; }
+@media (prefers-color-scheme: dark) {
+    .cluster.model-group rect { fill: #25394f; fill-opacity: 0.5; stroke: #7e9bb8; stroke-opacity: 1; }
+    .model-group text { fill: #deebf6; }
+    .cluster.model-group.selected-model-group > rect { fill: #224d70; stroke: #5eabff; }
+    .node-model-group .node-item-type path { fill: #34485e; }
+    .node-model-group .node-item-type text { fill: #deebf6; }
+}
 
 /* Used by JavaScript for animated selection highlight; duration/iteration set at call site. */
 @keyframes pulse { from { stroke-dashoffset: 100px; } to { stroke-dashoffset: 0; }  }

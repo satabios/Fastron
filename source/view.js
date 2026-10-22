@@ -388,7 +388,7 @@ view.View = class {
                     enabled: () => this.activeTarget
                 });
                 view.add({
-                    label: () => this.options.foldRepeatedBlocks ? 'Expand Repeated &Blocks' : 'Fold Repeated &Blocks',
+                    label: () => this.options.foldRepeatedBlocks ? 'Show &Ungrouped Graph' : '&Group Model',
                     execute: () => this.toggle('foldRepeatedBlocks'),
                     enabled: () => this.activeTarget && this.target
                 });
@@ -564,6 +564,7 @@ view.View = class {
             // New model loaded — stale cached graphs from prior model no longer valid.
             this._renderCache = [];
             this._repeatStates = new WeakMap();
+            this._groupStates = new WeakMap();
             this._repeatRevision = 0;
             this._options.foldRepeatedBlocks = false;
             this._updateFoldButton();
@@ -621,7 +622,7 @@ view.View = class {
                 button.classList.add('active');
             }
             button.setAttribute('aria-pressed', String(folded));
-            button.title = folded ? 'Expand Repeated Blocks' : 'Fold Repeated Blocks';
+            button.title = folded ? 'Show Ungrouped Graph' : 'Group Model';
         }
     }
 
@@ -1245,8 +1246,144 @@ view.View = class {
         return state.analysis.project(state.selected, state.expanded, state.inlineExpanded);
     }
 
+    async _groupedPresentation(graph, current) {
+        if (this._options.foldRepeatedBlocks !== true || graph._fullBlockInspection) {
+            return graph;
+        }
+        // Weight inventories keep their existing presentation; they have no execution graph.
+        if (!graph.inputs?.length && !graph.outputs?.length) {
+            return this._repeatedPresentation(graph, current);
+        }
+        this._groupStates ||= new WeakMap();
+        if (!this._groupStates.has(graph)) {
+            const { graphGroups } = await import('./graph-groups.js');
+            const analysis = await graphGroups(graph, current);
+            if (!current()) {
+                return graph;
+            }
+            const expanded = new Set();
+            let children = analysis?.root.children;
+            while (children?.length === 1 && children[0].children) {
+                expanded.add(children[0].id);
+                children = children[0].children;
+            }
+            this._groupStates.set(graph, analysis ? { analysis, expanded } : null);
+        }
+        const state = this._groupStates.get(graph);
+        if (!state) {
+            return graph;
+        }
+        if (!state.display) {
+            nodeCatalog(graph.nodes)?.release();
+            state.display = state.analysis.project(state.expanded);
+        }
+        return state.display;
+    }
+
+    async toggleGraphGroup(group) {
+        const graph = this.activeTarget;
+        const state = this._groupStates?.get(graph);
+        if (!state || state.analysis.groups.get(group.id) !== group || group.unsafe || state.pending) {
+            return;
+        }
+        if (state.expanded.has(group.id)) {
+            state.expanded.delete(group.id);
+        } else {
+            state.expanded.add(group.id);
+        }
+        state.display = null;
+        this._discardRepeatedViews();
+        const pending = this._updateTarget(this._model, this._path);
+        state.pending = pending;
+        try {
+            await pending;
+            if (this.activeTarget === graph && this._options.foldRepeatedBlocks && this._target?._hierarchy === state.analysis) {
+                this.showGraphGroup(group);
+                const target = this._target;
+                // Focus after the render's deferred viewport restoration.
+                this._host.window.requestAnimationFrame(() => {
+                    if (this._target === target && this.activeTarget === graph && this._options.foldRepeatedBlocks) {
+                        const node = target._groupNodes.get(group.id);
+                        if (node) {
+                            target._scrollToGraphBounds({ x: node.x - node.width / 2, y: node.y - node.height / 2,
+                                width: Math.min(node.width, target._containerElement.clientWidth / target.zoom * 0.8),
+                                height: Math.min(node.height, target._containerElement.clientHeight / target.zoom * 0.8) }, 'instant');
+                        }
+                    }
+                });
+            }
+        } finally {
+            state.pending = null;
+        }
+    }
+
+    showGraphGroup(group) {
+        const state = this._groupStates?.get(this.activeTarget);
+        if (!this._options.foldRepeatedBlocks || state?.analysis.groups.get(group.id) !== group) {
+            return;
+        }
+        const target = this._target;
+        if (target) {
+            target._selectedGroupElement?.classList.remove('selected-model-group');
+            target._selectedGroupElement = target._groupNodes?.get(group.id)?.element;
+            target._selectedGroupElement?.classList.add('selected-model-group');
+        }
+        const sidebar = new view.ObjectSidebar(this);
+        sidebar.addProperty('name', group.label);
+        sidebar.addProperty('namespace', group.id);
+        sidebar.addProperty('children', group.children.length);
+        sidebar.addProperty('operators', group.members.length);
+        const boundary = state.analysis.boundary(group);
+        for (const direction of ['inputs', 'outputs']) {
+            sidebar.addSection(direction === 'inputs' ? 'Inputs' : 'Outputs');
+            for (const argument of boundary[direction]) {
+                const value = argument.value[0];
+                const dimensions = value.type?.shape?.dimensions;
+                const shape = dimensions ? `[${dimensions.map((dim) => dim === null || dim === undefined || dim === -1 ? '?' : dim).join(' × ')}]` : '?';
+                sidebar.addProperty(value.name, `${value.type?.dataType || '?'} ${shape}`, 'code');
+            }
+        }
+        if (!group.unsafe) {
+            sidebar.addProperty('view', state.expanded.has(group.id) ? 'Expanded' : 'Collapsed')
+                .action(state.expanded.has(group.id) ? 'Collapse group' : 'Expand group', 'Change only this group', () =>
+                    this.toggleGraphGroup(group).catch((error) => this.error(error, 'Error changing group.', null)));
+        }
+        this._sidebar.open(sidebar, 'Layer Info');
+    }
+
     async revealRepeated(value) {
         const graph = this.activeTarget;
+        const grouped = this._options.foldRepeatedBlocks && this._groupStates?.get(graph);
+        if (grouped) {
+            if (grouped.pending) {
+                await grouped.pending;
+                if (this.activeTarget === graph) {
+                    await this.revealRepeated(value);
+                }
+                return;
+            }
+            const hidden = grouped.analysis.ancestors(value).filter((group) => !grouped.expanded.has(group.id));
+            if (hidden.length) {
+                hidden.forEach((group) => grouped.expanded.add(group.id));
+                grouped.display = null;
+                this._discardRepeatedViews();
+                const retained = { graph };
+                this._retainedFind = retained;
+                const pending = this._updateTarget(this._model, this._path);
+                grouped.pending = pending;
+                try {
+                    await pending;
+                } finally {
+                    if (grouped.pending === pending) {
+                        grouped.pending = null;
+                    }
+                    if (this._retainedFind === retained) {
+                        this._retainedFind = null;
+                    }
+                }
+            }
+            return;
+        }
         const state = this._repeatStates?.get(graph);
         if (state?.pending) {
             await state.pending;
@@ -1581,7 +1718,7 @@ view.View = class {
             }
 
             const document = this._host.document;
-            const graph = await this._repeatedPresentation(target, () => generation === this._renderGeneration);
+            const graph = await this._groupedPresentation(target, () => generation === this._renderGeneration);
             if (generation !== this._renderGeneration) {
                 return 'superseded';
             }
@@ -2716,7 +2853,7 @@ view.Graph = class extends grapher.Graph {
     }
 
     get options() {
-        return this.view.options;
+        return this._hierarchy ? { ...this.view.options, layout: 'dagre', fastLayout: false } : this.view.options;
     }
 
     createNode(node, load = null, release = null) {
@@ -2791,12 +2928,14 @@ view.Graph = class extends grapher.Graph {
 
     add(graph, signature) {
         this._fullBlockInspection = graph._fullBlockInspection === true;
+        this._hierarchy = graph._hierarchy;
+        this._groupNodes = new Map();
         this.identifier = this.model.identifier;
         this.identifier += graph && graph.name ? `.${graph.name.replace(/\/|\\/g, '.')}` : '';
         const clusters = new Set();
         const clusterParentMap = new Map();
         const groups = graph.groups;
-        if (groups) {
+        if (groups && !this._hierarchy) {
             for (const node of nodeDescriptions(graph)) {
                 let name = node.group;
                 // shortcut: stops at the first already-mapped ancestor (its ancestors are mapped too), upgrade never needed
@@ -2806,6 +2945,20 @@ view.Graph = class extends grapher.Graph {
                     clusterParentMap.set(name, parent);
                     name = parent;
                 }
+            }
+        }
+        if (this._hierarchy) {
+            for (const [name, { group, parent }] of graph._groupContainers) {
+                const cluster = { name, rx: 10, ry: 10, group,
+                    header: { label: `${group.label} · ${group.members.length} ops`,
+                        select: () => this.view.showGraphGroup(group),
+                        collapse: group.unsafe ? null : () => this.view.toggleGraphGroup(group)
+                            .catch((error) => this.view.error(error, 'Error changing group.', null)) } };
+                this.setNode(cluster);
+                if (parent) {
+                    this.setParent(name, parent);
+                }
+                this._groupNodes.set(name, cluster);
             }
         }
         const inputs = signature ? signature.inputs : graph.inputs;
@@ -2831,6 +2984,9 @@ view.Graph = class extends grapher.Graph {
                 !attributes.some((arg) => /^(graph|object|function)/.test(arg.type));
             const viewNode = defer && simple ? this.createNode(node, () => graph.nodes[i], () => catalog.evict(i)) : this.createNode(node);
             this.setNode(viewNode);
+            if (node._hierarchyGroup) {
+                this._groupNodes.set(node._hierarchyGroup.id, viewNode);
+            }
             let outputs = node.outputs;
             if (node.chain && node.chain.length > 0) {
                 const chainOutputs = node.chain[node.chain.length - 1].outputs;
@@ -2866,7 +3022,11 @@ view.Graph = class extends grapher.Graph {
                     }
                 }
             };
-            if (groups) {
+            if (this._hierarchy) {
+                if (node.group) {
+                    this.setParent(viewNode.name, node.group);
+                }
+            } else if (groups) {
                 let groupName = node.group;
                 if (groupName && groupName.length > 0) {
                     if (!clusterParentMap.has(groupName)) {
@@ -2983,6 +3143,11 @@ view.Graph = class extends grapher.Graph {
         this._backgroundElement = background;
         for (const value of this._values.values()) {
             value.build();
+        }
+        if (this._hierarchy) {
+            for (const edge of this.edges.values()) {
+                edge.label.label = [...new Set(edge.label.groupValues.values())].join(' · ');
+            }
         }
         super.build(document, origin);
     }
@@ -3828,7 +3993,8 @@ view.Node = class extends grapher.Node {
         this._loadValue = load;
         this._releaseValue = release;
         this._overviewLabel = `${value.name || value.identifier || ''} [${value.type?.name || type || 'node'}]`;
-        this._overviewType = (value.type?.name || type || 'node').split('.').pop();
+        this._overviewType = value._hierarchyGroup?.label || (value.type?.name || type || 'node').split('.').pop();
+        this._isGroup = Boolean(value._hierarchyGroup);
         this._stackDepth = value._repeatHeader && !context.view._repeatStates?.get(context.view.activeTarget)?.expanded.has(value._repeatGroup.id)
             ? Math.min(2, value._repeatGroup.blocks.length - 1) : 0;
         if (this._stackDepth) {
@@ -3930,6 +4096,9 @@ view.Node = class extends grapher.Node {
     }
 
     get class() {
+        if (this._isGroup) {
+            return 'graph-node node-model-group';
+        }
         return this._compound ? 'graph-node node-compound' : 'graph-node';
     }
 
@@ -4021,6 +4190,9 @@ view.Node = class extends grapher.Node {
             throw error;
         }
         let content = options.names && (node.name || node.identifier) ? (node.name || node.identifier) : node.type.name.split('.').pop();
+        if (node._hierarchyGroup) {
+            content = node._hierarchyGroup.label;
+        }
         let tooltip = options.names && (node.name || node.identifier) ? `[${node.type.name}]` : (node.name || node.identifier);
         if (this._compound) {
             content = 'Repeated stage';
@@ -4039,12 +4211,26 @@ view.Node = class extends grapher.Node {
         }
         const title = header.add(null, styles, content, tooltip);
         title.on('click', () => {
-            if (node._repeatHeader) {
+            if (node._hierarchyGroup) {
+                this.context.view.showGraphGroup(node._hierarchyGroup);
+            } else if (node._repeatHeader) {
                 this.context.view.showRepeatedBlock(node._repeatGroup);
             } else {
                 this.context.activate(value);
             }
         });
+        if (node._hierarchyGroup) {
+            const group = node._hierarchyGroup;
+            const action = header.add(null, ['node-item-function', 'node-item-repeat-toggle'], 'Expand', `Expand ${group.label}`);
+            action.ariaLabel = `Expand ${group.label}`;
+            action.expanded = false;
+            action.on('click', () => this.context.view.toggleGraphGroup(group)
+                .catch((error) => this.context.view.error(error, 'Error changing group.', null)));
+            const list = this.list();
+            const item = list.argument('Operators', String(group.members.length));
+            item.separator = ': ';
+            list.add(item);
+        }
         if (node._repeatHeader) {
             const group = node._repeatGroup;
             const unit = this._compound ? 'stages' : (group.presentation?.label || (group.kind === 'pattern' ? 'regions' : 'modules'));
@@ -4283,7 +4469,11 @@ view.Node = class extends grapher.Node {
     }
 
     activate() {
-        this.context.view.showNodeProperties(this.value);
+        if (this.value._hierarchyGroup) {
+            this.context.view.showGraphGroup(this.value._hierarchyGroup);
+        } else {
+            this.context.view.showNodeProperties(this.value);
+        }
     }
 
     activateOverview() {
@@ -4458,12 +4648,19 @@ view.Value = class {
                     type.shape.dimensions.length > 0 &&
                     type.shape.dimensions.every((dim) => !dim || Number.isInteger(dim) || typeof dim === 'bigint' || (typeof dim === 'string'))) {
                     content = type.shape.dimensions.map((dim) => (dim !== null && dim !== undefined && dim !== -1) ? dim : '?').join('\u00D7');
-                    content = content.length > 16 && !this.context._fullBlockInspection ? '' : content;
+                    content = content.length > 16 && !this.context._fullBlockInspection && !this.context._hierarchy ? '' : content;
+                }
+                if (this.context._hierarchy && !content) {
+                    content = type?.shape?.dimensions?.length === 0 ? 'scalar' : '?';
                 }
                 if (this.context.options.names && !this.context._fullBlockInspection) {
-                    content = this.value.name.split('\n').shift(); // custom argument id
+                    content = this.context._hierarchy ? `${this.value.name.split('\n')[0]} · ${content}` : this.value.name.split('\n').shift();
                 }
                 const edge = this.from.edge(to);
+                if (this.context._hierarchy) {
+                    edge.groupValues ||= new Map();
+                    edge.groupValues.set(this.value, content);
+                }
                 if (!edge.value) {
                     edge.value = this;
                     if (content) {
@@ -4572,7 +4769,11 @@ view.Edge = class extends grapher.Edge {
     }
 
     activate() {
-        this.value.context.activate(this.value.value);
+        if (this.groupValues?.size > 1) {
+            this.value.context.view.showTensorProperties({ name: 'Connection tensors', value: [...this.groupValues.keys()] });
+        } else {
+            this.value.context.activate(this.value.value);
+        }
     }
 };
 

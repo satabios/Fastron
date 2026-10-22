@@ -674,7 +674,7 @@ app.Application = class {
             });
             commandTable.set('view.toggle-repeated-blocks', {
                 enabled: (view) => view && view.path && view.get('zoom-reset.enabled') ? true : false,
-                label: (view) => view && view.get('foldRepeatedBlocks') ? 'Expand Repeated &Blocks' : 'Fold Repeated &Blocks'
+                label: (view) => view && view.get('foldRepeatedBlocks') ? 'Show &Ungrouped Graph' : '&Group Model'
             });
             commandTable.set('view.toggle-direction', {
                 enabled: (view) => view && view.path ? true : false,

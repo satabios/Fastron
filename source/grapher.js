@@ -1010,6 +1010,41 @@ grapher.Graph = class {
                 node.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 node.element.setAttribute('class', 'cluster');
                 node.element.appendChild(node.rectangle);
+                if (node.header) {
+                    node.element.classList.add('model-group');
+                    const button = (label, action, x) => {
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.textContent = label;
+                        text.setAttribute('x', x);
+                        text.setAttribute('y', 20);
+                        text.setAttribute('role', 'button');
+                        text.setAttribute('tabindex', '0');
+                        text.setAttribute('aria-label', label === '⌃' ? `Collapse ${node.group.label}` : `Inspect ${node.group.label}`);
+                        if (label === '⌃') {
+                            text.setAttribute('aria-expanded', 'true');
+                        }
+                        text.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            action();
+                        });
+                        text.addEventListener('keydown', (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                action();
+                            }
+                        });
+                        node.headerElement.appendChild(text);
+                    };
+                    node.headerElement = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    node.element.appendChild(node.headerElement);
+                    button(node.header.label, node.header.select, 30);
+                    if (node.header.collapse) {
+                        button('⌃', node.header.collapse, 10);
+                    }
+                    node.headerHeight = 32;
+                    node.headerWidth = textLayout.measureTextElement(null, { text: node.header.label, font: NODE_FONT }).width + 48;
+                }
                 node._parentElement = clusterGroup;
                 clusterGroup.appendChild(node.element);
                 this._renderedNodes.add(nodeId);
@@ -1085,6 +1120,7 @@ grapher.Graph = class {
                 v: node.v,
                 width: node.label.width || 0,
                 height: node.label.height || 0,
+                ...(node.label.header ? { headerWidth: node.label.headerWidth, headerHeight: node.label.headerHeight } : {}),
                 parent: this.parent(node.v) });
         }
         let edges = [];
@@ -1844,6 +1880,9 @@ grapher.Graph = class {
                 node.rectangle.setAttribute('y', - node.height / 2);
                 node.rectangle.setAttribute('width', node.width);
                 node.rectangle.setAttribute('height', node.height);
+                if (node.headerElement) {
+                    node.headerElement.setAttribute('transform', `translate(${-node.width / 2},${-node.height / 2})`);
+                }
             }
         }
         const restrictEdgesToVisible = this._viewportCulling && this._skipHiddenUpdate && this._visibleEdges instanceof Set;
@@ -2189,7 +2228,7 @@ grapher.Node.Header.Entry = class {
         if (this._events.click) {
             this.element.setAttribute('role', 'button');
             this.element.setAttribute('tabindex', '0');
-            this.element.setAttribute('aria-label', this.content);
+            this.element.setAttribute('aria-label', this.ariaLabel || this.content);
             if (typeof this.expanded === 'boolean') {
                 this.element.setAttribute('aria-expanded', String(this.expanded));
             }

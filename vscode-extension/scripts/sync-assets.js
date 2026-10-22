@@ -4,7 +4,7 @@
  * Copies shared model/format files from ../source/ into webview/netron/.
  * Run via: npm run sync (automatically called before compile/build).
  *
- * Copies: *.js, *.json  (NOT *.html, *.py, *.css — those are app/extension-specific)
+ * Copies shared scripts, metadata and graph styles; HTML stays extension-specific.
  * Output: vscode-extension/webview/netron/
  */
 
@@ -13,7 +13,7 @@ const path = require('path');
 
 const sourceDir = path.resolve(__dirname, '../../source');
 const destDir = path.resolve(__dirname, '../webview/netron');
-const COPY_EXTS = new Set(['.js', '.mjs', '.wasm', '.json']);
+const COPY_EXTS = new Set(['.js', '.mjs', '.wasm', '.json', '.css']);
 const SKIP_FILES = new Set(['package.json']);  // root package.json, not a netron asset
 
 if (!fs.existsSync(sourceDir)) {
