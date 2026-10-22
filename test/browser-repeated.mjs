@@ -100,6 +100,7 @@ try {
             await expect(stacking).toHaveAttribute('aria-pressed', 'false');
             await stacking.focus();
             await stacking.press('Enter');
+            await expect(stacking).toBeEnabled();
             await expect(nodes).toHaveCount(foldedNodes, { timeout: 30000 });
             await expect(stacking).toHaveAttribute('aria-pressed', 'true');
             await expect(stacking).toHaveClass(/active/);
@@ -113,14 +114,18 @@ try {
             await page.locator('.node-item-repeat').click();
             await page.getByLabel('Representative layer').selectOption('17');
             await expect(page.getByLabel('Representative layer')).toHaveValue('17');
+            await expect(stacking).toBeEnabled();
             await expect(nodes).toHaveCount(foldedNodes);
             await page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true }).click();
+            // Nodes exist before layout completes; registration then moves keyboard focus.
+            await expect(stacking).toBeEnabled();
             await expect(nodes).toHaveCount(48);
             const fold = page.locator('#canvas').getByRole('button', { name: 'Fold stack', exact: true });
             await expect(fold).toBeVisible();
             await expect(fold).toHaveAttribute('aria-expanded', 'true');
             await fold.focus();
             await fold.press('Enter');
+            await expect(stacking).toBeEnabled();
             await expect(nodes).toHaveCount(foldedNodes);
             const expand = page.locator('#canvas').getByRole('button', { name: 'Expand stack', exact: true });
             await expect(expand).toBeVisible();
