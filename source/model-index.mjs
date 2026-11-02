@@ -1,18 +1,22 @@
-let modulePromise = null;
+const modules = new Map();
 
-export const loadIndexModule = () => {
-    if (!modulePromise) {
-        modulePromise = (async () => {
-            const url = new URL('./model-index.wasm', import.meta.url);
+const loadModule = (name) => {
+    if (!modules.has(name)) {
+        const promise = (async () => {
+            const url = new URL(`./${name}.wasm`, import.meta.url);
             const bytes = typeof process !== 'undefined' && process.versions?.node ? await (await import('node:fs/promises')).readFile(url) : await (await fetch(url)).arrayBuffer();
             return WebAssembly.compile(bytes);
         })().catch((error) => {
-            modulePromise = null;
+            modules.delete(name);
             throw error;
         });
+        modules.set(name, promise);
     }
-    return modulePromise;
+    return modules.get(name);
 };
+
+export const loadIndexModule = () => loadModule('model-index');
+export const loadAnalysisModule = () => loadModule('model-analysis');
 
 export const indexSource = async (source, kind) => {
     const module = await loadIndexModule();

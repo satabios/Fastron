@@ -2,6 +2,8 @@
 #![cfg(any(target_arch = "wasm32", test))]
 
 mod pattern;
+#[cfg(any(feature = "analysis", test))]
+mod analysis;
 
 type Result<T> = std::result::Result<T, String>;
 

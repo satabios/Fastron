@@ -261,3 +261,65 @@ test('renamed fused outputs preserve their producer identity', async () => {
     b[1].inputs[0].value[0].name = 'renamed';
     assert.ok((await compare(a, b)).pairs.every((p) => p.status === 'identical'));
 });
+
+test('comparison paints the flat graph before starting analysis and respects cancellation before paint', async () => {
+    await Promise.all([false, true].map(async (cancel) => {
+        const events = [];
+        const frames = [];
+        const target = { nodes: [node('visible')] };
+        const host = {
+            document: { getElementById: () => null },
+            window: { requestAnimationFrame: (callback) => {
+                frames.push(callback);
+            } },
+            _context: async () => ({ modules: [target] }),
+            worker: () => {
+                events.push('analysis'); throw new Error('worker unavailable');
+            }
+        };
+        const controller = Object.assign(Object.create(Controller.prototype), {
+            _host: host,
+            _modelFactory: { open: async (context) => context },
+            _reset() {
+                this._sessionGeneration = 1; this._entry = null;
+            },
+            _initializeControls() {},
+            _disposeContext() {},
+            async _renderPair() {
+                events.push('render');
+            },
+            _refreshDiff() {},
+            _showError() {}
+        });
+        const comparison = controller.compare({ path: 'a' }, { path: 'b' });
+        // Drain loading promises without running any frame callbacks.
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        assert.deepEqual(events, ['render']);
+        frames.shift()();
+        assert.deepEqual(events, ['render']);
+        events.push('paint');
+        if (cancel) {
+            controller._entry.error = 'cancelled';
+        }
+        frames.shift()();
+        await comparison;
+        assert.deepEqual(events, cancel ? ['render', 'paint'] : ['render', 'paint', 'analysis']);
+    }));
+});
+
+test('diff highlighting uses rendered indices without rematerializing evicted model nodes', () => {
+    const controller = Object.create(Controller.prototype);
+    const nodes = new Proxy([], { get() {
+        throw new Error('Model node materialized');
+    } });
+    const a = {}; const b = {};
+    const graphA = { _sourceNodes: new Map([[0, a]]) };
+    const graphB = { _sourceNodes: new Map([[0, b]]) };
+    controller._applyDiffHighlighting(graphA, graphB, { nodes }, { nodes }, {
+        pairs: [{ indexA: 0, indexB: 0, status: 'modified' }], onlyInA: [], onlyInB: []
+    });
+    assert.equal(a._diffClass, 'node-diff-modified');
+    assert.equal(b._diffClass, 'node-diff-modified');
+});

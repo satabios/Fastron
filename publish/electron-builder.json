@@ -332,6 +332,7 @@
     },
     "asarUnpack": [
         "source/model-*.mjs",
-        "source/model-index.wasm"
+        "source/model-index.wasm",
+        "source/model-analysis.wasm"
     ]
 }

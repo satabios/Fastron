@@ -1,15 +1,18 @@
 
 import { Formatter, Graph, ModelFactoryService, Worker } from './view.js';
+import { GraphAnalysis, indexedGraph } from './graph-analysis.mjs';
+import { nodeDescriptions } from './repeated-blocks.js';
 
 const comparator = {};
 
 comparator.ViewProxy = class {
 
-    constructor(host, model, options) {
+    constructor(host, model, options, side) {
         this._host = host;
         this._model = model;
         this._options = options;
         this._controller = null;
+        this._side = side;
     }
 
     get host() {
@@ -28,11 +31,36 @@ comparator.ViewProxy = class {
         return this._options;
     }
 
-    showNodeProperties(node) {
-        if (this._controller) {
-            this._controller.showNodeDiff(node);
-        }
+    get activeTarget() {
+        const id = this._side === 0 ? this._controller._entry.a : this._controller._entry.b;
+        return this._controller._records[id]?.target;
     }
+
+    showNodeProperties(node, index) {
+        this._controller.inspectNode(this._side, node, index);
+    }
+    showGraphGroup(group) {
+        this._controller.inspectGroup(this._side, group);
+    }
+    toggleGraphGroup(group) {
+        return this._controller.toggleGraphGroup(this._side, group);
+    }
+    pushTarget(graph, context) {
+        return this._controller.openBody(this._side, graph, context);
+    }
+    showTargetProperties() {
+        this._controller.inspectMetadata('Graph properties', this.activeTarget);
+    }
+    showConnectionProperties(value) {
+        this._controller.inspectMetadata('Connection', value);
+    }
+    showTensorProperties(value) {
+        this._controller.inspectMetadata('Tensor metadata', value);
+    }
+    error(error) {
+        this._controller._showError(error);
+    }
+
 };
 
 comparator.Controller = class {
@@ -52,32 +80,23 @@ comparator.Controller = class {
     }
 
     _reset() {
-        const document = this._host.document;
         for (const source of this._sources || []) {
             source.dispose();
         }
         this._sources = [];
         this._hideDiffPanel();
-        // Unregister viewport observers and event handlers
-        if (this._graphA) {
-            this._graphA.unregister();
-        }
-        if (this._graphB) {
-            this._graphB.unregister();
-        }
-        // Cancel any pending Phase 2 comparison
+        this._sessionGeneration = (this._sessionGeneration || 0) + 1;
+        this._renderGeneration = (this._renderGeneration || 0) + 1;
+        this._analysis?.dispose();
+        this._analysis = null;
+        this._history = [];
+        this._entry = null;
+        this._records = [];
+        this._displays = null;
+        this._clearRender();
         if (this._phase2Timer) {
             clearTimeout(this._phase2Timer);
             this._phase2Timer = null;
-        }
-        // Clear previous graph contents
-        const containerLeft = document.getElementById('target-left');
-        const containerRight = document.getElementById('target-right');
-        if (containerLeft) {
-            containerLeft.replaceChildren();
-        }
-        if (containerRight) {
-            containerRight.replaceChildren();
         }
         this._graphA = null;
         this._graphB = null;
@@ -94,6 +113,7 @@ comparator.Controller = class {
         }
         this._comparing = true;
         this._reset();
+        const generation = this._sessionGeneration;
 
         const document = this._host.document;
 
@@ -132,6 +152,13 @@ comparator.Controller = class {
                 throw failed.reason;
             }
             const [contextA, contextB] = contexts.map((result) => result.value);
+            if (generation !== this._sessionGeneration) {
+                for (const context of [contextA, contextB]) {
+                    context.source?.dispose();
+                    this._disposeContext(context);
+                }
+                return;
+            }
             this._sources = [contextA.source, contextB.source].filter((source) => source);
             let modelA = null;
             let modelB = null;
@@ -145,6 +172,10 @@ comparator.Controller = class {
                 this._disposeContext(contextB);
             }
 
+            if (generation !== this._sessionGeneration) {
+                return;
+            }
+
             // Get primary graph target from each model
             const targetA = this._getPrimaryTarget(modelA);
             const targetB = this._getPrimaryTarget(modelB);
@@ -153,139 +184,92 @@ comparator.Controller = class {
                 throw new Error('Could not find graph targets in one or both models.');
             }
 
-            const containerLeft = document.getElementById('target-left');
-            const containerRight = document.getElementById('target-right');
-
-            const options = {
-                weights: true,
-                attributes: true,
-                names: false,
-                direction: 'vertical',
-                mousewheel: 'scroll',
-                lazyRender: true
-            };
-
-            // Build both graphs
-            const viewProxyA = new comparator.ViewProxy(this._host, modelA, options);
-            viewProxyA._controller = this;
-            const groupsA = targetA.groups || false;
-            this._graphA = new Graph(viewProxyA, groupsA);
-            this._graphA.enableViewportCulling(true);
-            this._graphA.configureDeferredRendering({
-                deferredNodeBuild: true,
-                deferredEdgeBuild: true,
-                skipHiddenUpdate: true,
-                detachInvisible: true,
-                estimatedNodeSizeThreshold: 500
-            });
-            this._graphA.add(targetA, null);
-            this._graphA.build(document, containerLeft);
-
-            const viewProxyB = new comparator.ViewProxy(this._host, modelB, options);
-            viewProxyB._controller = this;
-            const groupsB = targetB.groups || false;
-            this._graphB = new Graph(viewProxyB, groupsB);
-            this._graphB.enableViewportCulling(true);
-            this._graphB.configureDeferredRendering({
-                deferredNodeBuild: true,
-                deferredEdgeBuild: true,
-                skipHiddenUpdate: true,
-                detachInvisible: true,
-                estimatedNodeSizeThreshold: 500
-            });
-            this._graphB.add(targetB, null);
-            this._graphB.build(document, containerRight);
-
-            // Parallel measure
-            await Promise.all([this._graphA.measure(), this._graphB.measure()]);
-
-            // Parallel layout (dual workers) + Phase 1 comparison (overlapped)
-            const [,, phase1State] = await Promise.all([
-                this._graphA.layout(this._workerA),
-                this._graphB.layout(this._workerB),
-                Promise.resolve(this._compareNodesPhase1(targetA, targetB))
-            ]);
-
-            // Y-align matched node pairs before tile population
-            // Skip alignment if either model uses compound/grouped layout (group bounds not recomputed)
-            const { nodesA, nodesB, adjA, adjB, matchedA: matchedSetA, matchedB: matchedSetB } = phase1State;
-            const hasGroups = [targetA, targetB].some((target) => Array.isArray(target.groups) ? target.groups.length > 0 : Boolean(target.groups));
-            if (!hasGroups) {
-                const depthA = this._buildTopoOrder(nodesA, adjA);
-                const depthB = this._buildTopoOrder(nodesB, adjB);
-                const alignTable = this._buildAlignmentTable(nodesA, nodesB, depthA, depthB, matchedSetA, matchedSetB, phase1State.result.pairs);
-                this._applyYAlignment(this._graphA, this._graphB, nodesA, nodesB, alignTable, targetA, targetB);
+            this._models = [modelA, modelB];
+            this._history = [];
+            this._entries = new Map();
+            this._grouped = false;
+            this._initializeControls();
+            this._records = [targetA, targetB].map((target) => ({ target }));
+            const entry = { a: 0, b: 1, expanded: [new Set(), new Set()],
+                result: { pending: true, pairs: [], onlyInA: [], onlyInB: [], children: [] } };
+            this._entry = entry;
+            await this._renderPair(entry);
+            if (generation !== this._sessionGeneration) {
+                return;
             }
-
-            // Populate spatial tiles for viewport culling
-            this._graphA.populateTiles();
-            this._graphB.populateTiles();
-
-            // Update and restore both graphs
-            this._graphA.update();
-            this._graphA.restore(null);
-            this._graphB.update();
-            this._graphB.restore(null);
-            this._graphA.resetViewportVisibility();
-            this._graphB.resetViewportVisibility();
-            this._graphA._onViewportChange(this._graphA._getViewportBounds());
-            this._graphB._onViewportChange(this._graphB._getViewportBounds());
-
-            // Apply Phase 1 diff highlighting (works on elements with display:none)
-            const phase1Result = phase1State.result;
-            this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, phase1Result);
-
-            // Store references for diff panel lookup
-            this._targetA = targetA;
-            this._targetB = targetB;
-            this._diffResult = phase1Result;
-            this._buildDiffLookup(targetA, targetB, phase1Result);
-
-            // Setup synchronized navigation
-            this._setupSync(containerLeft, containerRight);
-
-            // Register event handlers on both graphs
-            this._graphA.register();
-            this._graphB.register();
-
-            // Hook viewport culling on both graphs so connectors redraw after each culling pass.
-            // Without this, connectors drawn before culling runs (150ms debounce) become stale:
-            // newly-visible nodes are still display:none when the scroll handler fires, so
-            // _updateConnectors() skips them. Hooking _onViewportChange ensures a redraw happens
-            // right after culling shows/hides nodes.
-            const origVpcA = this._graphA._onViewportChange.bind(this._graphA);
-            this._graphA._onViewportChange = (viewport) => {
-                origVpcA(viewport);
-                this._updateConnectors();
-            };
-            const origVpcB = this._graphB._onViewportChange.bind(this._graphB);
-            this._graphB._onViewportChange = (viewport) => {
-                origVpcB(viewport);
-                this._updateConnectors();
-            };
-
-            // Update summary bar with Phase 1 partial result
-            this._updateSummaryBar(phase1Result);
-
-            // Draw initial connector lines between matched nodes
-            this._updateConnectors();
-
-            // Hide spinner — user can now interact
-            const loadSpinner = document.getElementById('comparator-spinner');
-            if (loadSpinner) {
-                loadSpinner.classList.add('hidden');
-            }
-
-            // Deferred Phase 2: conservative similarity matching in background
-            this._compareNodesPhase2(phase1State, (fullResult) => {
-                this._diffResult = fullResult;
-                this._applyDiffHighlighting(this._graphA, this._graphB, targetA, targetB, fullResult);
-                this._buildDiffLookup(targetA, targetB, fullResult);
-                this._updateSummaryBar(fullResult);
-                this._updateConnectors();
+            spinner?.classList.add('hidden');
+            // The second animation frame follows a paint; analysis must not compete with initial layout or rendering.
+            await new Promise((resolve) => {
+                this._host.window.requestAnimationFrame(() => this._host.window.requestAnimationFrame(resolve));
             });
+            if (generation !== this._sessionGeneration || entry.error) {
+                return;
+            }
+            if (typeof this._host.worker !== 'function') {
+                // shortcut: hosts without a worker keep primary-graph JavaScript diff, replace when their bridge supports analysis workers.
+                this._records = [targetA, targetB].map((target) => ({ target, descriptions: [...nodeDescriptions(target)] }));
+                const state = this._compareNodesPhase1(targetA, targetB);
+                entry.result = state.result;
+                this._refreshDiff();
+                this._compareNodesPhase2(state, (result) => {
+                    if (generation === this._sessionGeneration && !entry.error) {
+                        entry.result = result;
+                        this._refreshDiff();
+                    }
+                });
+                return;
+            }
+            this._analysis = new GraphAnalysis(this._host);
+            this._records = this._analysis.encoder.targets;
+            this._analysis.encoder.register(targetA);
+            this._analysis.encoder.register(targetB);
+            this._analysis.onprogress = () => {
+                if (generation === this._sessionGeneration) {
+                    this._updateSummaryBar(this._entry.result);
+                }
+            };
+            const result = await this._analysis.compare(targetA, targetB);
+            for (const graph of [this._graphA, this._graphB]) {
+                graph._sourceNodes = new Map();
+                let deadline = performance.now() + 4;
+                for (const { label: node } of graph.nodes.values()) {
+                    if (Number.isInteger(node._originalIndex)) {
+                        graph._sourceNodes.set(node._originalIndex, node);
+                    }
+                    if (performance.now() >= deadline) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await new Promise((resolve) => {
+                            setTimeout(resolve, 0);
+                        });
+                        deadline = performance.now() + 4;
+                        if (generation !== this._sessionGeneration || entry.error) {
+                            return;
+                        }
+                    }
+                }
+            }
+            if (generation !== this._sessionGeneration) {
+                return;
+            }
+            Object.assign(entry, { result, id: result.id });
+            this._entries.set(result.id, entry);
+            this._refreshDiff();
 
         } catch (error) {
+            if (generation !== this._sessionGeneration) {
+                return;
+            }
+            if (this._entry) {
+                const cancelled = Boolean(this._entry.error);
+                this._entry.error ||= error.message;
+                this._analysis?.dispose();
+                spinner?.classList.add('hidden');
+                this._refreshDiff();
+                if (!cancelled) {
+                    this._showError(error);
+                }
+                return;
+            }
             for (const source of this._sources || []) {
                 source.dispose();
             }
@@ -315,6 +299,421 @@ comparator.Controller = class {
             }
         }
         return modules.length > 0 ? modules[0] : null;
+    }
+
+    _initializeControls() {
+        if (this._controlsInitialized) {
+            return;
+        }
+        this._controlsInitialized = true;
+        const document = this._host.document;
+        const run = (action) => action().catch((error) => this._showError(error));
+        document.getElementById('compare-group')?.addEventListener('click', () => run(async () => {
+            if (!this._entry || this._entry.result.pending || this._rendering) {
+                return;
+            }
+            this._savePosition();
+            this._grouped = !this._grouped;
+            document.getElementById('compare-group').setAttribute('aria-pressed', String(this._grouped));
+            await this._renderPair(this._entry);
+        }));
+        document.getElementById('compare-back')?.addEventListener('click', () => run(async () => {
+            if (!this._history.length || this._rendering || this._navigating) {
+                return;
+            }
+            this._savePosition();
+            await this._renderPair(this._history.pop());
+        }));
+        document.getElementById('compare-filter')?.addEventListener('change', () => this._renderChanges());
+        document.getElementById('compare-cancel')?.addEventListener('click', () => {
+            this._analysis?.dispose();
+            if (this._entry?.result.pending) {
+                this._entry.error = 'Analysis cancelled. Nested bodies have not been compared.';
+                this._refreshDiff();
+            }
+        });
+        document.getElementById('diff-panel-close')?.addEventListener('click', () => this._hideDiffPanel());
+        document.getElementById('diff-panel-backdrop')?.addEventListener('click', () => this._hideDiffPanel());
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this._hideDiffPanel();
+            }
+            const panel = document.getElementById('diff-panel');
+            if (event.key === 'Tab' && !panel.classList.contains('hidden')) {
+                const buttons = panel.querySelectorAll('button');
+                const first = buttons[0]; const last = buttons[buttons.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault(); last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault(); first.focus();
+                }
+            }
+        });
+        this._diffPanelInitialized = true;
+        this._host.window?.addEventListener('beforeunload', () => this._reset(), { once: true });
+    }
+
+    _clearRender() {
+        this._connectorPairs = null;
+        this._syncDispose?.();
+        this._syncDispose = null;
+        for (const graph of [this._graphA, this._graphB]) {
+            graph?.unregister();
+        }
+        this._graphA = null;
+        this._graphB = null;
+        for (const id of ['target-left', 'target-right', 'connector-overlay']) {
+            this._host.document.getElementById(id)?.replaceChildren();
+        }
+    }
+
+    _savePosition() {
+        if (!this._entry) {
+            return;
+        }
+        this._entry.position = [this._graphA, this._graphB].map((graph, side) => {
+            const container = this._host.document.getElementById(side === 0 ? 'target-left' : 'target-right');
+            return { zoom: graph?.zoom || 1, left: container.scrollLeft, top: container.scrollTop };
+        });
+    }
+
+    async _renderPair(entry) {
+        this._renderGeneration = (this._renderGeneration || 0) + 1;
+        const generation = this._renderGeneration;
+        this._rendering = true;
+        try {
+            const session = this._sessionGeneration;
+            this._entry = entry;
+            this._hideDiffPanel();
+            const document = this._host.document;
+            const ids = [entry.a, entry.b];
+            const empty = { name: 'No corresponding body', nodes: [], inputs: [], outputs: [] };
+            const raw = ids.map((id) => this._records[id]?.target || empty);
+            const displays = await Promise.all(ids.map((id, side) => this._grouped && id !== 0xffffffff && !entry.result.pending
+                ? this._analysis.project(id, entry.expanded[side], entry.id, side, !entry.groupInitialized?.[side]) : indexedGraph(raw[side])));
+            if (generation !== this._renderGeneration || session !== this._sessionGeneration) {
+                return;
+            }
+            this._clearRender();
+            const containers = ['target-left', 'target-right'].map((id) => document.getElementById(id));
+            const graphs = displays.map((display, side) => {
+                const proxy = new comparator.ViewProxy(this._host, this._models[side], {
+                    weights: true, attributes: true, names: false, direction: 'vertical', mousewheel: 'scroll', lazyRender: true
+                }, side);
+                proxy._controller = this;
+                const graph = new Graph(proxy, display.groups || false);
+                graph._deferSourceMap = Boolean(entry.result.pending);
+                graph.enableViewportCulling(true);
+                graph.configureDeferredRendering({ deferredNodeBuild: true, deferredEdgeBuild: true, skipHiddenUpdate: true,
+                    detachInvisible: true, estimatedNodeSizeThreshold: 500 });
+                graph.add(display, null);
+                graph.build(document, containers[side]);
+                return graph;
+            });
+            [this._graphA, this._graphB] = graphs;
+            [this._targetA, this._targetB] = raw;
+            this._displays = displays;
+            for (const [side, display] of displays.entries()) {
+                if (display._analysisProjection) {
+                    entry.expanded[side] = new Set(display._analysisProjection.expanded);
+                    entry.groupInitialized ||= [false, false]; entry.groupInitialized[side] = true;
+                }
+            }
+            await Promise.all(graphs.map((graph) => graph.measure()));
+            if (generation !== this._renderGeneration || session !== this._sessionGeneration) {
+                return;
+            }
+            await Promise.all(graphs.map((graph, side) => graph.layout(side === 0 ? this._workerA : this._workerB)));
+            if (generation !== this._renderGeneration || session !== this._sessionGeneration) {
+                return;
+            }
+            for (const [side, graph] of graphs.entries()) {
+                graph.populateTiles(); graph.update(); graph.restore(null);
+                const saved = entry.position?.[side];
+                if (saved) {
+                    graph.zoom = saved.zoom; containers[side].scrollLeft = saved.left; containers[side].scrollTop = saved.top;
+                }
+                graph.resetViewportVisibility();
+                graph._onViewportChange(graph._getViewportBounds());
+                graph.register();
+                const viewport = graph._onViewportChange.bind(graph);
+                graph._onViewportChange = (bounds) => {
+                    viewport(bounds); this._updateConnectors();
+                };
+                const header = document.getElementById(side === 0 ? 'pane-left-header' : 'pane-right-header');
+                header.textContent = `${side === 0 ? 'A' : 'B'} · ${raw[side].name || 'Primary graph'}${ids[side] === 0xffffffff ? ' — missing' : ''}`;
+            }
+            this._setupSync(...containers);
+            const back = document.getElementById('compare-back');
+            if (back) {
+                back.disabled = this._history.length === 0;
+            }
+            const path = document.getElementById('compare-path');
+            if (path) {
+                path.textContent = this._history.length ? `Function / subgraph · depth ${this._history.length}` : 'Primary graph';
+            }
+            this._refreshDiff();
+            for (const [side, index] of (entry.selection || []).entries()) {
+                if (index !== undefined) {
+                    this._pulseNode(this._viewNode(graphs[side], index, side));
+                }
+            }
+        } finally {
+            if (generation === this._renderGeneration) {
+                this._rendering = false;
+            }
+        }
+    }
+
+    _refreshDiff() {
+        if (!this._entry) {
+            return;
+        }
+        this._connectorPairs = null;
+        this._diffResult = this._entry.result;
+        if (!this._diffResult.pending && this._graphA && this._graphB) {
+            this._applyDiffHighlighting(this._graphA, this._graphB, this._targetA, this._targetB, this._diffResult);
+        }
+        this._updateSummaryBar(this._diffResult);
+        this._renderChanges();
+        this._updateConnectors();
+        const document = this._host.document;
+        const disabled = this._diffResult.pending || Boolean(this._entry.error);
+        const group = document.getElementById('compare-group');
+        if (group) {
+            group.disabled = disabled || !this._analysis;
+        }
+        const cancel = document.getElementById('compare-cancel');
+        if (cancel) {
+            cancel.hidden = !this._diffResult.pending || Boolean(this._entry.error);
+        }
+    }
+
+    _viewNode(graph, index, side) {
+        const direct = graph?._sourceNodes?.get(index);
+        if (direct) {
+            return direct;
+        }
+        const display = this._displays?.[side];
+        const data = display?._analysisProjection;
+        if (data) {
+            const owner = data.owners[index];
+            const group = data.byKey.get(owner);
+            if (group) {
+                return graph._groupNodes.get(group.id);
+            }
+        }
+        return graph?._table?.get((side === 0 ? this._targetA : this._targetB)?.nodes[index]);
+    }
+
+    async toggleGraphGroup(side, group) {
+        if (group.unsafe || this._entry.result.pending || this._rendering) {
+            return;
+        }
+        this._savePosition();
+        const expanded = this._entry.expanded[side];
+        if (expanded.has(group.key)) {
+            expanded.delete(group.key);
+        } else {
+            expanded.add(group.key);
+        }
+        await this._renderPair(this._entry);
+        const graph = side === 0 ? this._graphA : this._graphB;
+        const node = graph?._groupNodes.get(group.id);
+        if (node) {
+            this._focusViewNode(graph, node);
+        }
+    }
+
+    inspectGroup(side, group) {
+        const content = this._openPanel(`Group: ${group.label}`);
+        content.textContent = `${group.members.length} operators · ${group.counts[1]} modified · ${group.counts[2] + group.counts[3]} unmatched`;
+        for (const pair of this._entry.result.pairs.filter((pair) => pair.status !== 'identical' && group.members.includes(side === 0 ? pair.indexA : pair.indexB))) {
+            this._panelButton(content, `Reveal ${this._nodeLabel(side, side === 0 ? pair.indexA : pair.indexB)}`, () => this._reveal(pair.indexA, pair.indexB));
+        }
+    }
+
+    _nodeLabel(side, index) {
+        const id = side === 0 ? this._entry.a : this._entry.b;
+        const node = this._records[id]?.descriptions[index];
+        return node?.name || `${node?.type?.name || 'Operator'} ${index}`;
+    }
+
+    _renderChanges() {
+        const document = this._host.document;
+        const list = document.getElementById('compare-changes');
+        if (!list || !this._entry) {
+            return;
+        }
+        list.replaceChildren();
+        const filter = document.getElementById('compare-filter').value;
+        const result = this._entry.result;
+        const changes = [
+            ...result.pairs.filter((pair) => pair.status === 'modified').map((pair) => ({ ...pair, label: this._nodeLabel(0, pair.indexA), status: 'modified' })),
+            ...result.onlyInA.map((index) => ({ indexA: index, label: this._nodeLabel(0, index), status: 'removed' })),
+            ...result.onlyInB.map((index) => ({ indexB: index, label: this._nodeLabel(1, index), status: 'added' }))
+        ].filter((entry) => filter === 'all' || filter === entry.status);
+        // The list is paged so a large diff does not create a second full graph's worth of DOM.
+        let cursor = 0;
+        const more = document.createElement('button');
+        const append = () => {
+            more.remove();
+            for (const change of changes.slice(cursor, cursor + 100)) {
+                const button = document.createElement('button');
+                const status = { modified: 'Modified', removed: 'Unmatched in A', added: 'Unmatched in B' }[change.status];
+                button.textContent = `${status}: ${change.label}`;
+                button.addEventListener('click', () => this._reveal(change.indexA, change.indexB).catch((error) => this._showError(error)));
+                list.appendChild(button);
+            }
+            cursor += 100;
+            if (cursor < changes.length) {
+                more.textContent = `Show next ${Math.min(100, changes.length - cursor)} changes`; list.appendChild(more);
+            }
+        };
+        more.addEventListener('click', append);
+        append();
+    }
+
+    async _reveal(indexA, indexB) {
+        if (this._rendering) {
+            return;
+        }
+        this._hideDiffPanel();
+        if (this._grouped) {
+            this._savePosition();
+            for (const [side, index] of [indexA, indexB].entries()) {
+                if (index !== undefined) {
+                    for (const group of this._displays[side]._analysisProjection.groups) {
+                        if (group.members.includes(index)) {
+                            this._entry.expanded[side].add(group.key);
+                        }
+                    }
+                }
+            }
+            await this._renderPair(this._entry);
+        }
+        for (const [side, index] of [indexA, indexB].entries()) {
+            if (index !== undefined) {
+                const graph = side === 0 ? this._graphA : this._graphB;
+                const node = this._viewNode(graph, index, side);
+                if (node) {
+                    this._focusViewNode(graph, node); this._pulseNode(node);
+                }
+            }
+        }
+        this._entry.selection = [indexA, indexB];
+    }
+
+    async openBody(side, graph, context) {
+        try {
+            if (!this._analysis) {
+                throw new Error('Nested body comparison requires the desktop analysis worker.');
+            }
+            if (this._entry.result.pending) {
+                throw new Error('Nested bodies are still being compared.');
+            }
+            const owner = context?.owner ?? context?._originalIndex;
+            const graphId = this._analysis.encoder.ids.get(graph);
+            const candidates = this._entry.result.children.filter((child) =>
+                (owner === undefined || (side === 0 ? child.nodeA : child.nodeB) === owner) &&
+                (!context?.slot || child.slot === context.slot) && (side === 0 ? child.a : child.b) === graphId);
+            if (candidates.length !== 1) {
+                throw new Error('Select a specific function body from the operator inspector.');
+            }
+            await this._openChild(candidates[0]);
+        } catch (error) {
+            this._showError(error);
+        }
+    }
+
+    _focusViewNode(graph, node) {
+        graph._scrollToGraphBounds({ x: node.x - node.width / 2, y: node.y - node.height / 2,
+            width: Math.min(node.width, graph._containerElement.clientWidth / graph.zoom * 0.8),
+            height: Math.min(node.height, graph._containerElement.clientHeight / graph.zoom * 0.8) }, 'instant');
+        graph._onViewportChange(graph._getViewportBounds());
+    }
+
+    async _openChild(child) {
+        if (this._navigating || this._rendering) {
+            return;
+        }
+        this._navigating = true;
+        try {
+            this._savePosition();
+            this._history.push(this._entry);
+            let entry = this._entries.get(child.pair);
+            if (!entry) {
+                const result = await this._analysis.result(child.pair);
+                entry = { a: child.a, b: child.b, id: child.pair, result, expanded: [new Set(), new Set()] };
+                this._entries.set(child.pair, entry);
+            }
+            await this._renderPair(entry);
+        } finally {
+            this._navigating = false;
+        }
+    }
+
+    _openPanel(title) {
+        const document = this._host.document;
+        if (document.getElementById('diff-panel').classList.contains('hidden')) {
+            this._panelReturnFocus = document.activeElement;
+        }
+        document.getElementById('diff-panel-title').textContent = title;
+        const content = document.getElementById('diff-panel-content');
+        content.replaceChildren();
+        document.getElementById('diff-panel').classList.remove('hidden');
+        document.getElementById('diff-panel-backdrop').classList.remove('hidden');
+        document.getElementById('diff-panel-close').focus();
+        return content;
+    }
+
+    _panelButton(content, label, action) {
+        const button = this._host.document.createElement('button');
+        button.textContent = label;
+        button.className = 'body-link';
+        button.addEventListener('click', () => action().catch((error) => this._showError(error)));
+        content.appendChild(button);
+    }
+
+    inspectNode(side, node, index = node._originalIndex) {
+        if (!Number.isInteger(index)) {
+            this.inspectMetadata('Node metadata', node); return;
+        }
+        const pair = this._entry.result.pairs.find((pair) => (side === 0 ? pair.indexA : pair.indexB) === index);
+        const content = this._openPanel(`Node: ${node.type?.name || node.name || 'Operator'}`);
+        if (this._entry.error || this._entry.result.pending) {
+            content.textContent = this._entry.error || 'Matching… Nested bodies have not finished comparison.';
+        } else if (pair?.status === 'modified') {
+            const a = this._targetA.nodes[pair.indexA]; const b = this._targetB.nodes[pair.indexB];
+            // Body metadata is inspected through explicit paired links, never recursively formatted.
+            const withoutBodies = (node) => ({ ...node, attributes: (node.attributes || []).filter((arg) => !['graph', 'graph[]', 'function', 'function[]'].includes(arg.type)) });
+            this._renderModifiedDiff(this._host.document, content, withoutBodies(a), withoutBodies(b));
+        } else if (pair) {
+            this._renderIdenticalStatus(this._host.document, content, node.type.name);
+        } else {
+            this._renderSingleStatus(this._host.document, content, node.type.name, side === 0 ? 'removed' : 'added', `No confident match in Model ${side === 0 ? 'B' : 'A'}`);
+        }
+        for (const child of this._entry.result.children.filter((child) => (side === 0 ? child.nodeA : child.nodeB) === index)) {
+            this._panelButton(content, `Compare body: ${child.slot}`, () => this._openChild(child));
+        }
+        const selection = [undefined, undefined];
+        selection[side] = index;
+        this._entry.selection = pair ? [pair.indexA, pair.indexB] : selection;
+    }
+
+    inspectMetadata(title, value) {
+        const content = this._openPanel(title);
+        const values = Array.isArray(value?.value) ? value.value : [value];
+        for (const item of values) {
+            const row = this._host.document.createElement('div');
+            row.textContent = [item?.name, item?.type?.toString?.(), item?.quantization ? `Quantization: ${new Formatter(item.quantization).toString()}` : ''].filter(Boolean).join(' · ');
+            content.appendChild(row);
+        }
+    }
+
+    _showError(error) {
+        const content = this._openPanel('Comparison');
+        content.textContent = error.message;
     }
 
     _disposeContext(context) {
@@ -978,11 +1377,9 @@ comparator.Controller = class {
         const nodesA = targetA.nodes || [];
         const nodesB = targetB.nodes || [];
 
-        const getViewNode = (graph, modelNode) => {
-            return graph._table.get(modelNode);
-        };
+        const getViewNode = (graph, nodes, index) => graph._sourceNodes ? graph._sourceNodes.get(index) : graph._table.get(nodes[index]);
         const apply = (node, className) => {
-            if (!node) {
+            if (!node || (node._diffClass || null) === className) {
                 return;
             }
             node._diffClass = className;
@@ -996,16 +1393,30 @@ comparator.Controller = class {
 
         for (const pair of diffResult.pairs) {
             const className = pair.status === 'modified' ? 'node-diff-modified' : null;
-            apply(getViewNode(graphA, nodesA[pair.indexA]), className);
-            apply(getViewNode(graphB, nodesB[pair.indexB]), className);
+            apply(getViewNode(graphA, nodesA, pair.indexA), className);
+            apply(getViewNode(graphB, nodesB, pair.indexB), className);
         }
         for (const idx of diffResult.onlyInA) {
-            const viewNode = getViewNode(graphA, nodesA[idx]);
+            const viewNode = getViewNode(graphA, nodesA, idx);
             apply(viewNode, 'node-diff-removed');
         }
         for (const idx of diffResult.onlyInB) {
-            const viewNode = getViewNode(graphB, nodesB[idx]);
+            const viewNode = getViewNode(graphB, nodesB, idx);
             apply(viewNode, 'node-diff-added');
+        }
+        for (const [side, graph] of [graphA, graphB].entries()) {
+            for (const group of this._displays?.[side]?._hierarchy?.groups.values() || []) {
+                const [same, modified, added, removed] = group.counts;
+                let className = null;
+                if (modified || (same && (added || removed))) {
+                    className = 'node-diff-modified';
+                } else if (added) {
+                    className = 'node-diff-added';
+                } else if (removed) {
+                    className = 'node-diff-removed';
+                }
+                apply(graph._groupNodes.get(group.id), className);
+            }
         }
     }
 
@@ -1024,14 +1435,19 @@ comparator.Controller = class {
             }
         };
 
-        containerLeft.addEventListener('scroll', () => {
-            syncScroll(containerLeft, containerRight);
-            this._updateConnectors();
-        });
-        containerRight.addEventListener('scroll', () => {
-            syncScroll(containerRight, containerLeft);
-            this._updateConnectors();
-        });
+        this._syncDispose?.();
+        const leftScroll = () => {
+            syncScroll(containerLeft, containerRight); this._updateConnectors();
+        };
+        const rightScroll = () => {
+            syncScroll(containerRight, containerLeft); this._updateConnectors();
+        };
+        containerLeft.addEventListener('scroll', leftScroll);
+        containerRight.addEventListener('scroll', rightScroll);
+        this._syncDispose = () => {
+            containerLeft.removeEventListener('scroll', leftScroll);
+            containerRight.removeEventListener('scroll', rightScroll);
+        };
 
         // Synchronized zooming — wrap _updateZoom on both graphs
         if (!this._graphA._updateZoom || !this._graphB._updateZoom) {
@@ -1165,7 +1581,11 @@ comparator.Controller = class {
         const panel = document.getElementById('diff-panel');
         const backdrop = document.getElementById('diff-panel-backdrop');
         if (panel) {
+            const visible = !panel.classList.contains('hidden');
             panel.classList.add('hidden');
+            if (visible) {
+                this._panelReturnFocus?.focus?.();
+            }
         }
         if (backdrop) {
             backdrop.classList.add('hidden');
@@ -1391,17 +1811,33 @@ comparator.Controller = class {
         while (overlay.firstChild) {
             overlay.removeChild(overlay.firstChild);
         }
-        const nodesA = this._targetA ? (this._targetA.nodes || []) : [];
-        const nodesB = this._targetB ? (this._targetB.nodes || []) : [];
-        const pairs = this._diffResult.pairs;
+        if (!this._connectorPairs) {
+            const bundles = new Map();
+            for (const pair of this._diffResult.pairs) {
+                const a = this._viewNode(this._graphA, pair.indexA, 0);
+                const b = this._viewNode(this._graphB, pair.indexB, 1);
+                if (!a || !b) {
+                    continue;
+                }
+                const key = `${a.name}\0${b.name}`;
+                const bundle = bundles.get(key);
+                if (!bundle) {
+                    bundles.set(key, { a, b, status: pair.status });
+                } else if (pair.status === 'modified') {
+                    bundle.status = 'modified';
+                }
+            }
+            this._connectorPairs = [...bundles.values()];
+        }
+        const pairs = this._connectorPairs;
         const MAX_CONNECTORS = 300;
         let drawn = 0;
         for (const pair of pairs) {
             if (drawn >= MAX_CONNECTORS) {
                 break;
             }
-            const vnA = this._graphA._table ? this._graphA._table.get(nodesA[pair.indexA]) : null;
-            const vnB = this._graphB._table ? this._graphB._table.get(nodesB[pair.indexB]) : null;
+            const vnA = pair.a;
+            const vnB = pair.b;
             if (!vnA || !vnA.element || !vnB || !vnB.element) {
                 continue;
             }
@@ -1446,8 +1882,12 @@ comparator.Controller = class {
         const modified = diffResult.pairs.filter((p) => p.status === 'modified').length;
         const added = (diffResult.onlyInB || []).length;
         const removed = (diffResult.onlyInA || []).length;
+        let progress = diffResult.pending ? 'Matching… Nested bodies pending. ' : '';
+        if (this._entry?.error) {
+            progress = 'Analysis incomplete. Nested bodies not compared. ';
+        }
         bar.innerHTML = [
-            `<span title="Primary graph structure and metadata only; weight values are not compared." class="summary-count summary-identical">${identical} same structure</span>`,
+            `<span title="Active graph structure and metadata only; weight values are not compared." class="summary-count summary-identical">${identical} same structure</span>`,
             `<span class="summary-sep">|</span>`,
             `<span class="summary-count summary-modified">${modified} modified</span>`,
             `<span class="summary-sep">|</span>`,
@@ -1455,7 +1895,7 @@ comparator.Controller = class {
             `<span class="summary-sep">|</span>`,
             `<span class="summary-count summary-removed">${removed} unmatched in A</span>`,
             `<span class="summary-sep"> | </span>`,
-            `<span>${diffResult.pending ? 'Matching… ' : ''}Primary graph; weight values are not compared.</span>`
+            `<span>${progress}${diffResult.interfaceChanged ? 'Graph interface or output connections changed. ' : ''}${this._history?.length ? 'Active subgraph' : 'Primary graph'}; weight values are not compared.</span>`
         ].join('');
     }
 

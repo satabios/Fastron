@@ -2856,10 +2856,14 @@ view.Graph = class extends grapher.Graph {
         return this._hierarchy ? { ...this.view.options, layout: 'dagre', fastLayout: false } : this.view.options;
     }
 
-    createNode(node, load = null, release = null) {
-        const obj = new view.Node(this, node, undefined, load, release);
+    createNode(node, load = null, release = null, sourceIndex = null) {
+        const obj = new view.Node(this, node, undefined, load, release, sourceIndex);
         obj.name = (this._nodeKey++).toString();
         this._table.set(node, obj);
+        if (Number.isInteger(sourceIndex) && !this._deferSourceMap) {
+            this._sourceNodes ||= new Map();
+            this._sourceNodes.set(sourceIndex, obj);
+        }
         if (node._originalNode) {
             this._table.set(node._originalNode, obj);
         }
@@ -2869,8 +2873,9 @@ view.Graph = class extends grapher.Graph {
         return obj;
     }
 
-    createGraph(graph) {
+    createGraph(graph, navigation = null) {
         const obj = new view.Node(this, graph, 'graph');
+        obj._navigationContext = navigation;
         obj.name = (this._nodeKey++).toString();
         this._table.set(graph, obj);
         return obj;
@@ -2950,7 +2955,7 @@ view.Graph = class extends grapher.Graph {
         if (this._hierarchy) {
             for (const [name, { group, parent }] of graph._groupContainers) {
                 const cluster = { name, rx: 10, ry: 10, group,
-                    header: { label: `${group.label} · ${group.members.length} ops`,
+                    header: { label: `${group.label} · ${group.members.length} ops${group.counts ? ` · ${group.counts[1]} changed · ${group.counts[2] + group.counts[3]} unmatched` : ''}`,
                         select: () => this.view.showGraphGroup(group),
                         collapse: group.unsafe ? null : () => this.view.toggleGraphGroup(group)
                             .catch((error) => this.view.error(error, 'Error changing group.', null)) } };
@@ -2982,7 +2987,14 @@ view.Graph = class extends grapher.Graph {
             const simple = !node.chain?.length && !node.blocks?.length && !node.nodes?.length && !node.inner &&
                 !(node.inputs || []).some((arg) => arg.type && !arg.type.endsWith('*')) &&
                 !attributes.some((arg) => /^(graph|object|function)/.test(arg.type));
-            const viewNode = defer && simple ? this.createNode(node, () => graph.nodes[i], () => catalog.evict(i)) : this.createNode(node);
+            let sourceIndex = null;
+            if (graph._analysisIndices) {
+                sourceIndex = i;
+            } else if (graph._analysisProjection) {
+                sourceIndex = node._originalIndex;
+            }
+            const viewNode = defer && simple ? this.createNode(node, () => graph.nodes[i], () => catalog.evict(i), sourceIndex)
+                : this.createNode(node, null, null, sourceIndex);
             this.setNode(viewNode);
             if (node._hierarchyGroup) {
                 this._groupNodes.set(node._hierarchyGroup.id, viewNode);
@@ -3986,9 +3998,12 @@ view.Graph = class extends grapher.Graph {
 
 view.Node = class extends grapher.Node {
 
-    constructor(context, value, type, load = null, release = null) {
+    constructor(context, value, type, load = null, release = null, sourceIndex = null) {
         super();
         this.context = context;
+        if (Number.isInteger(sourceIndex)) {
+            this._originalIndex = sourceIndex;
+        }
         this.value = value;
         this._loadValue = load;
         this._releaseValue = release;
@@ -4230,6 +4245,10 @@ view.Node = class extends grapher.Node {
             const item = list.argument('Operators', String(group.members.length));
             item.separator = ': ';
             list.add(item);
+            if (group.counts) {
+                list.add(list.argument('Changed', String(group.counts[1])));
+                list.add(list.argument('Unmatched', String(group.counts[2] + group.counts[3])));
+            }
         }
         if (node._repeatHeader) {
             const group = node._repeatGroup;
@@ -4279,7 +4298,8 @@ view.Node = class extends grapher.Node {
                 tooltip = 'Show Weights';
             }
             const definition = header.add(null, styles, icon, tooltip);
-            definition.on('click', async () => await this.context.view.pushTarget(node.type, this.value));
+            definition.on('click', async () => await this.context.view.pushTarget(node.type,
+                this._navigationContext || (Number.isInteger(this._originalIndex) ? { owner: this._originalIndex } : this.value)));
         }
         if (Array.isArray(node.nodes)) {
             // this._expand = header.add(null, styles, '+', null);
@@ -4374,7 +4394,7 @@ view.Node = class extends grapher.Node {
             for (const argument of inputs) {
                 const type = argument.type;
                 if (argument.visible !== false &&
-                    ((type === 'graph') ||
+                    ((type === 'graph' || type === 'graph[]') ||
                     (type === 'object' && isObject(argument.value)) ||
                     (type === 'object[]' || type === 'function' || type === 'function[]'))) {
                     objects.push(argument);
@@ -4398,7 +4418,7 @@ view.Node = class extends grapher.Node {
             for (const argument of attributes) {
                 const type = argument.type;
                 if (argument.visible !== false &&
-                    ((type === 'graph') ||
+                    ((type === 'graph' || type === 'graph[]') ||
                     (type === 'object') ||
                     type === 'object[]' || type === 'function' || type === 'function[]')) {
                     objects.push(argument);
@@ -4412,7 +4432,7 @@ view.Node = class extends grapher.Node {
             for (const argument of node.blocks) {
                 const type = argument.type;
                 if (argument.visible !== false &&
-                    ((type === 'graph') ||
+                    ((type === 'graph' || type === 'graph[]') ||
                     (type === 'object' && isObject(argument.value)) ||
                     (type === 'object[]' || type === 'function' || type === 'function[]'))) {
                     objects.push(argument);
@@ -4425,12 +4445,15 @@ view.Node = class extends grapher.Node {
         }
         for (const argument of objects) {
             const type = argument.type;
+            const collection = ['inputs', 'attributes', 'blocks'].find((key) => node[key]?.includes(argument));
+            const navigation = (index) => Number.isInteger(this._originalIndex) ? { owner: this._originalIndex,
+                slot: `${collection}/${argument.name}/${node[collection].indexOf(argument)}/${index}` } : null;
             let content = null;
             if (type === 'graph' || type === 'function') {
-                content = this.context.createGraph(argument.value);
+                content = this.context.createGraph(argument.value, navigation(0));
                 this.context.setNode(content);
             } else if (type === 'graph[]') {
-                content = argument.value.map((value) => this.context.createGraph(value));
+                content = argument.value.map((value, index) => this.context.createGraph(value, navigation(index)));
             } else if (argument.type === 'object') {
                 content = this.context.createNode(argument.value);
             } else if (type === 'function[]' || argument.type === 'object[]') {
@@ -4472,7 +4495,7 @@ view.Node = class extends grapher.Node {
         if (this.value._hierarchyGroup) {
             this.context.view.showGraphGroup(this.value._hierarchyGroup);
         } else {
-            this.context.view.showNodeProperties(this.value);
+            this.context.view.showNodeProperties(this.value, this._originalIndex);
         }
     }
 

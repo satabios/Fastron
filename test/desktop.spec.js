@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as playwright from '@playwright/test';
 import * as url from 'url';
+import { hierarchyModel } from './group-fixtures.mjs';
 import { writeRepeatedModel } from './repeated-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
@@ -175,6 +176,71 @@ playwright.test('comparator detects rewiring in real model files', async ({ play
         await page.locator('#target-left .node-diff-modified text').filter({ hasText: 'Relu' }).first().click();
         await playwright.expect(page.locator('#diff-panel-content')).toContainText('Inputs');
         await playwright.expect(page.locator('#diff-panel-content')).not.toContainText('Same structure');
+    } finally {
+        await app.close();
+    }
+});
+
+playwright.test('Rust comparator groups hidden changes and navigates paired function bodies', async ({ playwright: driver }, testInfo) => {
+    const dir = path.dirname(url.fileURLToPath(import.meta.url));
+    const model = hierarchyModel();
+    model.opset_import.push({ domain: 'fastron.test', version: 1 });
+    model.functions = [{ name: 'Composite', domain: 'fastron.test', input: ['x', 'cache'], output: ['y'],
+        opset_import: [{ domain: '', version: 20 }], node: [{ name: 'inside', op_type: 'Relu', input: ['x'], output: ['y'], attribute: [] }] }];
+    for (const index of [2, 9]) {
+        model.graph.node[index].op_type = 'Composite';
+        model.graph.node[index].domain = 'fastron.test';
+    }
+    const a = testInfo.outputPath('functions-a.onnx');
+    const b = testInfo.outputPath('functions-b.onnx');
+    fs.mkdirSync(path.dirname(a), { recursive: true });
+    fs.writeFileSync(a, JSON.stringify(model));
+    model.functions[0].node[0].op_type = 'Sigmoid';
+    fs.writeFileSync(b, JSON.stringify(model));
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${createProfile(testInfo.outputPath('profile'))}`], env });
+    try {
+        await app.firstWindow();
+        const pathname = path.resolve(dir, '../source/comparator.html');
+        const windowPromise = app.waitForEvent('window');
+        await app.evaluate(async ({ BrowserWindow }, options) => {
+            const window = new BrowserWindow({ width: 1280, height: 900, webPreferences: { preload: options.preload, contextIsolation: true, nodeIntegration: true } });
+            window.webContents.once('did-finish-load', () => {
+                window.webContents.send('compare', { pathA: { path: options.a, label: 'A' }, pathB: { path: options.b, label: 'B' } });
+            });
+            await window.loadURL(options.data, { baseURLForDataURL: options.baseURL });
+        }, { preload: path.resolve(dir, '../source/desktop.mjs'), data: `data:text/html;charset=utf-8,${encodeURIComponent(fs.readFileSync(pathname, 'utf8'))}`,
+            baseURL: url.pathToFileURL(pathname).toString(), a, b });
+        const page = await windowPromise;
+        const errors = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        await playwright.expect(page.locator('#compare-group')).toBeEnabled({ timeout: 30000 });
+        await playwright.expect(page.locator('#diff-summary')).toContainText('2 modified');
+        await page.locator('#compare-group').click();
+        await playwright.expect(page.locator('#target-left .node-model-group')).not.toHaveCount(0);
+        await playwright.expect(page.locator('#target-left .node-diff-modified')).not.toHaveCount(0);
+        await page.getByRole('button', { name: /Modified:.*attn\/Add/ }).first().click();
+        await playwright.expect(page.locator('#target-left').getByRole('button', { name: 'Collapse attn', exact: true })).toBeVisible();
+        await playwright.expect(page.locator('#target-left .node-diff-modified text').filter({ hasText: 'Composite' }).first()).toBeVisible();
+        await page.locator('#target-left .node-diff-modified text').filter({ hasText: 'Composite' }).first().click();
+        await playwright.expect(page.getByRole('button', { name: 'Compare body: type', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Compare body: type', exact: true }).click();
+        await playwright.expect(page.locator('#compare-back')).toBeEnabled();
+        await playwright.expect(page.locator('#compare-path')).toContainText('depth 1');
+        await playwright.expect(page.locator('#diff-summary')).toContainText('1 modified');
+        await playwright.expect(page.locator('#target-left svg text').filter({ hasText: 'Relu' })).toBeVisible();
+        await playwright.expect(page.locator('#target-right svg text').filter({ hasText: 'Sigmoid' })).toBeVisible();
+        await page.locator('#compare-back').click();
+        await playwright.expect(page.locator('#compare-path')).toHaveText('Primary graph');
+        await playwright.expect(page.locator('#diff-summary')).toContainText('2 modified');
+        await playwright.expect(page.locator('#target-left').getByRole('button', { name: 'Collapse attn', exact: true })).toBeVisible();
+        await page.locator('#compare-filter').selectOption('added');
+        await playwright.expect(page.locator('#compare-changes button')).toHaveCount(0);
+        await page.locator('#compare-filter').selectOption('modified');
+        await playwright.expect(page.locator('#compare-changes button')).toHaveCount(2);
+        await page.screenshot({ path: testInfo.outputPath('rust-grouped-diff.png'), animations: 'disabled' });
+        playwright.expect(errors).toEqual([]);
     } finally {
         await app.close();
     }

@@ -1,21 +1,21 @@
 //! Candidate search only. Hash hits still require full metadata and connection verification.
-struct Patterns {
-    input: Vec<u32>,
+pub(crate) struct Patterns {
+    pub(crate) input: Vec<u32>,
     prefix: Vec<u32>,
     power: Vec<u32>,
     missing: Vec<u32>,
     forks: Vec<u32>,
     next: Vec<usize>,
-    output: Vec<u32>,
+    pub(crate) output: Vec<u32>,
 }
 
 impl Patterns {
-    fn new(count: usize) -> Self {
+    pub(crate) fn new(count: usize) -> Self {
         Self { input: vec![0; count * 2], prefix: vec![0; count + 1], power: vec![0; count + 1],
             missing: vec![0; count + 1], forks: vec![0; count + 1], next: vec![count; count], output: Vec::with_capacity(2048) }
     }
 
-    fn prepare(&mut self) {
+    pub(crate) fn prepare(&mut self) {
         self.power[0] = 1;
         for i in 0..self.input.len() / 2 {
             let flags = self.input[i * 2 + 1];
@@ -34,7 +34,7 @@ impl Patterns {
         self.prefix[start + count].wrapping_sub(self.prefix[start].wrapping_mul(self.power[count]))
     }
 
-    fn scan(&mut self, start: usize) {
+    pub(crate) fn scan(&mut self, start: usize) {
         self.output.clear();
         let count = self.input.len() / 2;
         if start >= count || self.input[start * 2 + 1] & 1 == 0 { return; }

@@ -1734,30 +1734,68 @@ onnx.Context.Graph = class {
         }
         const boundaries = new Set([...inputs, ...outputs].map((value) => typeof value === 'string' ? value : value.name));
         this._nodes = new NodeCatalog(nodes, (node) => new onnx.Node(this, node), (node) => {
-            const domain = node.domain || '';
-            const schema = this.type(domain, node.op_type, node.overload || '');
+            const domain = node.domain || 'ai.onnx';
+            let op_type = node.op_type;
+            let overload = node.overload || '';
+            if (domain === 'pkg.torch.ops') {
+                const path = op_type.split('.');
+                overload = path.pop();
+                op_type = path.join('.');
+            }
+            const schema = this.type(domain, op_type, overload);
             const attributes = () => node.attribute.map((attr) => {
                 if (attr.g || attr.graphs?.length) {
                     return { name: attr.name, type: 'graph' };
                 }
                 if (attr.t || attr.tensors?.length || attr.sparse_tensor || attr.sparse_tensors?.length) {
                     const tensors = [attr.t, attr.sparse_tensor, ...(attr.tensors || []), ...(attr.sparse_tensors || [])].filter(Boolean);
+                    const headers = tensors.map((tensor) => {
+                        const sparse = Boolean(tensor.values);
+                        const data = sparse ? tensor.values : tensor;
+                        const encoding = (() => {
+                            if (sparse) {
+                                return undefined;
+                            }
+                            if (data._deferred || data.raw_data?.length || data.data_location === onnx.DataLocation.EXTERNAL) {
+                                return '<';
+                            }
+                            if ([1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13].includes(data.data_type)) {
+                                return '|';
+                            }
+                            if (data.int32_data?.length) {
+                                return data.data_type === onnx.DataType.BOOL ? '|' : '<';
+                            }
+                            return undefined;
+                        })();
+                        return { type: this.createTensorType(data.data_type, tensor.dims, sparse ? 'sparse' : null),
+                            category: null, encoding, layout: undefined, quantization: undefined };
+                    });
                     return { name: attr.name, type: attr.tensors?.length || attr.sparse_tensors?.length ? 'tensor[]' : 'tensor',
+                        tensorMetadata: attr.tensors?.length || attr.sparse_tensors?.length ? headers : headers[0],
                         tensorTypes: tensors.map((tensor) => this.createTensorType(tensor.values?.data_type || tensor.data_type,
                             tensor.dims, tensor.values ? 'sparse' : null)) };
                 }
-                return this.createAttribute(attr, this.attribute(domain, node.op_type, node.overload || '', attr.name));
+                return this.createAttribute(attr, this.attribute(domain, op_type, overload, attr.name));
             });
-            const args = (list) => list.map((value, index) => ({ name: String(index), value: value.name ? [{
-                name: value.name, initializer: value.initializer, type: value.initializer?.type || value.type,
-                quantization: value.annotation ? { type: 'annotation', value: value.annotation } : null
-            }] : [] }));
+            const args = (list, schema) => {
+                const result = [];
+                for (let index = 0; index < list.length;) {
+                    const port = schema?.[index] || { name: String(index) };
+                    const count = port.list ? list.length - index : 1;
+                    result.push({ name: port.name, value: list.slice(index, index + count).filter((value) => value.name || value.initializer).map((value) => ({
+                        name: value.name, initializer: value.initializer, type: value.initializer?.type || value.type || null,
+                        quantization: value.annotation ? { type: 'annotation', value: value.annotation } : null
+                    })) });
+                    index += count;
+                }
+                return result;
+            };
             return {
-                name: node.name || '', type: { name: node.op_type, domain, identifier: node.overload || '', version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
+                name: node.name || '', type: { name: op_type, domain, overload, identifier: overload ? `${op_type}.${overload}` : op_type, version: schema?.version, ...(schema?.nodes ? { nodes: [] } : {}) },
                 get _scope() {
                     return (node.metadata_props || []).find((entry) => entry.key === 'namespace')?.value;
                 },
-                inputs: args(node.input), outputs: args(node.output),
+                inputs: args(node.input, schema?.inputs), outputs: args(node.output, schema?.outputs),
                 _hasSubgraphs: node.attribute.some((attr) => attr.g || attr.graphs?.length),
                 get attributes() {
                     return attributes();
