@@ -4,7 +4,7 @@
 
 Fastron can run as both an [Electron](https://electronjs.org) app or a web app.
 
-To start the Electron app, install [Node.js](https://nodejs.org) and run: 
+To start the Electron app, install [Node.js 24](https://nodejs.org) (the version used by Electron CI) and run:
 
 ```bash
 git clone https://github.com/satabios/Fastron

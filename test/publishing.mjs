@@ -89,8 +89,11 @@ sudo() { printf 'sudo %s\\n' "$*"; }
     assert.match(configured.stdout, /npm run publish winget/);
 });
 
-test('CI installs Electron despite an inherited download-skip flag and stops on installer errors', async (t) => {
+test('CI pins Electron tooling to Node 24, installs despite a skip flag and stops on installer errors', async (t) => {
     const build = yaml.load(await fs.readFile(new URL('../.github/workflows/build.yml', import.meta.url), 'utf-8'));
+    for (const job of [build.jobs.build, workflow.jobs.publish]) {
+        assert.equal(job.steps.find((item) => item.name === 'Install Node.js').with['node-version'], '24');
+    }
     const step = build.jobs.build.steps.find((item) => item.name === 'Install Electron runtime');
     const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'fastron-electron-setup-'));
     t.after(() => fs.rm(folder, { recursive: true, force: true }));

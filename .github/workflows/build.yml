@@ -29,7 +29,8 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          # Electron 39's installer exits without a runtime under Node 26.
+          node-version: '24'
 
       - name: Cache test models
         uses: actions/cache@v4

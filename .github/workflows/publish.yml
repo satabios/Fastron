@@ -31,7 +31,8 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          # Use the same verified Electron tooling runtime as the build job.
+          node-version: '24'
 
       - name: Install Python
         uses: actions/setup-python@v5
