@@ -44,10 +44,8 @@ jobs:
 
       - name: Install Electron runtime
         shell: bash
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: ''
         run: |
-          node node_modules/electron/install.js
+          node -e "delete process.env.ELECTRON_SKIP_BINARY_DOWNLOAD; require('./node_modules/electron/install.js')"
           node -e "const fs = require('node:fs'); fs.accessSync(require('electron'), fs.constants.X_OK)"
 
       - name: Build and test Rust index

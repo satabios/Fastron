@@ -88,3 +88,47 @@ sudo() { printf 'sudo %s\\n' "$*"; }
     succeeds(configured);
     assert.match(configured.stdout, /npm run publish winget/);
 });
+
+test('CI installs Electron despite an inherited download-skip flag and stops on installer errors', async (t) => {
+    const build = yaml.load(await fs.readFile(new URL('../.github/workflows/build.yml', import.meta.url), 'utf-8'));
+    const step = build.jobs.build.steps.find((item) => item.name === 'Install Electron runtime');
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'fastron-electron-setup-'));
+    t.after(() => fs.rm(folder, { recursive: true, force: true }));
+    const require = createRequire(import.meta.url);
+    const source = path.dirname(require.resolve('electron/package.json'));
+    const target = path.join(folder, 'node_modules', 'electron');
+    const getter = path.join(folder, 'node_modules', '@electron', 'get');
+    const extractor = path.join(folder, 'node_modules', 'extract-zip');
+    await Promise.all([target, getter, extractor].map((directory) => fs.mkdir(directory, { recursive: true })));
+    await Promise.all(['install.js', 'index.js', 'package.json', 'checksums.json'].map((name) => fs.copyFile(path.join(source, name), path.join(target, name))));
+    const { version } = JSON.parse(await fs.readFile(path.join(target, 'package.json'), 'utf-8'));
+    const binary = { darwin: 'Electron.app/Contents/MacOS/Electron', win32: 'electron.exe', linux: 'electron' }[process.platform];
+    await fs.writeFile(path.join(getter, 'index.js'), `exports.downloadArtifact = async () => {
+        if (process.env.FASTRON_TEST_DOWNLOAD_FAIL) { throw new Error('Fixture download failed'); }
+        return 'fixture.zip';
+    };`);
+    await fs.writeFile(path.join(extractor, 'index.js'), `module.exports = async (_, { dir }) => {
+        const fs = require('node:fs'); const path = require('node:path');
+        const binary = path.join(dir, ${JSON.stringify(binary)});
+        fs.mkdirSync(path.dirname(binary), { recursive: true });
+        fs.writeFileSync(binary, 'fixture executable', { mode: 0o755 });
+        fs.writeFileSync(path.join(dir, 'version'), ${JSON.stringify(version)});
+    };`);
+    const bash = process.platform === 'win32' ? path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : 'bash';
+    const env = { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1', ELECTRON_OVERRIDE_DIST_PATH: '', npm_config_platform: '', npm_config_arch: '' };
+    const skipped = spawnSync(process.execPath, [path.join(target, 'install.js')], { cwd: folder, env, encoding: 'utf-8' });
+    assert.equal(skipped.status, 0, skipped.error?.message || skipped.stderr);
+    await assert.rejects(fs.access(path.join(target, 'path.txt')), /ENOENT/);
+    const run = (extra = {}) => spawnSync(bash, ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', step.run], {
+        cwd: folder, encoding: 'utf-8', env: { ...env, ...extra }
+    });
+    const installed = run();
+    assert.equal(installed.status, 0, installed.error?.message || installed.stderr);
+    assert.equal(await fs.readFile(path.join(target, 'path.txt'), 'utf-8'), binary);
+    const repeated = run();
+    assert.equal(repeated.status, 0, repeated.error?.message || repeated.stderr);
+    await fs.writeFile(path.join(target, 'dist', 'version'), 'incomplete');
+    const failed = run({ FASTRON_TEST_DOWNLOAD_FAIL: '1' });
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /Fixture download failed/);
+});
