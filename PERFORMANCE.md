@@ -406,3 +406,47 @@ Identity errors now name the changed fields and their expected/observed values (
 Canonical metadata, ONNX initializer records, displayed graph topology, layout and the spatial index remain resident. Repetition checks still inspect later instances' metadata. Generic formats and HTTP servers without usable versioned ranges can retain full-download behavior. The new overview only simplifies ordinary nodes in large deferred graphs; it does not page the entire model or replace edge rendering with a GPU backend.
 
 Earlier validation covers unit regressions, Rust tests, cached model validation, browser loading/folding/weight previews/exports, and desktop/browser smoke tests. The Windows Orion SMB observations above supplement the earlier Linux-only native checks; representative NFS and Remote SSH models remain untested. Use `test/benchmark-loading.mjs` with a real mounted model and the remote benchmark instructions in `CONTRIBUTING.md` before making remote-throughput claims.
+
+
+## Rust comparison and initial graph loading
+
+Comparison first renders both raw graphs, removes the loading overlay, and waits across a paint before creating the analysis worker or packing metadata. Group construction runs only when **Group Model** is selected. Analysis does not trigger a second initial layout. Flat-node lookup maps are built after analysis, without rematerializing evicted model nodes. The normal viewer retains its existing flat first-open path.
+
+The default Rust build keeps analysis exports out of `model-index.wasm` (38,280 bytes). `npm run build:index` also builds `model-analysis.wasm` (183,317 bytes) with the `analysis` feature. Only the dedicated comparison worker loads that module, after the initial graph paint. Both artifacts are packaged; there are no new dependencies or native addons.
+
+The renderer transfers metadata and body references, never tensor payloads or full model objects. Packing yields approximately every 4 ms; worker analysis yields between bounded batches. One session retains graph metadata and comparison results, including shared or recursive bodies, until reset/close. Cancelling terminates its worker. Failed or unresolved nested comparisons remain explicitly incomplete. Group expansion does not change comparison counts.
+
+### Local measurements
+
+The Electron harness uses the committed JavaScript comparator at `dd7ae74d` as the baseline and the current renderer for both versions. It opens real ONNX files in visible windows, uses serial layout, and measures the first graph after two animation frames separately from completed comparison. Synthetic fixtures are connected chains with eight operators per scope and one operator replacement; Candy is an unchanged real ONNX model. These are single local runs, with uncontrolled OS/JIT caches, rather than guaranteed speedups. The harness loads file bytes into its test context; it does not measure production range-read performance.
+
+| Nodes | First graph, JavaScript (ms) | First graph, Rust-backed (ms) | Completed diff, JavaScript (ms) | Completed diff, Rust-backed (ms) |
+| ---: | ---: | ---: | ---: | ---: |
+| 59 (Candy) | 136 | 116 | 153 | 150 |
+| 128 | 131 | 109 | 148 | 159 |
+| 1,024 | 240 | 219 | 250 | 298 |
+| 4,096 | 676 | 553 | 678 | 716 |
+| 10,000 | 1,526 | 1,149 | 1,535 | 1,498 |
+
+Every Rust-backed run asserted that the analysis worker started after the first graph frame. Initial presentation improved in these runs; completed diff latency still regresses on smaller synthetic cases because worker startup and metadata transfer have a fixed cost. Protecting initial graph loading takes precedence over starting analysis early. Layout and rendering remain size-dependent, and four milliseconds is a scheduling target between records, not a maximum duration for an individual metadata record or allocation.
+
+The separate Node benchmark includes packing, worker transfer/decoding and Rust analysis, without layout or rendering. Warm runs reuse the uploaded graph pair. Peak RSS includes both input models, the JavaScript reference run and the Rust worker; it is not isolated analysis memory.
+
+| Nodes | JavaScript analysis (ms) | Rust cold total (ms) | Rust worker analysis (ms) | Rust warm total (ms) | Group projection (ms) | Peak RSS (MiB) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 31 | 53 | 12 | 0.9 | 3 | 100 |
+| 10,000 | 254 | 205 | 54 | 7.6 | 15 | 324 |
+| 100,000 | 2,440 | 1,818 | 438 | 76.6 | 127 | 1,361 |
+
+Projection here includes initial grouping and produces one collapsed root scope. Packing/transfer stage timers can overlap and must not be summed. Electron stage timers sum work across both panes; RSS/heap samples are reported separately from these Node peak figures.
+
+Reproduce from the repository root (Cargo must be on PATH):
+
+```sh
+npm run build:index
+node test/benchmark-analysis.mjs 1000 10000 100000
+FASTRON_BASELINE=dd7ae74d node test/benchmark-comparison.mjs 128 1024 4096 10000
+FASTRON_BASELINE=dd7ae74d FASTRON_MODEL=third_party/test/onnx/candy.onnx node test/benchmark-comparison.mjs
+```
+
+Regression coverage checks first-paint ordering and cancellation before analysis startup, separate indexing/analysis WASM exports, conservative matching parity, hidden body edits, shared/recursive functions, graph-array roles, missing versus empty bodies, control edges, group cycles, lazy-node eviction, metadata types/cycles, malformed buffers, WASM memory growth and no tensor payload reads. Desktop checks cover grouped change reveal and paired-body Back navigation; browser checks cover the existing grouped-graph rendering and keyboard controls. Hosts without a worker bridge retain the existing JavaScript primary-graph comparator. Browser comparison, numerical weight diff and cross-format matching remain deferred.

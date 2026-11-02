@@ -46,7 +46,7 @@ This optimized fork introduces several critical performance improvements:
 
 - **Memory Optimizations**: Efficient data structures and lazy-loading strategies minimize memory footprint while maintaining full feature functionality.
 
-- **Model Comparison**: Compare nodes in the primary graph side by side, including operator metadata, attributes, tensor shapes/types, and connections. Ambiguous matches remain unmatched. Weight values are not compared.
+- **Model Comparison**: Desktop comparison uses a Rust/WASM worker for operator metadata, attributes, tensor shapes/types, connections and reachable function bodies. Graphs load flat before analysis starts; Group Model reveals group change counts, and the change list opens paired subgraphs. Ambiguous matches remain unmatched. Weight values are not compared.
 
 ### Standard Features
 

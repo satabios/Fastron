@@ -17,19 +17,20 @@ const model = (count) => {
         node: Array.from({ length: count }, (_, i) => ({ name: `/network/blocks.${Math.floor(i / 8)}/op${i}`,
             op_type: i % 2 ? 'Relu' : 'Abs', input: [i === 0 ? 'x' : `v${i - 1}`], output: [`v${i}`], attribute: [] })) } };
 };
-const baseline = child_process.execFileSync('git', ['show', `${process.env.FASTRON_BASELINE || 'HEAD'}:source/comparator.js`], { cwd: root, encoding: 'utf-8' })
+assert.ok(process.env.FASTRON_BASELINE, 'Set FASTRON_BASELINE to the revision with the JavaScript comparator.');
+const baseline = child_process.execFileSync('git', ['show', `${process.env.FASTRON_BASELINE}:source/comparator.js`], { cwd: root, encoding: 'utf-8' })
     .replaceAll("'./view.js'", JSON.stringify(source('view.js')));
 const baselinePath = path.join(folder, 'baseline.mjs');
 await fs.writeFile(baselinePath, baseline);
 const html = await fs.readFile(path.join(root, 'source/comparator.html'), 'utf-8');
-const sizes = process.argv.slice(2).map(Number);
+const sizes = process.env.FASTRON_MODEL ? [0] : process.argv.slice(2).map(Number);
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 let app = null;
 try {
     app = await _electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${path.join(folder, 'profile')}`], cwd: root, env });
     await app.firstWindow();
-    for (const count of process.env.FASTRON_MODEL ? [0] : sizes.length ? sizes : [128, 1024]) {
+    for (const count of sizes.length ? sizes : [128, 1024]) {
         assert.ok(process.env.FASTRON_MODEL || (Number.isSafeInteger(count) && count > 0 && count <= 10000));
         const a = path.join(folder, 'a.onnx'); const b = path.join(folder, 'b.onnx');
         if (process.env.FASTRON_MODEL) {
