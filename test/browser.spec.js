@@ -2,9 +2,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as playwright from '@playwright/test';
 import * as url from 'url';
+import { checkSearchCentering } from './search-centering.mjs';
 import { hierarchyModel } from './group-fixtures.mjs';
 
 playwright.test.setTimeout(120000);
+
+playwright.test('browser centers clicked search results across zoom, resize and collapsed groups', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('body.welcome');
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('.open-file-button').click();
+    await (await chooser).setFiles({ name: 'hierarchy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(hierarchyModel())) });
+    await checkSearchCentering(page, async () => {
+        await page.locator('#menu-button').click();
+        await page.locator('button:has-text("Find...")').click();
+    });
+});
 
 playwright.test('grouped graph keeps shapes and supports nested keyboard expansion', async ({ page }, testInfo) => {
     await page.goto('/');

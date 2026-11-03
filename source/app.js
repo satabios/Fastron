@@ -110,6 +110,7 @@ app.Application = class {
 
         electron.app.on('ready', () => {
             this._ready();
+            this._checkForUpdates();
         });
 
         electron.app.on('window-all-closed', () => {
@@ -123,7 +124,6 @@ app.Application = class {
         });
 
         this._parseCommandLine(process.argv);
-        await this._checkForUpdates();
     }
 
     get environment() {
@@ -295,20 +295,39 @@ app.Application = class {
     }
 
     async _checkForUpdates() {
-        if (!electron.app.isPackaged) {
+        if (!electron.app.isPackaged || this._checkingUpdate || this._updateDownloaded || this._quitting) {
             return;
         }
-        const autoUpdater = updater.default.autoUpdater;
-        if (autoUpdater.app && autoUpdater.app.appUpdateConfigPath && !fs.existsSync(autoUpdater.app.appUpdateConfigPath)) {
-            return;
-        }
-        const promise = autoUpdater.checkForUpdates();
-        if (promise) {
-            promise.catch((error) => {
-                /* eslint-disable no-console */
-                console.log(error.message);
-                /* eslint-enable no-console */
-            });
+        try {
+            const autoUpdater = updater.default.autoUpdater;
+            if (autoUpdater.app && autoUpdater.app.appUpdateConfigPath && !fs.existsSync(autoUpdater.app.appUpdateConfigPath)) {
+                return;
+            }
+            if (!this._updateTimer) {
+                autoUpdater.autoDownload = true;
+                autoUpdater.autoInstallOnAppQuit = true;
+                autoUpdater.once('update-downloaded', () => {
+                    this._updateDownloaded = true;
+                    clearInterval(this._updateTimer);
+                });
+                this._updateTimer = setInterval(() => this._checkForUpdates(), 6 * 60 * 60 * 1000);
+                this._updateTimer.unref();
+                electron.app.once('will-quit', () => {
+                    this._quitting = true;
+                    clearInterval(this._updateTimer);
+                });
+            }
+            this._checkingUpdate = true;
+            const result = await autoUpdater.checkForUpdates();
+            if (result && result.downloadPromise) {
+                await result.downloadPromise;
+            }
+        } catch (error) {
+            /* eslint-disable no-console */
+            console.log(error.message);
+            /* eslint-enable no-console */
+        } finally {
+            this._checkingUpdate = false;
         }
     }
 

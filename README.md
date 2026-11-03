@@ -65,6 +65,8 @@ This optimized fork introduces several critical performance improvements:
 
 **Windows**: [**Download**](https://github.com/satabios/netron/releases/latest) the `.exe` installer or run `winget install -s winget fastron`.
 
+Installed desktop applications check GitHub Releases at startup and every six hours, download updates automatically, and install them when you quit normally. Updates never force a restart. macOS automatic updates require a signed installation and signed releases; unsigned builds remain available but require manual updates. Linux `.deb` updates may request administrator authentication.
+
 **Python**: `pip install fastron`, then run `fastron [FILE]` or `fastron.start('[FILE]')`.
 
 ## Models

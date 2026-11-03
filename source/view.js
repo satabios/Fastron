@@ -527,18 +527,26 @@ view.View = class {
             sidebar.on('state-changed', (sender, state) => {
                 this._find = state;
             });
+            let navigation = 0;
             const navigate = async (value, activate) => {
+                const request = ++navigation;
                 try {
                     const graph = this.activeTarget;
                     await this.revealRepeated(value);
-                    if (!this._target || graph !== this.activeTarget) {
+                    if (!this._target || graph !== this.activeTarget || request !== navigation) {
                         return;
                     }
                     if (activate) {
                         this._sidebar.close();
                     }
-                    const selection = activate ? this._target.activate(value) : this._target.select([value]);
-                    this._target.scrollToSelection(selection, value);
+                    const target = this._target;
+                    const selection = activate ? target.activate(value) : target.select([value]);
+                    await new Promise((resolve) => {
+                        this._host.window.requestAnimationFrame(resolve);
+                    });
+                    if (target === this._target && graph === this.activeTarget && request === navigation) {
+                        target.scrollToSelection(selection, value);
+                    }
                 } catch (error) {
                     this.error(error, 'Error revealing search result.', null);
                 }
@@ -3889,20 +3897,24 @@ view.Graph = class extends grapher.Graph {
     }
 
     scrollToSelection(selection, value, behavior) {
-        if (selection && selection.length > 0) {
-            const hasVisible = selection.some((element) => {
-                if (!element || !element.getBoundingClientRect) {
-                    return false;
-                }
-                const rect = element.getBoundingClientRect();
-                return rect.width > 0 || rect.height > 0;
-            });
-            if (hasVisible) {
-                this.scrollTo(selection, behavior);
-                return true;
-            }
+        if (this.scrollToValue(value, behavior)) {
+            return true;
         }
-        return this.scrollToValue(value, behavior);
+        const rects = (selection || []).filter((element) => element && element.getBoundingClientRect)
+            .map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0 || rect.height > 0);
+        if (rects.length > 0) {
+            const container = this._containerElement;
+            const bounds = container.getBoundingClientRect();
+            const x = (Math.min(...rects.map((rect) => rect.left)) + Math.max(...rects.map((rect) => rect.right))) / 2;
+            const y = (Math.min(...rects.map((rect) => rect.top)) + Math.max(...rects.map((rect) => rect.bottom))) / 2;
+            container.scrollTo({
+                left: container.scrollLeft + x - bounds.left - (container.clientWidth / 2),
+                top: container.scrollTop + y - bounds.top - (container.clientHeight / 2),
+                behavior: behavior || 'smooth'
+            });
+            return true;
+        }
+        return false;
     }
 
     scrollToValue(value, behavior) {

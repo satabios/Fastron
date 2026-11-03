@@ -371,6 +371,79 @@ test('model validation DOM provides a finite viewport through zoom and scrolling
     assert.ok(Object.values(ViewGraph.prototype._getViewportBounds.call(graph)).every(Number.isFinite));
 });
 
+test('search centers layout bounds at any zoom and viewport width even with misleading rendered bounds', () => {
+    const value = {};
+    for (const zoom of [0.5, 1, 2]) {
+        for (const width of [400, 800, 1600]) {
+            for (const x of [20, 600, 10000]) {
+                const container = { clientWidth: width, clientHeight: 600, scrollTo({ left, top, behavior }) {
+                    this.scrollLeft = Math.max(0, left);
+                    this.scrollTop = Math.max(0, top);
+                    assert.equal(behavior, 'instant');
+                } };
+                const graph = Object.assign(Object.create(ViewGraph.prototype), {
+                    _zoom: zoom, _containerElement: container,
+                    _originElement: { getAttribute: () => 'translate(100, 100)' },
+                    _table: new Map([[value, { x, y: 2000, width: 80, height: 40 }]])
+                });
+                const selection = x === 10000 ? [] : [{ getBoundingClientRect: () => assert.fail('Search must prefer layout coordinates.') }];
+                assert.equal(graph.scrollToSelection(selection, value, 'instant'), true);
+                assert.equal(container.scrollLeft, Math.max(0, (x + 100) * zoom - width / 2));
+                assert.equal(container.scrollTop, (2000 + 100) * zoom - 300);
+            }
+        }
+    }
+});
+
+test('search centers the rendered selection when layout bounds are unavailable', () => {
+    const container = { clientWidth: 800, clientHeight: 600, scrollLeft: 300, scrollTop: 400,
+        getBoundingClientRect: () => ({ left: 20, top: 30 }), scrollTo(options) {
+            this.options = options;
+        } };
+    const graph = { _containerElement: container, scrollToValue: () => false };
+    const selection = [null, {}, { getBoundingClientRect: () => ({ width: 0, height: 0 }) },
+        { getBoundingClientRect: () => ({ left: 480, right: 560, top: 430, bottom: 470, width: 80, height: 40 }) }];
+    assert.equal(ViewGraph.prototype.scrollToSelection.call(graph, selection, {}, 'instant'), true);
+    assert.deepEqual(container.options, { left: 400, top: 520, behavior: 'instant' });
+    assert.equal(ViewGraph.prototype.scrollToSelection.call(graph, [], {}), false);
+});
+
+test('search waits for sidebar layout and ignores replaced graphs and superseded clicks', async () => {
+    const { View } = await import('../source/view.js');
+    const frames = [];
+    const centered = [];
+    let sidebar = null;
+    let sidebarChanged = false;
+    const target = { select: () => [], activate() {
+        sidebarChanged = true;
+        return [];
+    }, scrollToSelection(selection, value) {
+        assert.equal(sidebarChanged, true);
+        centered.push(value);
+    } };
+    const state = { _target: target, activeTarget: {}, activeSignature: null,
+        _host: { window: { requestAnimationFrame: (callback) => frames.push(callback) } },
+        _sidebar: { close() {}, open(content) {
+            sidebar = content;
+        } }, revealRepeated: async () => {}, error: (error) => assert.fail(error.message) };
+    View.prototype.find.call(state);
+    const navigate = (value, activate = false) => sidebar._events[activate ? 'activate' : 'select'][0](sidebar, value);
+    const first = navigate('first', true);
+    await Promise.resolve();
+    assert.equal(centered.length, 0);
+    const second = navigate('second');
+    await Promise.resolve();
+    frames.splice(0).forEach((callback) => callback());
+    await Promise.all([first, second]);
+    assert.deepEqual(centered, ['second']);
+    const stale = navigate('stale');
+    await Promise.resolve();
+    state._target = {};
+    frames.shift()();
+    await stale;
+    assert.deepEqual(centered, ['second']);
+});
+
 test('switching models releases the old rendered graph instead of caching it again', async () => {
     const { View } = await import('../source/view.js');
     const host = new mock.Host({ serial: true });

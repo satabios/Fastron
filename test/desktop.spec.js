@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as playwright from '@playwright/test';
 import * as url from 'url';
+import { checkSearchCentering } from './search-centering.mjs';
 import { hierarchyModel } from './group-fixtures.mjs';
 import { writeRepeatedModel } from './repeated-fixtures.mjs';
 
@@ -15,6 +16,28 @@ const createProfile = (directory) => {
     fs.writeFileSync(path.join(directory, 'configuration.json'), JSON.stringify({ consent: Date.now(), recents: [] }));
     return directory;
 };
+
+playwright.test('desktop centers clicked search results across zoom, resize and collapsed groups', async ({ playwright: driver }, testInfo) => {
+    const file = testInfo.outputPath('hierarchy.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(hierarchyModel()));
+    const profile = createProfile(testInfo.outputPath('profile'));
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const app = await driver._electron.launch({ args: ['.', '--no-sandbox', `--user-data-dir=${profile}`], env });
+    try {
+        const page = await app.firstWindow();
+        await page.waitForSelector('body.welcome', { timeout: 30000 });
+        await app.evaluate(({ BrowserWindow }, file) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('open', { path: file });
+        }, file);
+        await checkSearchCentering(page, () => app.evaluate(({ BrowserWindow }) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('find', {});
+        }));
+    } finally {
+        await app.close();
+    }
+});
 
 playwright.test('desktop', async ({ playwright: driver }, testInfo) => {
 
