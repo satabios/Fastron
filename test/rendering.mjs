@@ -6,6 +6,41 @@ import { Graph as ViewGraph } from '../source/view.js';
 import { layout } from '../source/dagre.js';
 import { test } from 'node:test';
 
+test('expanded containers with unequal branch depths keep finite routes and their original endpoints', () => {
+    for (const rankdir of ['TB', 'LR', 'BT', 'RL']) {
+        for (const nested of [false, true]) {
+            const nodes = [
+                { v: 'a', parent: 'block', width: 80, height: 30 },
+                { v: 'b', parent: 'block', width: 80, height: 30 },
+                { v: 'c', width: 80, height: 30 },
+                { v: 'd', width: 80, height: 30 },
+                { v: 'block', width: 0, height: 0, headerWidth: 100, headerHeight: 30, ...(nested ? { parent: 'outer' } : {}) },
+                ...(nested ? [{ v: 'outer', width: 0, height: 0, headerWidth: 110, headerHeight: 30 }] : [])
+            ];
+            const edges = [{ v: 'b', w: 'c' }, { v: 'a', w: 'd' }, { v: 'c', w: 'd' }];
+            layout(nodes, edges, { rankdir }, {});
+            assert.deepEqual(edges.map(({ v, w }) => [v, w]), [['b', 'c'], ['a', 'd'], ['c', 'd']]);
+            const byId = new Map(nodes.map((node) => [node.v, node]));
+            for (const node of nodes) {
+                assert.ok([node.x, node.y, node.width, node.height].every(Number.isFinite));
+                if (node.parent) {
+                    const parent = byId.get(node.parent);
+                    assert.ok(Math.abs(node.x - parent.x) + node.width / 2 <= parent.width / 2 + 1e-6);
+                    assert.ok(Math.abs(node.y - parent.y) + node.height / 2 <= parent.height / 2 + 1e-6);
+                }
+            }
+            for (const edge of edges) {
+                assert.ok(edge.points.length >= 2);
+                assert.ok(edge.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+                for (const [point, node] of [[edge.points[0], byId.get(edge.v)], [edge.points.at(-1), byId.get(edge.w)]]) {
+                    assert.ok(Math.abs(Math.abs(point.x - node.x) - node.width / 2) < 1e-6 ||
+                        Math.abs(Math.abs(point.y - node.y) - node.height / 2) < 1e-6);
+                }
+            }
+        }
+    }
+});
+
 test('long fan-out connections keep their endpoints and labels without unbounded routing chains', { timeout: 20000 }, () => {
     for (const rankdir of ['TB', 'LR']) {
         const nodes = Array.from({ length: 400 }, (_, i) => ({ v: String(i), width: 80 + i % 3, height: 30 + i % 5 }));

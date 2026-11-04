@@ -221,6 +221,7 @@ test('expanding a distant group focuses its cached geometry even when its DOM is
     let focused = null;
     view._target = { _hierarchy: state.analysis, zoom: 1,
         _groupNodes: new Map([[group.id, { x: 200, y: 12000, width: 300, height: 600 }]]),
+        children: () => [],
         _containerElement: { clientWidth: 800, clientHeight: 600 },
         _scrollToGraphBounds(bounds) {
             focused = bounds;
@@ -230,6 +231,36 @@ test('expanding a distant group focuses its cached geometry even when its DOM is
     await view.toggleGraphGroup(group);
     assert.deepEqual(focused, { x: 50, y: 11700, width: 300, height: 480 });
     assert.ok(!state.expanded.has('/network/blocks.0'));
+});
+
+test('expanding an oversized group focuses nested contents using cached geometry without loading nodes', async () => {
+    const graph = hierarchyFixture();
+    const view = new View(new Host({ serial: true }));
+    view.model = { modules: [graph] };
+    view._path = [{ target: graph }];
+    view.options.foldRepeatedBlocks = true;
+    await view._groupedPresentation(graph, () => true);
+    const state = view._groupStates.get(graph);
+    const group = state.analysis.groups.get('/network/blocks.0');
+    const content = { x: 14000, y: 18000, width: 120, height: 80, get value() {
+        throw new Error('Focusing cached geometry must not materialize node metadata.');
+    } };
+    let focused = null;
+    view._target = { _hierarchy: state.analysis, zoom: 2,
+        _groupNodes: new Map([[group.id, { name: group.id, x: 12000, y: 15000, width: 16000, height: 20000 }]]),
+        children: (id) => new Map([[group.id, ['nested']], ['nested', ['operator']], ['operator', []]]).get(id),
+        node: (id) => {
+            assert.equal(id, 'operator');
+            return { label: content };
+        },
+        _containerElement: { clientWidth: 800, clientHeight: 600 },
+        _scrollToGraphBounds(bounds) {
+            focused = bounds;
+        } };
+    view._updateTarget = async () => {};
+    view.showGraphGroup = () => {};
+    await view.toggleGraphGroup(group);
+    assert.deepEqual(focused, { x: 13940, y: 17960, width: 120, height: 80 });
 });
 
 test('ONNX namespace metadata survives both lightweight and materialized loading', async () => {

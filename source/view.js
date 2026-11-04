@@ -1313,9 +1313,26 @@ view.View = class {
                     if (this._target === target && this.activeTarget === graph && this._options.foldRepeatedBlocks) {
                         const node = target._groupNodes.get(group.id);
                         if (node) {
-                            target._scrollToGraphBounds({ x: node.x - node.width / 2, y: node.y - node.height / 2,
-                                width: Math.min(node.width, target._containerElement.clientWidth / target.zoom * 0.8),
-                                height: Math.min(node.height, target._containerElement.clientHeight / target.zoom * 0.8) }, 'instant');
+                            const width = target._containerElement.clientWidth / target.zoom * 0.8;
+                            const height = target._containerElement.clientHeight / target.zoom * 0.8;
+                            let focus = node;
+                            if (node.width > width || node.height > height) {
+                                // A large container's corner can contain only routing space; focus real contents instead.
+                                const pending = [...target.children(node.name)];
+                                for (let i = 0; i < pending.length; i++) {
+                                    const children = target.children(pending[i]);
+                                    if (children.length) {
+                                        for (const child of children) {
+                                            pending.push(child);
+                                        }
+                                    } else {
+                                        focus = target.node(pending[i]).label;
+                                        break;
+                                    }
+                                }
+                            }
+                            target._scrollToGraphBounds({ x: focus.x - focus.width / 2, y: focus.y - focus.height / 2,
+                                width: Math.min(focus.width, width), height: Math.min(focus.height, height) }, 'instant');
                         }
                     }
                 });

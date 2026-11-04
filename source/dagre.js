@@ -1398,6 +1398,11 @@ dagre.layout = (nodes, edges, layout, state) => {
                 bestCC = cc;
             }
         }
+        // Compound borders break the alternating node/edge ranks assumed by the extra sweeps below.
+        if (g.hasBorder) {
+            assignOrder(g, best);
+            return;
+        }
         // Reduce crossings
         const calcDir = (idx0, idx1) => (idx0 < idx1) ? 1 : 2;
         for (let i = 4; i < best.length; i += 2) {
