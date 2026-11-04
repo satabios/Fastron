@@ -138,7 +138,9 @@ jobs:
 
       - name: Test source bridge
         working-directory: vscode-extension
-        run: node test/model-source.mjs
+        run: |
+          node test/model-source.mjs
+          node test/branding.mjs
 
       - name: Install vsce
         run: npm install -g @vscode/vsce

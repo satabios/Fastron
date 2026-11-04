@@ -13,49 +13,29 @@ function getNonce() {
 	return text;
 }
 
-function getFastronURL() {
-	return `<!DOCTYPE html>
-	<html lang="en">
-	<style>
-	html { touch-action: none; overflow: hidden; width: 100%; height: 100%; -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-text-rendering: optimizeLegibility; -moz-text-rendering: optimizeLegibility; -ms-text-rendering: optimizeLegibility; -o-text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-font-smoothing: antialiased; -ms-font-smoothing: antialiased; -o-font-smoothing: antialiased; }
-	body { touch-action: none; overflow: hidden; width: 100%; height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "PingFang SC"; font-size: 12px; text-rendering: geometricPrecision; }
-	iframe { touch-action: none; overflow: hidden; width: 100%; height: 100%; border: none; }
-	</style>
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Fastron</title>
-	</head>
-	<body>
-	<iframe src="https://netron.app/" title="Netron web app"></iframe>
-	</body>
-	</html>`;
-}
-
-
 export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('fastron.open', (resource: vscode.Uri) => {
+		vscode.commands.registerCommand('fastron.open', (resource?: vscode.Uri | null) => {
 
 			// Load index file
 			const indexPath = vscode.Uri.file(path.join(context.extensionPath, 'webview', 'index.html'));
 			let html = fs.readFileSync(indexPath.fsPath, 'utf8');
 
 			// Get user model file
-			let modelFile = vscode.window.activeTextEditor?.document.fileName;
-			if (resource !== undefined)
+			let modelFile = resource === null ? undefined : vscode.window.activeTextEditor?.document.fileName;
+			if (resource)
 			{
 				modelFile = resource.fsPath;
 			}
 
 			// Get model file name
-			let baseName = path.basename(modelFile!);
+			let baseName = modelFile ? path.basename(modelFile) : 'Fastron';
 
 			// Panel creation
 			const panel = vscode.window.createWebviewPanel(
 				'fastron',
-				baseName + " [Fastron]",
+				modelFile ? baseName + " [Fastron]" : baseName,
 				vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
 				{
 					enableScripts: true,
@@ -81,6 +61,7 @@ export function activate(context: vscode.ExtensionContext) {
 			html = html.replace(new RegExp("%grapherSheetPath%", 'g'), grapherSheetUri.toString());
 			html = html.replace(new RegExp("%viewPath%", 'g'), viewUri.toString());
 			html = html.replace(new RegExp("%browserPath%", 'g'), browserUri.toString());
+			html = html.replace(/%version%/g, context.extension.packageJSON.version);
 
 			html = html.replace(new RegExp("%netronPath%", 'g'), netronUri.toString());
 			
@@ -118,6 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
 						return;
 					}
 						case 'request_model':
+							if (!modelFile) { return; }
 							// Get file size for progress messages
 							const fileStats = await fs.promises.stat(modelFile!);
 							const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(1);
@@ -155,20 +137,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('fastron.open_webbrowser', () => {
-
-			const panel = vscode.window.createWebviewPanel(
-				'fastron',
-				"Fastron",
-				vscode.ViewColumn.One,
-				{
-					enableScripts: true,
-					retainContextWhenHidden: true
-				}
-			);
-			
-			panel.webview.html = getFastronURL();
-		})
+		vscode.commands.registerCommand('fastron.open_webbrowser', () => vscode.commands.executeCommand('fastron.open', null))
 	);
 
 	// Cache management commands

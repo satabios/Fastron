@@ -2,7 +2,7 @@
   "name": "fastron",
   "displayName": "Fastron",
   "description": "Visualize machine learning models with Fastron in VSCode",
-  "version": "2026.11.2",
+  "version": "2026.11.4",
   "engines": {
     "vscode": "^1.86.0"
   },
@@ -46,8 +46,8 @@
           ".paddle"
         ],
         "icon": {
-          "light": "docs/icon/netron-black.svg",
-          "dark": "docs/icon/netron.svg"
+          "light": "docs/icon.png",
+          "dark": "docs/icon.png"
         }
       }
     ],
@@ -227,7 +227,7 @@
       "title": "Fastron: Compare Models"
     }
   ],
-  "icon": "docs/netron-logo_128x128px.png",
+  "icon": "docs/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/satabios/Fastron"
@@ -240,7 +240,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "node ./out/test/runTest.js",
-    "test:source": "npm run compile && node test/model-source.mjs",
+    "test:source": "npm run compile && node test/model-source.mjs && node test/branding.mjs",
     "sync": "node scripts/sync-assets.js"
   },
   "devDependencies": {

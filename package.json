@@ -6,8 +6,8 @@
         "email": "satabios@users.noreply.github.com",
         "url": "https://www.satabios.com"
     },
-    "version": "2026.11.2",
-    "date": "2026-11-02 00:00:00",
+    "version": "2026.11.4",
+    "date": "2026-11-04 00:00:00",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "satabios/Fastron",
